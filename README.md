@@ -109,6 +109,8 @@ Common examples (not exhaustive — see scripts and `mcp_server.py`):
 
 ## Git: commit identity and authenticated push
 
+**Upstream repository:** [https://github.com/mandnArgiTech/VVADomianRAG](https://github.com/mandnArgiTech/VVADomianRAG)
+
 Use **`GIT_USER`** and **`GIT_PAT`** (GitHub personal access token) for HTTPS push. Optionally set **`GIT_EMAIL`** for commit author email.
 
 ```bash
@@ -120,10 +122,10 @@ git config user.name "$GIT_USER"
 git config user.email "${GIT_EMAIL:-$GIT_USER@users.noreply.github.com}"
 ```
 
-Create the GitHub repository (empty), then add the remote and push (`GIT_REPO_FULLNAME` is `owner/repo`):
+Create the GitHub repository (empty) if needed, then add the remote and push (`GIT_REPO_FULLNAME` is `owner/repo`). For this project:
 
 ```bash
-export GIT_REPO_FULLNAME="your-github-username/DomainRAG"
+export GIT_REPO_FULLNAME="mandnArgiTech/VVADomianRAG"
 git remote add origin "https://${GIT_USER}:${GIT_PAT}@github.com/${GIT_REPO_FULLNAME}.git"
 git branch -M main
 git push -u origin main
@@ -144,7 +146,7 @@ Helper script (same variables; does **not** print your token):
 ```bash
 export GIT_USER="your-github-username"
 export GIT_PAT="ghp_xxxxxxxx"
-export GIT_REPO_FULLNAME="your-github-username/DomainRAG"
+export GIT_REPO_FULLNAME="mandnArgiTech/VVADomianRAG"
 ./scripts/push-to-github.sh
 ```
 
