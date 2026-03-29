@@ -1,0 +1,10 @@
+# Dev / CI — tests and coverage for ingest.py
+# Run from repo root (uses pyproject.toml):
+#   pip install -r requirements-dev.txt
+#   pytest tests/
+# If pytest fails loading unrelated global plugins (e.g. ROS launch_testing):
+#   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/
+-r requirements.txt
+pytest>=8.0.0
+pytest-cov>=5.0.0
+pytest-timeout>=2.3.0

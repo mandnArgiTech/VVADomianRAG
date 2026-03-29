@@ -1,0 +1,27 @@
+# DomainRAG — dependencies derived from sanitizer.py, ingest.py, mcp_server.py
+# Runtime: Ollama must be available for embeddings (local HTTP :11434).
+# Python 3.10+ recommended.
+
+# Vector database + LangChain vector store / embeddings (ingest.py, mcp_server.py)
+chromadb>=0.4.22
+langchain-chroma>=0.1.2
+langchain-ollama>=0.1.0
+langchain-text-splitters>=0.2.0
+
+# Progress UI (ingest.py CLI)
+tqdm>=4.66.0
+
+# MCP server: FastMCP, stdio transport (mcp_server.py)
+mcp>=1.0.0
+
+# Rally API and Confluence wiki fetch modes (ingest.py); optional at import time but required for those modes
+requests>=2.28.0
+
+# HTML → text for tickets/wiki paths (ingest.py); optional at import time
+beautifulsoup4>=4.12.0
+
+# ---------------------------------------------------------------------------
+# Optional — finer code chunking for C / C++ / Java (ingest.py).
+# Not required: ingest falls back to language_split or generic_split.
+#   pip install tree-sitter tree-sitter-c tree-sitter-cpp tree-sitter-java
+# Scheme (.scm) uses regex fallback if tree_sitter_scheme is unavailable.
