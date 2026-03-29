@@ -114,7 +114,7 @@ Common examples (not exhaustive — see scripts and `mcp_server.py`):
 Use **`GIT_USER`** and **`GIT_PAT`** (GitHub personal access token) for HTTPS push. Optionally set **`GIT_EMAIL`** for commit author email.
 
 ```bash
-export GIT_USER="your-github-username"
+export GIT_USER="deviprasad2002"
 export GIT_PAT="ghp_xxxxxxxxxxxxxxxxxxxx"   # fine-scoped PAT; never commit this
 export GIT_EMAIL="you@example.com"        # optional; default shown below
 
@@ -144,7 +144,7 @@ git push -u origin main
 Helper script (same variables; does **not** print your token):
 
 ```bash
-export GIT_USER="your-github-username"
+export GIT_USER="deviprasad2002"
 export GIT_PAT="ghp_xxxxxxxx"
 export GIT_REPO_FULLNAME="mandnArgiTech/VVADomianRAG"
 ./scripts/push-to-github.sh
