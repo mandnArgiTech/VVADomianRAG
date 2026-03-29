@@ -139,6 +139,15 @@ git push -u origin main
 
 **Security:** Do not store `GIT_PAT` in the repo. Use a secret manager or CI secrets. Revoke the PAT if it is ever leaked.
 
+Helper script (same variables; does **not** print your token):
+
+```bash
+export GIT_USER="your-github-username"
+export GIT_PAT="ghp_xxxxxxxx"
+export GIT_REPO_FULLNAME="your-github-username/DomainRAG"
+./scripts/push-to-github.sh
+```
+
 ## Documentation
 
 - [`RUN_SH_USER_GUIDE.md`](RUN_SH_USER_GUIDE.md) — ingestion runner
