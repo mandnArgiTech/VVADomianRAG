@@ -24,10 +24,10 @@ def test_make_chunk_id_deterministic():
 
 
 def test_resolve_collection():
-    assert ing.resolve_collection("domain", "nms", None) == "nms_domain"
-    assert ing.resolve_collection("code", "nms", None) == "nms_code"
+    assert ing.resolve_collection("domain", "igmp", None) == "igmp_domain"
+    assert ing.resolve_collection("code", "igmp", None) == "igmp_code"
     assert ing.resolve_collection("rfc", "x", None) == "rfc"
-    assert ing.resolve_collection("domain", "nms", "custom") == "custom"
+    assert ing.resolve_collection("domain", "igmp", "custom") == "custom"
 
 
 def test_empty_finalize_metadata():

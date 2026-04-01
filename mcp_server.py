@@ -94,6 +94,7 @@ MAX_K_RESULTS = max(1, int(os.environ.get("MCP_MAX_K", "25")))
 RESULT_CHUNK_MAX_CHARS = max(512, int(os.environ.get("MCP_RESULT_CHUNK_MAX_CHARS", "4096")))
 EMBED_BATCH_TIMEOUT = float(os.environ.get("MCP_EMBED_BATCH_TIMEOUT", "120"))
 OLLAMA_HEARTBEAT_SEC = max(5, int(os.environ.get("MCP_OLLAMA_HEARTBEAT_SEC", "30")))
+MCP_OLLAMA_HEARTBEAT_TIMEOUT = max(1, int(os.environ.get("MCP_OLLAMA_HEARTBEAT_TIMEOUT", "15")))
 HYBRID_SEARCH = os.environ.get("HYBRID_SEARCH", "1").strip().lower() not in ("0", "false", "no")
 RRF_K = float(os.environ.get("RRF_K", "60"))
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -191,7 +192,10 @@ def _heartbeat_worker() -> None:
         if _shutdown_event.wait(OLLAMA_HEARTBEAT_SEC):
             break
         try:
-            urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=3)
+            urllib.request.urlopen(
+                "http://127.0.0.1:11434/api/tags",
+                timeout=MCP_OLLAMA_HEARTBEAT_TIMEOUT,
+            )
             _set_ollama_healthy(True)
         except Exception:
             _set_ollama_healthy(False)
@@ -411,6 +415,10 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
         header.append(f"**File:** {repo + '/' + src if repo else src}")
         if cname:
             header.append(f"**Component:** {cname} ({ctype})")
+        dep = (meta.get("dependencies") or "").strip()
+        if dep:
+            dshow = dep if len(dep) <= 500 else dep[:500] + "…"
+            header.append(f"**dependencies:** {dshow}")
         lang = LANG_TAG.get(ext, "")
         fence = _fence_for(content)
         return "### Code\n" + "\n".join(header) + f"\n\n{fence}{lang}\n{content}\n{fence}"
@@ -600,8 +608,100 @@ def _sync_multi_search(
     return [(doc, score, st) for doc, score, st, _ in fused[:k]]
 
 
+def _depend_stems_from_results(
+    results: List[Tuple[Any, Optional[float], str]],
+) -> List[str]:
+    from pathlib import Path as _P
+
+    stems: set = set()
+    for doc, _, _ in results:
+        meta = getattr(doc, "metadata", None) or {}
+        rel = str(meta.get("relative_path") or "").strip()
+        if rel:
+            stem = _P(rel).stem
+            if stem:
+                stems.add(stem)
+        cn = str(meta.get("chunk_name") or "").strip()
+        if cn:
+            stems.add(cn)
+    return sorted(stems)
+
+
+def _dependencies_where_comma_token(stem: str) -> Dict[str, Any]:
+    """Match *stem* as a whole entry in comma-separated ``dependencies`` metadata."""
+    s = (stem or "").strip()
+    if not s:
+        return {"dependencies": {"$eq": "__empty_dependency_stem__"}}
+    return {
+        "$or": [
+            {"dependencies": {"$eq": s}},
+            {"dependencies": {"$contains": f"{s}, "}},
+            {"dependencies": {"$contains": f", {s}, "}},
+            {"dependencies": {"$contains": f", {s}"}},
+        ]
+    }
+
+
+def _sync_fetch_dependents(
+    primary: List[Tuple[Any, Optional[float], str]],
+    search_type: str,
+    domain: str,
+    repo_filter: str,
+    cmap: Dict[str, Chroma],
+    max_hits: int,
+) -> List[Tuple[Any, Optional[float], str]]:
+    """Chunks whose *dependencies* metadata references symbols from primary hits."""
+    targets = _select_collection_names(cmap, search_type, domain)
+    lookups = _depend_stems_from_results(primary)
+    if not lookups or not targets:
+        return []
+    seen: set = set()
+    out: List[Tuple[Any, Optional[float], str]] = []
+    rf = repo_filter.strip()
+    for stem in lookups:
+        if not stem:
+            continue
+        where_dep = _dependencies_where_comma_token(stem)
+        for name in targets:
+            vs = cmap[name]
+            col = getattr(vs, "_collection", None)
+            if col is None:
+                continue
+            try:
+                res = col.get(
+                    where=where_dep,
+                    limit=40,
+                    include=["documents", "metadatas", "ids"],
+                )
+            except Exception as exc:
+                logger.warning("dependents get failed on %s: %s", name, exc)
+                continue
+            ids_list = res.get("ids") or []
+            docs = res.get("documents") or []
+            metas = res.get("metadatas") or []
+            for i, did in enumerate(ids_list):
+                if did in seen:
+                    continue
+                meta = metas[i] if i < len(metas) else {}
+                if rf and str((meta or {}).get("repository", "")).strip() != rf:
+                    continue
+                seen.add(did)
+                text = docs[i] if i < len(docs) else ""
+                doc = Document(page_content=text or "", metadata=dict(meta or {}))
+                st = _infer_source_type(meta or {})
+                out.append((doc, None, st))
+                if len(out) >= max_hits:
+                    return out
+    return out
+
+
 async def _run_search(
-    query: str, k: int, search_type: str, domain: str, repo: str
+    query: str,
+    k: int,
+    search_type: str,
+    domain: str,
+    repo: str,
+    include_dependents: bool = False,
 ) -> str:
     cmap = _collections_snapshot()
     loop = asyncio.get_running_loop()
@@ -620,7 +720,27 @@ async def _run_search(
     if not results:
         return "No matching chunks found."
     parts = [format_result(d, s, st) for d, s, st in results]
-    return "\n\n---\n\n".join(parts)
+    text = "\n\n---\n\n".join(parts)
+    if include_dependents:
+
+        def _dep() -> List[Tuple[Any, Optional[float], str]]:
+            return _sync_fetch_dependents(
+                results,
+                search_type,
+                domain,
+                repo,
+                cmap,
+                max(1, min(20, k * 2)),
+            )
+
+        dep = await asyncio.wait_for(
+            loop.run_in_executor(ex, _dep),
+            timeout=QUERY_TIMEOUT,
+        )
+        if dep:
+            text += "\n\n## Dependent files (import metadata)\n\n"
+            text += "\n\n---\n\n".join(format_result(d, s, st) for d, s, st in dep)
+    return text
 
 
 mcp = FastMCP(
@@ -657,16 +777,26 @@ async def search_knowledge(
     search_type: str = "auto",
     domain: str = "",
     repo: str = "",
+    include_dependents: bool = False,
 ) -> str:
     """Semantic search across indexed collections (multi-domain RAG)."""
-    logger.info("search_knowledge q=%r k=%s type=%s domain=%s", query, k, search_type, domain)
+    logger.info(
+        "search_knowledge q=%r k=%s type=%s domain=%s include_dependents=%s",
+        query,
+        k,
+        search_type,
+        domain,
+        include_dependents,
+    )
     try:
         try:
             ki = int(k)
         except (TypeError, ValueError):
             ki = TOP_K_DEFAULT
         k = max(1, min(ki, MAX_K_RESULTS))
-        return await _run_search(query, k, search_type, domain, repo)
+        return await _run_search(
+            query, k, search_type, domain, repo, include_dependents=include_dependents
+        )
     except asyncio.TimeoutError:
         return f"Error: query timed out after {QUERY_TIMEOUT}s"
     except Exception as exc:
@@ -677,7 +807,9 @@ async def search_knowledge(
 @mcp.tool()
 async def search_codebase(query: str, k: int = TOP_K_DEFAULT, repo: str = "") -> str:
     """Backward-compatible code search; same as search_knowledge with search_type=code."""
-    return await search_knowledge(query, k=k, search_type="code", domain="", repo=repo)
+    return await search_knowledge(
+        query, k=k, search_type="code", domain="", repo=repo, include_dependents=False
+    )
 
 
 @mcp.tool()

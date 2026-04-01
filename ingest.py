@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import asyncio
 import csv
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -19,9 +20,12 @@ import os
 import queue
 import re
 import signal
+import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +44,16 @@ try:
     import requests
 except ImportError:  # pragma: no cover
     requests = None  # type: ignore
+
+try:
+    import aiohttp  # type: ignore
+except ImportError:  # pragma: no cover
+    aiohttp = None  # type: ignore
+
+try:
+    import pathspec  # type: ignore
+except ImportError:  # pragma: no cover
+    pathspec = None  # type: ignore
 
 try:
     from bs4 import BeautifulSoup
@@ -160,6 +174,7 @@ METADATA_KEYS = [
     "doc_title",
     "object_name",
     "context_window",
+    "dependencies",
 ]
 
 CONTENT_TYPE_SIGNALS = {
@@ -1458,6 +1473,170 @@ def generic_split(content: str, path: Path, size: int = 2000) -> List[Tuple[str,
     ]
 
 
+# Regex-assisted boundaries for languages without tree-sitter in this pipeline (leading whitespace allowed).
+# Compiled with re.MULTILINE — do not embed per-branch (?m) flags (invalid when patterns are OR-joined).
+_REGEX_CODE_PATTERNS: Dict[str, List[str]] = {
+    ".go": [r"^\s*func\s+", r"^\s*type\s+\w+\s+struct\b"],
+    ".rs": [
+        r"^\s*(?:pub\s+)?(?:unsafe\s+)?fn\s+",
+        r"^\s*(?:pub\s+)?struct\s+",
+        r"^\s*(?:pub\s+)?enum\s+",
+        r"^\s*(?:pub\s+)?impl\b",
+        r"^\s*(?:pub\s+)?trait\s+",
+    ],
+    ".rb": [r"^\s*class\s+", r"^\s*module\s+", r"^\s*def\s+"],
+    ".kt": [
+        r"^\s*(?:public\s+|private\s+|internal\s+|protected\s+)?(?:open\s+|abstract\s+|sealed\s+)?fun\s+",
+        r"^\s*class\s+",
+        r"^\s*object\s+",
+        r"^\s*interface\s+",
+    ],
+    ".kts": [r"^\s*fun\s+", r"^\s*class\s+", r"^\s*object\s+"],
+    ".swift": [r"^\s*func\s+", r"^\s*class\s+", r"^\s*struct\s+", r"^\s*enum\s+", r"^\s*protocol\s+"],
+    ".scala": [r"^\s*def\s+", r"^\s*class\s+", r"^\s*object\s+", r"^\s*trait\s+"],
+    ".php": [r"^\s*function\s+", r"^\s*class\s+"],
+}
+
+
+def _merge_small_regex_chunks(
+    parts: List[str], min_chars: int = 200, max_chars: int = 12000
+) -> List[str]:
+    if not parts:
+        return []
+    merged: List[str] = []
+    buf = parts[0]
+    for p in parts[1:]:
+        if len(buf) < min_chars and len(buf) + len(p) <= max_chars:
+            buf = buf + "\n\n" + p
+        else:
+            merged.append(buf)
+            buf = p
+    merged.append(buf)
+    return merged
+
+
+def regex_code_split(content: str, path: Path, ext: str) -> List[Tuple[str, Dict[str, str]]]:
+    """Split on language-typical top-level boundaries; fallback to generic_split."""
+    patterns = _REGEX_CODE_PATTERNS.get(ext.lower())
+    if not patterns:
+        return generic_split(content, path, 1500)
+    combined = "|".join(f"({p})" for p in patterns)
+    try:
+        rx = re.compile(combined, re.MULTILINE)
+    except re.error:
+        return generic_split(content, path, 1500)
+    matches = list(rx.finditer(content))
+    if not matches:
+        return generic_split(content, path, 1500)
+    starts = sorted({m.start() for m in matches})
+    if starts[0] > 0:
+        starts.insert(0, 0)
+    raw_parts: List[str] = []
+    for i, st in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(content)
+        seg = content[st:end].strip()
+        if seg:
+            raw_parts.append(seg)
+    if not raw_parts:
+        return generic_split(content, path, 1500)
+    raw_parts = _merge_small_regex_chunks(raw_parts)
+    return [
+        (
+            seg[:12000],
+            {
+                "chunk_strategy": "regex_code",
+                "chunk_type": "fragment",
+                "chunk_name": path.stem,
+                "chunk_index": str(i),
+            },
+        )
+        for i, seg in enumerate(raw_parts)
+    ]
+
+
+def _format_dependencies_field(modules: Iterable[str]) -> str:
+    """Comma-separated sorted list for human-readable metadata and Chroma token search."""
+    unique = sorted({m.strip() for m in modules if m and str(m).strip()})
+    if not unique:
+        return ""
+    return ", ".join(unique)
+
+
+def extract_dependencies(content: str, ext: str) -> str:
+    """Extract import-like symbols for metadata (comma-separated)."""
+    ext_l = ext.lower()
+    mods: List[str] = []
+
+    if ext_l == ".py":
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            for m in re.finditer(
+                r"(?m)^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.,\s]+))\s*",
+                content,
+            ):
+                g1, g2 = m.group(1), m.group(2)
+                if g1:
+                    mods.append(g1.split(".")[0])
+                if g2:
+                    for part in g2.replace(",", " ").split():
+                        if part and part not in ("import", "as"):
+                            mods.append(part.split(".")[0])
+        else:
+
+            class V(ast.NodeVisitor):
+                def visit_Import(self, node: ast.Import) -> None:
+                    for alias in node.names:
+                        mods.append((alias.name or "").split(".")[0])
+
+                def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+                    if node.module:
+                        mods.append(node.module.split(".")[0])
+                    for alias in node.names:
+                        if alias.name != "*":
+                            mods.append(alias.name)
+
+            V().visit(tree)
+
+    elif ext_l in (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"):
+        for m in re.finditer(
+            r"""import\s+(?:[\w*{}\s,]+\s+from\s+)?['"]([^'"]+)['"]|"""
+            r"""require\s*\(\s*['"]([^'"]+)['"]\s*\)|"""
+            r"""import\s*\(\s*['"]([^'"]+)['"]\s*\)""",
+            content,
+        ):
+            for g in m.groups():
+                if g:
+                    mods.append(g.strip().split("/")[-1].split(".")[0])
+
+    elif ext_l in (".c", ".h", ".cpp", ".cxx", ".cc", ".hpp", ".hxx"):
+        for m in re.finditer(r'#\s*include\s+([<"])([^>"]+)([>"])', content):
+            mods.append(m.group(2).strip())
+
+    elif ext_l == ".java":
+        for m in re.finditer(r"(?m)^\s*import\s+([\w.]+)\s*;", content):
+            mods.append(m.group(1))
+
+    elif ext_l == ".go":
+        for m in re.finditer(r'import\s+(?:\(\s*([^)]+)\s*\)|"([^"]+)")', content, re.DOTALL):
+            block = m.group(1) or m.group(2) or ""
+            for q in re.findall(r'"([^"]+)"', block):
+                mods.append(q)
+        for m in re.finditer(r'import\s+"([^"]+)"', content):
+            mods.append(m.group(1))
+
+    elif ext_l == ".rs":
+        for m in re.finditer(r"(?m)^\s*(?:pub\s+)?use\s+([^;]+);", content):
+            for seg in m.group(1).split(","):
+                seg = seg.split("::")[0].strip()
+                if seg and seg not in ("self", "super", "crate"):
+                    mods.append(seg)
+        for m in re.finditer(r"(?m)^\s*(?:pub\s+)?mod\s+(\w+)\s*;", content):
+            mods.append(m.group(1))
+
+    return _format_dependencies_field(mods)
+
+
 def ast_chunk_python(path: Path, content: str) -> List[Tuple[str, Dict[str, str]]]:
     try:
         tree = ast.parse(content)
@@ -1725,7 +1904,7 @@ def choose_strategy_for_path(
             return "code", lambda p, c, lg=lg: language_split(p, c, lg), code_limit
         if ext in (".md", ".txt"):
             return "code", lambda p, c: sentence_window(c, p), code_limit  # pragma: no cover
-        return "code", lambda p, c: generic_split(c, p, 1500), code_limit
+        return "code", lambda p, c: regex_code_split(c, p, ext), code_limit
     if source_type in ("domain_doc", "theory"):
         lim = STRATEGY_SIZE_LIMIT_MB["theory" if source_type == "theory" else "domain_doc"]
         if ext in (".md", ".txt", ".rst"):
@@ -1909,12 +2088,147 @@ def fetch_confluence_pages(space_key: str, label: str = "") -> List[Dict[str, An
     return pages
 
 
+def _embed_serialize_on() -> bool:
+    return os.environ.get("EMBED_SERIALIZE", "0").strip().lower() in ("1", "true", "yes")
+
+
+def _ollama_embed_url() -> str:
+    base = os.environ.get("OLLAMA_HOST", "127.0.0.1:11434").strip()
+    if base.startswith("http://") or base.startswith("https://"):
+        return base.rstrip("/") + "/api/embed"
+    return f"http://{base}/api/embed"
+
+
+def _nvidia_total_vram_mb() -> Optional[int]:
+    try:
+        proc = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return None
+        lines = [x.strip() for x in proc.stdout.strip().splitlines() if x.strip()]
+        if not lines:
+            return None
+        return int(float(lines[0]))
+    except Exception:
+        return None
+
+
+def _host_total_ram_mb() -> Optional[int]:
+    """Best-effort system RAM (MiB). Linux: /proc/meminfo; macOS: sysctl."""
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(
+                ["sysctl", "-n", "hw.memsize"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+            if out.returncode != 0 or not out.stdout.strip():
+                return None
+            return int(int(out.stdout.strip()) // (1024 * 1024))
+        p = Path("/proc/meminfo")
+        if p.is_file():
+            for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("MemTotal:"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        return int(parts[1]) // 1024  # kB -> MiB
+    except Exception:
+        return None
+    return None
+
+
+def resolve_embed_ingest_settings() -> Tuple[int, int, int]:
+    """Return (batch_size, worker_threads, async_concurrency) with optional VRAM + RAM scaling."""
+    cpu = os.cpu_count() or 2
+    default_workers = min(4, max(2, cpu))
+    batch = int(os.environ.get("EMBED_BATCH_SIZE", "16"))
+    workers = int(os.environ.get("EMBED_WORKERS", str(default_workers)))
+    conc = int(os.environ.get("EMBED_CONCURRENCY", str(max(2, min(8, workers * 2)))))
+    batch_env_set = "EMBED_BATCH_SIZE" in os.environ
+    conc_env_set = "EMBED_CONCURRENCY" in os.environ
+
+    vram = _nvidia_total_vram_mb()
+    if vram is not None:
+        if vram >= 12000:
+            batch = max(batch, 24)
+            conc = max(conc, 6)
+        elif vram >= 8000:
+            batch = max(batch, 20)
+            conc = max(conc, 4)
+        logger.info(
+            "Embedding autoscale: VRAM ~%d MiB -> batch=%d concurrency=%d workers=%d",
+            vram,
+            batch,
+            conc,
+            workers,
+        )
+
+    ram = _host_total_ram_mb()
+    if ram is not None:
+        if ram < 4096:
+            batch = min(batch, 6)
+            conc = min(conc, 2)
+        elif ram < 8192:
+            batch = min(batch, 12)
+            conc = min(conc, 4)
+        elif ram >= 32768 and not batch_env_set and not conc_env_set:
+            batch = max(batch, 20)
+            conc = max(conc, 8)
+        logger.info(
+            "Embedding autoscale: RAM ~%d MiB -> batch=%d concurrency=%d workers=%d",
+            ram,
+            batch,
+            conc,
+            workers,
+        )
+
+    return max(1, batch), max(1, workers), max(1, conc)
+
+
+def http_embed_documents_batch(model: str, texts: List[str], timeout: float = 300.0) -> List[List[float]]:
+    """Direct Ollama /api/embed (avoids shared LangChain client across threads)."""
+    url = _ollama_embed_url()
+    payload = json.dumps({"model": model, "input": texts}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.load(resp)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        raise RuntimeError(f"Ollama embed HTTP {exc.code}: {body}") from exc
+    embs = data.get("embeddings")
+    if embs is not None:
+        return embs
+    one = data.get("embedding")
+    if one is not None:
+        return [one]
+    raise RuntimeError(f"Unexpected Ollama embed response: {list(data.keys())}")
+
+
 def embed_with_retry(embedder: OllamaEmbeddings, batch: List[str]) -> Optional[List[List[float]]]:
     def _try(b: List[str]) -> Optional[List[List[float]]]:
         for _ in range(MAX_RETRIES):
             try:
-                with _embed_lock:
-                    return embedder.embed_documents(b)
+                if _embed_serialize_on():
+                    with _embed_lock:
+                        return embedder.embed_documents(b)
+                return embedder.embed_documents(b)
             except Exception as exc:
                 logger.warning("embed retry: %s", exc)
                 time.sleep(EMBED_BACKOFF_SEC)
@@ -1930,12 +2244,116 @@ def embed_with_retry(embedder: OllamaEmbeddings, batch: List[str]) -> Optional[L
     return _try(batch)
 
 
+def embed_with_retry_http(model: str, batch: List[str]) -> Optional[List[List[float]]]:
+    """HTTP embed with same retry/split semantics as embed_with_retry."""
+
+    def _try(b: List[str]) -> Optional[List[List[float]]]:
+        for _ in range(MAX_RETRIES):
+            try:
+                if _embed_serialize_on():
+                    with _embed_lock:
+                        return http_embed_documents_batch(model, b)
+                return http_embed_documents_batch(model, b)
+            except Exception as exc:
+                logger.warning("embed http retry: %s", exc)
+                time.sleep(EMBED_BACKOFF_SEC)
+        if len(b) <= 1:
+            return None
+        mid = max(1, len(b) // 2)
+        a = _try(b[:mid])
+        b2 = _try(b[mid:])
+        if a is None or b2 is None:
+            return None
+        return a + b2
+
+    return _try(batch)
+
+
+async def _async_http_embed_batch(
+    session: Any, model: str, texts: List[str], timeout: float = 300.0
+) -> List[List[float]]:
+    if aiohttp is None:
+        raise RuntimeError("aiohttp is not installed")
+    url = _ollama_embed_url()
+    to = aiohttp.ClientTimeout(total=timeout)
+    async with session.post(url, json={"model": model, "input": texts}, timeout=to) as resp:
+        resp.raise_for_status()
+        data = await resp.json()
+    embs = data.get("embeddings")
+    if embs is not None:
+        return embs
+    one = data.get("embedding")
+    if one is not None:
+        return [one]
+    raise RuntimeError(f"Unexpected Ollama embed response: {list(data.keys())}")
+
+
+async def embed_with_retry_http_async(
+    session: Any,
+    model: str,
+    batch: List[str],
+    async_lock: Optional[asyncio.Lock],
+) -> Optional[List[List[float]]]:
+    async def _try(b: List[str]) -> Optional[List[List[float]]]:
+        for _ in range(MAX_RETRIES):
+            try:
+                if async_lock is not None:
+                    async with async_lock:
+                        return await _async_http_embed_batch(session, model, b)
+                return await _async_http_embed_batch(session, model, b)
+            except Exception as exc:
+                logger.warning("embed async retry: %s", exc)
+                await asyncio.sleep(EMBED_BACKOFF_SEC)
+        if len(b) <= 1:
+            return None
+        mid = max(1, len(b) // 2)
+        a = await _try(b[:mid])
+        b2 = await _try(b[mid:])
+        if a is None or b2 is None:
+            return None
+        return a + b2
+
+    return await _try(batch)
+
+
+async def run_async_embedding_batches(
+    batches: List[List[Tuple[str, str, Dict[str, str]]]],
+    embed_model: str,
+    concurrency: int,
+) -> List[Optional[Tuple[List[str], List[str], List[Dict[str, str]], List[List[float]]]]]:
+    """Concurrent aiohttp embedding; returns one result per input batch (order preserved)."""
+    if aiohttp is None:
+        return [None] * len(batches)
+    sem = asyncio.Semaphore(concurrency)
+    alock = asyncio.Lock() if _embed_serialize_on() else None
+
+    async with aiohttp.ClientSession() as session:
+
+        async def one(
+            batch: List[Tuple[str, str, Dict[str, str]]],
+        ) -> Optional[Tuple[List[str], List[str], List[Dict[str, str]], List[List[float]]]]:
+            async with sem:
+                ids, texts, metas = [], [], []
+                for cid, text, meta in batch:
+                    ids.append(cid)
+                    texts.append(text)
+                    metas.append(meta)
+                vecs = await embed_with_retry_http_async(session, embed_model, texts, alock)
+                if vecs is None:
+                    return None
+                return (ids, texts, metas, vecs)
+
+        return list(await asyncio.gather(*[one(b) for b in batches]))
+
+
 def embedding_worker(
-    embedder: OllamaEmbeddings,
+    embed_model: str,
     worker_id: int,
     chunk_q: "queue.Queue[Optional[List[Tuple[str, str, Dict[str, str]]]]]",
     result_q: "queue.Queue[Optional[Tuple[List[str], List[str], List[Dict[str, str]], List[List[float]]]]]",
 ) -> None:
+    embedder = OllamaEmbeddings(model=embed_model)
+    use_http = os.environ.get("EMBED_HTTP", "1").strip().lower() not in ("0", "false", "no")
     while True:
         item = chunk_q.get()
         if item is None:
@@ -1947,7 +2365,10 @@ def embedding_worker(
                 ids.append(cid)
                 texts.append(text)
                 metas.append(meta)
-            vecs = embed_with_retry(embedder, texts)
+            if use_http:
+                vecs = embed_with_retry_http(embed_model, texts)
+            else:
+                vecs = embed_with_retry(embedder, texts)
             if vecs is None:
                 srcs = [m.get("source", "") for m in metas[:5]]
                 logger.error(
@@ -2143,12 +2564,155 @@ def print_status_dashboard(db_path: Path) -> None:
         print("Top concepts:", ", ".join(f"{k}({v})" for k, v in top))
 
 
+def _respect_gitignore() -> bool:
+    return os.environ.get("RESPECT_GITIGNORE", "1").strip().lower() not in ("0", "false", "no")
+
+
+def _gitignore_parent_chain_dirs(rel_posix: str) -> List[str]:
+    """Parent directories (posix paths from repo root) whose `.gitignore` may apply to *rel_posix*."""
+    rel_posix = rel_posix.replace("\\", "/").strip("/")
+    parts = [p for p in rel_posix.split("/") if p]
+    if not parts:
+        return [""]
+    dirs: List[str] = [""]
+    for i in range(len(parts) - 1):
+        dirs.append("/".join(parts[: i + 1]))
+    return dirs
+
+
+def _relpath_under_gitignore_dir(dir_rel: str, full_rel_posix: str) -> str:
+    if not dir_rel:
+        return full_rel_posix
+    prefix = dir_rel + "/"
+    if not full_rel_posix.startswith(prefix):
+        return full_rel_posix
+    return full_rel_posix[len(prefix) :]
+
+
+def _gitignore_file_path(root_dir: Path, dir_rel_posix: str) -> Path:
+    if not dir_rel_posix:
+        return root_dir / ".gitignore"
+    return root_dir.joinpath(*dir_rel_posix.split("/")) / ".gitignore"
+
+
+def _read_gitignore_spec_for_dir(root_dir: Path, dir_rel_posix: str, cache: Dict[str, Any]) -> Optional[Any]:
+    if dir_rel_posix in cache:
+        return cache[dir_rel_posix]
+    if not _respect_gitignore() or pathspec is None:
+        cache[dir_rel_posix] = None
+        return None
+    gi = _gitignore_file_path(root_dir, dir_rel_posix)
+    if not gi.is_file():
+        cache[dir_rel_posix] = None
+        return None
+    try:
+        lines = gi.read_text(encoding="utf-8", errors="replace").splitlines()
+        spec = pathspec.PathSpec.from_lines("gitwildmatch", lines)
+        cache[dir_rel_posix] = spec
+        return spec
+    except Exception:
+        cache[dir_rel_posix] = None
+        return None
+
+
+def _path_matches_any_nested_gitignore(
+    root_dir: Path,
+    rel_posix: str,
+    cache: Dict[str, Any],
+    *,
+    is_dir: bool,
+) -> bool:
+    """True if any ancestor `.gitignore` excludes this path (Git-style, per-directory rules)."""
+    if not _respect_gitignore() or pathspec is None:
+        return False
+    rel_norm = rel_posix.replace("\\", "/").strip("/")
+    for drel in _gitignore_parent_chain_dirs(rel_norm):
+        spec = _read_gitignore_spec_for_dir(root_dir, drel, cache)
+        if spec is None:
+            continue
+        rel_for_spec = _relpath_under_gitignore_dir(drel, rel_norm)
+        candidates = [rel_for_spec + "/", rel_for_spec] if is_dir else [rel_for_spec]
+        for cand in candidates:
+            if not cand:
+                continue
+            try:
+                if spec.match_file(cand):
+                    return True
+            except Exception:
+                continue
+    return False
+
+
+def _load_gitignore_spec(root: Path) -> Any:
+    """Load only the repository root `.gitignore` (tests and simple callers)."""
+    c: Dict[str, Any] = {}
+    return _read_gitignore_spec_for_dir(root.resolve(), "", c)
+
+
+def git_checkpoint_head_key(collection_name: str) -> str:
+    return f"{collection_name}::git_head"
+
+
+def _git_run(root: Path, *git_args: str, timeout: float = 120.0) -> Tuple[int, str, str]:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), *git_args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+    except FileNotFoundError:
+        return 127, "", "git not found"
+    except subprocess.TimeoutExpired:
+        return 124, "", "timeout"
+
+
+def git_diff_file_sets(
+    root: Path, base_ref: str
+) -> Tuple[Optional[Set[str]], Optional[Set[str]], Optional[str]]:
+    """Return (modified_paths, deleted_paths, head_sha) relative to *root*, or Nones if unusable."""
+    code, _, _ = _git_run(root, "rev-parse", "--is-inside-work-tree")
+    if code != 0:
+        return None, None, None
+    hc, head_out, _ = _git_run(root, "rev-parse", "HEAD")
+    if hc != 0 or not head_out:
+        return None, None, None
+    head_sha = head_out.splitlines()[0].strip()
+
+    def collect(diff_filter: str) -> Set[str]:
+        rc, out, _ = _git_run(
+            root,
+            "diff",
+            "--name-only",
+            f"--diff-filter={diff_filter}",
+            f"{base_ref}...HEAD",
+        )
+        if rc != 0:
+            rc, out, _ = _git_run(
+                root,
+                "diff",
+                "--name-only",
+                f"--diff-filter={diff_filter}",
+                base_ref,
+                head_sha,
+            )
+        if rc != 0:
+            return set()
+        return {ln.strip().replace("\\", "/") for ln in out.splitlines() if ln.strip()}
+
+    return collect("ACMR"), collect("D"), head_sha
+
+
 def iter_files(
     root: Path,
     exts: Optional[set] = None,
     skip_dirs: Optional[set] = None,
     skip_exts: Optional[set] = None,
 ) -> List[Path]:
+    root_dir = root.resolve()
+    gi_cache: Dict[str, Any] = {}
     if root.is_file():
         p = root
         suf = p.suffix.lower()
@@ -2158,9 +2722,24 @@ def iter_files(
             return []  # pragma: no cover
         return [p]
     out: List[Path] = []
-    for dirpath, dirnames, files in os.walk(root):
+    for dirpath, dirnames, files in os.walk(root_dir):
         if skip_dirs:
             dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+        if _respect_gitignore() and pathspec is not None:
+            try:
+                rel_parent = Path(dirpath).resolve().relative_to(root_dir).as_posix()
+            except ValueError:
+                rel_parent = ""
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if not _path_matches_any_nested_gitignore(
+                    root_dir,
+                    f"{rel_parent}/{d}" if rel_parent else d,
+                    gi_cache,
+                    is_dir=True,
+                )
+            ]
         for fn in files:
             p = Path(dirpath) / fn
             suf = p.suffix.lower()
@@ -2168,6 +2747,13 @@ def iter_files(
                 continue
             if exts and suf not in exts:
                 continue
+            if _respect_gitignore() and pathspec is not None:
+                try:
+                    rel = p.resolve().relative_to(root_dir).as_posix()
+                    if _path_matches_any_nested_gitignore(root_dir, rel, gi_cache, is_dir=False):
+                        continue
+                except Exception:
+                    pass  # pragma: no cover
             out.append(p)
     return sorted(out)
 
@@ -2262,6 +2848,11 @@ def ingest_run(args: argparse.Namespace) -> int:
 
     files_to_process: List[Tuple[Path, Dict[str, Any]]] = []
     root: Optional[Path] = Path(args.source).resolve() if args.source else None
+    git_head_key = git_checkpoint_head_key(collection_name)
+    stored_git_head = checkpoint.get(git_head_key, "")
+    if not isinstance(stored_git_head, str):
+        stored_git_head = ""
+    new_git_head_commit: Optional[str] = None
 
     if args.mode == "rally" and root is None:
         if requests is None:
@@ -2307,12 +2898,81 @@ def ingest_run(args: argparse.Namespace) -> int:
                 logger.error("No --source and SOURCE_FOLDER not set")
                 return 2
             root = Path(env_src).resolve()  # pragma: no cover
-        if args.mode == "mib":
-            paths = iter_files(root, {".mib", ".my"}, skip_dirs=IGNORED_DIRS)
-        elif args.mode == "code":
-            paths = iter_files(root, None, skip_dirs=IGNORED_DIRS, skip_exts=IGNORED_EXTS)
+        git_used = False
+        if getattr(args, "git_diff", False):
+            base_ref = (getattr(args, "git_diff_base", None) or "").strip()
+            if not base_ref:
+                base_ref = stored_git_head.strip() or "HEAD~1"
+            mod_set, del_set, gh = git_diff_file_sets(root, base_ref)
+            if mod_set is not None and gh:
+                git_used = True
+                new_git_head_commit = gh
+                git_gi_cache: Dict[str, Any] = {}
+                for rel in sorted(del_set or ()):
+                    ap = str((root / rel).resolve())
+                    try:
+                        coll.delete(where={"source": ap})
+                    except Exception as exc:
+                        logger.warning("git-diff delete chunks for %s: %s", ap, exc)
+                    file_hashes.pop(ap, None)
+                mib_exts = {".mib", ".my"} if args.mode == "mib" else None
+                for rel in sorted(mod_set):
+                    p = root / rel
+                    if not p.is_file():
+                        continue
+                    suf = p.suffix.lower()
+                    if mib_exts is not None and suf not in mib_exts:
+                        continue
+                    if args.mode == "code" and suf in IGNORED_EXTS:
+                        continue
+                    if _respect_gitignore() and pathspec is not None:
+                        try:
+                            r = p.resolve().relative_to(root.resolve())
+                            if _path_matches_any_nested_gitignore(
+                                root.resolve(), r.as_posix(), git_gi_cache, is_dir=False
+                            ):
+                                continue
+                        except Exception:
+                            pass  # pragma: no cover
+                    if args.mode == "rally" and suf == ".csv":
+                        try:
+                            for row in load_rally_rows_from_csv(p):
+                                if not rally_matches_user_filter(row, rally_filter_rules):
+                                    continue  # pragma: no cover
+                                fid = str(
+                                    row.get("FormattedID")
+                                    or row.get("formatted_id")
+                                    or row.get("ID")
+                                    or row.get("id")
+                                    or hashlib.md5(str(row).encode()).hexdigest()[:10]
+                                )
+                                files_to_process.append(
+                                    (
+                                        Path(fid),
+                                        {
+                                            "virtual": True,
+                                            "rally": row,
+                                            "_csv_path": str(p.resolve()),
+                                        },
+                                    )
+                                )
+                        except Exception as exc:  # pragma: no cover
+                            logger.warning("CSV rally skip %s: %s", p, exc)  # pragma: no cover
+                        continue
+                    files_to_process.append((p, {"virtual": False}))
+            else:
+                logger.warning(
+                    "git-diff: repository unusable or diff failed; falling back to full directory scan"
+                )
+        if not git_used:
+            if args.mode == "mib":
+                paths = iter_files(root, {".mib", ".my"}, skip_dirs=IGNORED_DIRS)
+            elif args.mode == "code":
+                paths = iter_files(root, None, skip_dirs=IGNORED_DIRS, skip_exts=IGNORED_EXTS)
+            else:
+                paths = iter_files(root, None, skip_dirs=IGNORED_DIRS)
         else:
-            paths = iter_files(root, None, skip_dirs=IGNORED_DIRS)
+            paths = []
         for p in paths:
             if args.mode == "rally" and p.suffix.lower() == ".csv":
                 try:
@@ -2391,6 +3051,7 @@ def ingest_run(args: argparse.Namespace) -> int:
     ingestion_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     for path, extra in tqdm(files_to_process, desc="Scanning", unit="file"):
+        file_deps_str = ""
         if shutdown_event.is_set():
             break  # pragma: no cover
         if extra.get("virtual"):
@@ -2519,6 +3180,7 @@ def ingest_run(args: argparse.Namespace) -> int:
             repo, rel = rel_repo_for(path)
             mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             size_kb = round(st.st_size / 1024.0, 3)
+            file_deps_str = extract_dependencies(content, ext) if source_type == "code" else ""
 
         if not pieces:
             continue  # pragma: no cover
@@ -2542,6 +3204,7 @@ def ingest_run(args: argparse.Namespace) -> int:
                 "last_modified": mtime,
                 "ingestion_date": ingestion_ts,
                 "ingestion_version": INGESTION_VERSION,
+                "dependencies": file_deps_str,
             }
         )
 
@@ -2616,35 +3279,55 @@ def ingest_run(args: argparse.Namespace) -> int:
     wthread = threading.Thread(target=writer_loop, daemon=True)
     wthread.start()
 
-    workers_n = int(os.environ.get("EMBED_WORKERS", "2"))
-    threads: List[threading.Thread] = []
-    for wid in range(workers_n):
-        t = threading.Thread(
-            target=embedding_worker,
-            args=(embedder, wid, chunk_q, result_q),
-            name=f"embed-{wid}",
-            daemon=True,
-        )
-        t.start()
-        threads.append(t)
-
-    batch_size = 16
+    batch_size, workers_n, embed_concurrency = resolve_embed_ingest_settings()
     batches = [work_items[i : i + batch_size] for i in range(0, len(work_items), batch_size)]
-    try:
-        for batch in tqdm(batches, desc="Embedding", unit="batch"):
-            if shutdown_event.is_set():
-                break  # pragma: no cover
-            chunk_q.put(batch)
-    finally:
-        for _ in threads:
-            chunk_q.put(None)
-    for t in threads:
-        t.join(timeout=600)
+    use_async_embed = (
+        os.environ.get("EMBED_ASYNC", "1").strip().lower() not in ("0", "false", "no")
+        and aiohttp is not None
+    )
+
+    if use_async_embed:
+        try:
+            outs = asyncio.run(
+                run_async_embedding_batches(batches, embed_model, embed_concurrency)
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.exception("async embedding failed: %s", exc)
+            results_holder["errors"].append(str(exc))
+            outs = [None] * len(batches)
+        for bi, item in enumerate(outs):
+            if item is None:
+                results_holder["failed"] += len(batches[bi]) if bi < len(batches) else 0
+            else:
+                result_q.put(item)
+    else:
+        threads: List[threading.Thread] = []
+        for wid in range(workers_n):
+            t = threading.Thread(
+                target=embedding_worker,
+                args=(embed_model, wid, chunk_q, result_q),
+                name=f"embed-{wid}",
+                daemon=True,
+            )
+            t.start()
+            threads.append(t)
+        try:
+            for batch in tqdm(batches, desc="Embedding", unit="batch"):
+                if shutdown_event.is_set():
+                    break  # pragma: no cover
+                chunk_q.put(batch)
+        finally:
+            for _ in threads:
+                chunk_q.put(None)
+        for t in threads:
+            t.join(timeout=600)
 
     result_q.put(WRITER_STOP)
     wthread.join(timeout=600)
 
     checkpoint[cp_key] = json.dumps(file_hashes)
+    if new_git_head_commit:
+        checkpoint[git_head_key] = new_git_head_commit
     save_checkpoint(db_path, checkpoint)
     if repo_file_counts:
         update_repos_manifest(db_path, collection_name, dict(repo_file_counts))
@@ -2731,6 +3414,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--confluence-label",
         default=os.environ.get("CONFLUENCE_LABEL", "").strip() or None,
         help="Filter wiki pages by label (Confluence API)",
+    )
+    p.add_argument(
+        "--git-diff",
+        action="store_true",
+        help="Only ingest files changed vs --git-diff-base (git); deletes removed paths from Chroma",
+    )
+    p.add_argument(
+        "--git-diff-base",
+        default=os.environ.get("GIT_DIFF_BASE", "").strip() or None,
+        help="Git ref to diff against (default: last stored ingest ref or HEAD~1)",
     )
     p.add_argument("--verbose", action="store_true")
     return p

@@ -59,15 +59,18 @@ def test_embed_with_retry_total_failure(no_embed_sleep):
     assert ing.embed_with_retry(Bad(), ["only"]) is None  # type: ignore[arg-type]
 
 
-def test_embedding_worker_success(no_embed_sleep):
-    emb = MagicMock()
-    emb.embed_documents = MagicMock(return_value=[[0.1], [0.2]])
+def test_embedding_worker_success(no_embed_sleep, monkeypatch):
+    monkeypatch.setattr(
+        ing,
+        "embed_with_retry_http",
+        lambda _model, texts: [[0.1], [0.2]] if len(texts) == 2 else None,
+    )
     cq: queue.Queue = queue.Queue()
     rq: queue.Queue = queue.Queue()
     batch = [("id1", "t1", {"source": "s"}), ("id2", "t2", {"source": "s"})]
     cq.put(batch)
     cq.put(None)
-    t = threading.Thread(target=ing.embedding_worker, args=(emb, 0, cq, rq))
+    t = threading.Thread(target=ing.embedding_worker, args=("nomic-embed-text", 0, cq, rq))
     t.start()
     t.join(timeout=5)
     item = rq.get(timeout=2)
@@ -76,33 +79,48 @@ def test_embedding_worker_success(no_embed_sleep):
     assert len(ids) == 2
 
 
-def test_embedding_worker_embed_none(no_embed_sleep):
-    class AlwaysFail:
-        def embed_documents(self, texts):
-            raise RuntimeError("fail")
-
-    emb = AlwaysFail()
+def test_embedding_worker_embed_none(no_embed_sleep, monkeypatch):
+    monkeypatch.setattr(ing, "embed_with_retry_http", lambda *_a, **_k: None)
     cq: queue.Queue = queue.Queue()
     rq: queue.Queue = queue.Queue()
     cq.put([("i", "t", {"source": "s"})])
     cq.put(None)
-    t = threading.Thread(target=ing.embedding_worker, args=(emb, 0, cq, rq))
+    t = threading.Thread(target=ing.embedding_worker, args=("nomic-embed-text", 0, cq, rq))
     t.start()
     t.join(timeout=5)
     assert rq.get(timeout=2) is None
 
 
-def test_embedding_worker_exception(no_embed_sleep):
-    emb = MagicMock()
-    emb.embed_documents = MagicMock(side_effect=RuntimeError("boom"))
+def test_embedding_worker_exception(no_embed_sleep, monkeypatch):
+    def boom(_m, _t):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(ing, "embed_with_retry_http", boom)
     cq: queue.Queue = queue.Queue()
     rq: queue.Queue = queue.Queue()
     cq.put([("i", "t", {"source": "s"})])
     cq.put(None)
-    t = threading.Thread(target=ing.embedding_worker, args=(emb, 0, cq, rq))
+    t = threading.Thread(target=ing.embedding_worker, args=("nomic-embed-text", 0, cq, rq))
     t.start()
     t.join(timeout=5)
     assert rq.get(timeout=2) is None
+
+
+def test_embedding_worker_langchain_path(no_embed_sleep, monkeypatch):
+    monkeypatch.setenv("EMBED_HTTP", "0")
+    mock_emb = MagicMock()
+    mock_emb.embed_documents = MagicMock(return_value=[[0.9]])
+    monkeypatch.setattr(ing, "OllamaEmbeddings", lambda model: mock_emb)
+    cq: queue.Queue = queue.Queue()
+    rq: queue.Queue = queue.Queue()
+    cq.put([("i", "t", {"source": "s"})])
+    cq.put(None)
+    t = threading.Thread(target=ing.embedding_worker, args=("nomic-embed-text", 0, cq, rq))
+    t.start()
+    t.join(timeout=5)
+    item = rq.get(timeout=2)
+    assert item is not None
+    mock_emb.embed_documents.assert_called()
 
 
 def test_embed_documents_no_timeout():
