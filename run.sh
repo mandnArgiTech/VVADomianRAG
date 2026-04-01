@@ -22,6 +22,9 @@ REPO=""
 SOURCE=""
 DB_PATH=""
 WORKERS=2
+GIT_DIFF=0
+GIT_DIFF_BASE=""
+CONCEPT_REGISTRY=""
 
 usage() {
   echo "Usage: $0 [options]"
@@ -37,6 +40,9 @@ usage() {
   echo "  --source PATH             source file or directory"
   echo "  --db-path PATH            VectorDB directory"
   echo "  --workers N               embedding threads (default: 2)"
+  echo "  --git-diff                Only ingest git-changed files vs base ref"
+  echo "  --git-diff-base REF       Git ref to diff against"
+  echo "  --concept-registry PATH   Path to concept_registry.json"
   echo "  --mib-keep-deprecated"
   echo "  --dry-run  --force  --clean-stale  --recreate-collection  --verbose"
   exit 0
@@ -61,6 +67,9 @@ while [[ $# -gt 0 ]]; do
     --force) FORCE=1; shift ;;
     --clean-stale) CLEAN_STALE=1; shift ;;
     --recreate-collection) RECREATE_COLLECTION=1; shift ;;
+    --git-diff) GIT_DIFF=1; shift ;;
+    --git-diff-base) GIT_DIFF_BASE="${2:-}"; shift 2 ;;
+    --concept-registry) CONCEPT_REGISTRY="${2:-}"; shift 2 ;;
     --verbose) VERBOSE=1; shift ;;
     -h|--help) usage ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -239,6 +248,9 @@ fi
 [[ "$FORCE" -eq 1 ]] && INGEST_ARGS+=( --force )
 [[ "$CLEAN_STALE" -eq 1 ]] && INGEST_ARGS+=( --clean-stale )
 [[ "$RECREATE_COLLECTION" -eq 1 ]] && INGEST_ARGS+=( --recreate-collection )
+[[ "$GIT_DIFF" -eq 1 ]] && INGEST_ARGS+=( --git-diff )
+[[ -n "$GIT_DIFF_BASE" ]] && INGEST_ARGS+=( --git-diff-base "$GIT_DIFF_BASE" )
+[[ -n "$CONCEPT_REGISTRY" ]] && INGEST_ARGS+=( --concept-registry "$CONCEPT_REGISTRY" )
 [[ "$VERBOSE" -eq 1 ]] && INGEST_ARGS+=( --verbose )
 
 cleanup_ollama() {

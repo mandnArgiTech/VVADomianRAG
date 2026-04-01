@@ -57,7 +57,33 @@ See [`RUN_SH_USER_GUIDE.md`](RUN_SH_USER_GUIDE.md) for modes, flags, and Ollama 
 
 See [`QUERY_USER_GUIDE.md`](QUERY_USER_GUIDE.md) for interactive REPL and output formats.
 
-### 3. Cursor / MCP
+### 3. Enterprise Code Intelligence Dashboard (Web UI)
+
+Local FastAPI server + single-page UI (`gui_backend.py`, `index.html`) for live ingestion logs and hybrid-search chat.
+
+```bash
+pip install -r requirements.txt   # includes fastapi, uvicorn
+cd /path/to/DomainRAG
+uvicorn gui_backend:app --host 127.0.0.1 --port 8501
+```
+
+Open **http://127.0.0.1:8501/** in a browser. Ensure **Ollama** is running on `:11434` before using search/chat.
+
+Optional environment:
+
+| Variable | Purpose |
+|----------|---------|
+| `RAG_GUI_DB_PATH` | Chroma persist directory (default: `Studio-Portable-RAG/VectorDB` under repo root) |
+| `RAG_GUI_SOURCE_BASE` | Root folder for the ingestion file browser (default: `Studio-Portable-RAG/Codebase` or `./Codebase`) |
+| `EMBEDDING_MODEL` | Embedding model name (same as CLI) |
+
+The UI streams ingestion stdout over SSE and streams LLM tokens when chat mode is enabled. **Do not expose this server to the internet** — it has no authentication. Use `--host 127.0.0.1` (as above), not `0.0.0.0`, unless you fully understand the risk.
+
+**Reliability notes:** The dashboard retries when the vector database is briefly locked, pauses search/chat while ingestion runs (with a clear on-screen message), checks database paths so a typo does not create stray folders (except the optional path you type in the form), sanitizes model output in the browser, and trims very long ingest logs so the page stays responsive.
+
+**Chat models:** Default answer model is **`qwen2.5-coder:32b`** on local Ollama (`ollama pull qwen2.5-coder:32b`). Embeddings still use your configured embed model on Ollama. You can instead choose **Claude (Anthropic)** or **DeepSeek** in the sidebar and paste an API key (optional “remember in browser”). Install `anthropic` and `openai` via `requirements.txt` for those providers.
+
+### 4. Cursor / MCP
 
 Point Cursor’s MCP config at your Python and `mcp_server.py`, and set env vars such as `DB_PATH`, `OLLAMA_EXE`, `OLLAMA_MODELS`, `EMBEDDING_MODEL`. Example pattern:
 

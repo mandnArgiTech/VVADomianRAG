@@ -32,6 +32,12 @@ rank-bm25>=0.2.2
 rich>=13.0.0
 ollama>=0.3.0
 
+# Enterprise dashboard (gui_backend.py)
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+anthropic>=0.40.0
+openai>=1.40.0
+
 # Enterprise ingest: async Ollama /api/embed, .gitignore matching (ingest.py)
 aiohttp>=3.9.0
 pathspec>=0.12.0

@@ -1212,7 +1212,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--no-color", action="store_true", help="Disable color (rich/ANSI)")
     p.add_argument(
         "--db-path",
-        default=os.environ.get("DB_PATH", "").strip() or str(Path.cwd() / "VectorDB"),
+        default=os.environ.get("DB_PATH", "").strip()
+        or str(Path(__file__).resolve().parent / "Studio-Portable-RAG" / "VectorDB"),
         help="Chroma persist directory",
     )
     p.add_argument("--model", default="", help="Embedding model (default: auto-detect)")

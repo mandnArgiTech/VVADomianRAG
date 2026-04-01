@@ -3383,7 +3383,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--collection", default=os.environ.get("CHROMA_COLLECTION", "").strip() or None)
     p.add_argument(
         "--db-path",
-        default=os.environ.get("DB_PATH", "").strip() or str(Path.cwd() / "VectorDB"),
+        default=os.environ.get("DB_PATH", "").strip()
+        or str(SCRIPT_DIR / "Studio-Portable-RAG" / "VectorDB"),
     )
     p.add_argument("--rally-project", default=os.environ.get("RALLY_PROJECT", "").strip() or None)
     p.add_argument("--rally-filter", default=os.environ.get("RALLY_FILTER", "").strip() or None)

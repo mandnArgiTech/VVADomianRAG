@@ -98,6 +98,14 @@ class CachedBM25Index:
                 logger.warning("BM25: count failed for %s: %s", self.collection_name, exc)
                 return False
 
+            if count <= 0:
+                self.bm25 = None
+                self.ordered_ids = []
+                self.id_to_doc = {}
+                self._loaded_count = count
+                logger.debug("BM25 skip empty collection %s", self.collection_name)
+                return False
+
             if self.bm25 is not None and self._loaded_count == count:
                 return True
 
@@ -151,6 +159,18 @@ class CachedBM25Index:
                 ordered_ids.append(sid)
                 if sid not in id_to_doc:
                     id_to_doc[sid] = (text or "", m)
+
+            if not tokenized_corpus:
+                logger.warning(
+                    "BM25: count=%d but no documents loaded for %s; skipping BM25",
+                    count,
+                    self.collection_name,
+                )
+                self.bm25 = None
+                self.ordered_ids = []
+                self.id_to_doc = {}
+                self._loaded_count = count
+                return False
 
             self.bm25 = BM25Okapi(tokenized_corpus)
             self.ordered_ids = ordered_ids

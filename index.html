@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DomainRAG — Code Intelligence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { fontFamily: { mono: ['JetBrains Mono', 'ui-monospace', 'monospace'] } } }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    /* If the Tailwind CDN is blocked, the page still works */
+    html, body { min-height: 100%; margin: 0; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #020617; color: #e2e8f0; }
+    .terminal-scroll { scrollbar-color: #475569 #0f172a; }
+    .chat-scroll { scrollbar-color: #64748b #1e293b; }
+    @keyframes dr-spin { to { transform: rotate(360deg); } }
+    .dr-spin { display: inline-block; animation: dr-spin 0.9s linear infinite; }
+    #ingestBanner { display: none; }
+    #ingestBanner.show { display: block; }
+    .agent-timeline-item { border-left: 2px solid #334155; padding-left: 12px; margin-left: 6px; }
+    .agent-timeline-item.success { border-left-color: #22c55e; }
+    .agent-timeline-item.fail { border-left-color: #ef4444; }
+  </style>
+</head>
+<body class="h-full bg-slate-950 text-slate-100 antialiased">
+  <div id="app" class="min-h-full flex flex-col">
+    <!-- Top bar -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur px-4 py-3 flex flex-wrap items-center gap-4 justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center font-bold text-white text-sm shadow-lg shadow-violet-900/40">DR</div>
+        <div>
+          <h1 class="text-lg font-semibold tracking-tight text-white">DomainRAG Intelligence</h1>
+          <p class="text-xs text-slate-500">Local enterprise RAG · Hybrid search + Ollama</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <div class="flex flex-col gap-0.5 items-end text-right max-w-md">
+          <span id="dbBadge" class="px-2 py-1 rounded-md bg-slate-800 text-slate-400 max-w-full truncate" title="">DB: …</span>
+          <span id="ragGuiDbEnvLine" class="text-[10px] text-slate-500 font-mono max-w-full truncate px-1" title="" role="status">RAG_GUI_DB_PATH …</span>
+        </div>
+        <button type="button" id="btnRefreshStatus" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">Refresh status</button>
+      </div>
+    </header>
+
+    <div id="ingestBanner" class="px-4 py-2 text-sm text-amber-200 bg-amber-950/60 border-b border-amber-900/50">
+      Ingestion is running — search and chat are paused until it finishes.
+    </div>
+    <!-- Status panel -->
+    <div id="statusPanel" class="hidden border-b border-slate-800 bg-slate-900/50 px-4 py-2 max-h-40 overflow-auto text-xs font-mono text-slate-400 whitespace-pre-wrap"></div>
+
+    <!-- Tabs -->
+    <nav class="flex gap-1 px-4 pt-3 border-b border-slate-800 bg-slate-950">
+      <button type="button" data-tab="ingest" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium bg-violet-600 text-white">Ingestion Console</button>
+      <button type="button" data-tab="chat" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">AI Chat Studio</button>
+      <button type="button" data-tab="agent" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">Agent Workspace</button>
+    </nav>
+
+    <main class="flex-1 flex flex-col min-h-0">
+      <!-- Ingest tab -->
+      <section id="panel-ingest" class="flex-1 flex flex-col min-h-0 p-4 gap-4 overflow-auto">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="space-y-3 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Source & mode</h2>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              This page cannot open your system “Browse for folder” dialog (browser security). Instead, the list below shows folders on <strong>this computer</strong> under the Codebase root. There is no separate Browse button—the list <em>is</em> the picker.
+            </p>
+            <label class="block text-xs text-slate-500">Folder list (under portable Codebase)</label>
+            <div class="flex gap-2 flex-wrap">
+              <button type="button" id="browseUp" class="px-2 py-1 rounded bg-slate-800 text-xs border border-slate-700" title="Go to parent folder">↑ Parent folder</button>
+              <span id="browsePath" class="text-xs text-cyan-400/90 font-mono self-center truncate max-w-md"></span>
+            </div>
+            <select id="browseList" size="6" class="w-full rounded-lg bg-slate-950 border border-slate-700 text-sm font-mono p-2"></select>
+            <p class="text-xs text-slate-500">
+              <strong>Open a folder:</strong> double-click a folder in the list.<br />
+              <strong>Parent folder:</strong> use when you are inside a subfolder and want to go up one level (at the top Codebase folder it often does nothing).<br />
+              <strong>Copy path into ingest:</strong> click “Copy path to source field” so you do not have to type the long path by hand. You can also paste any absolute path (e.g. DomainDocs) in the box below.
+            </p>
+            <button type="button" id="btnUseSource" class="text-sm px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 hover:bg-slate-700">Copy path to source field</button>
+            <label class="block text-xs text-slate-500 mt-2">Source path for ingest (absolute path on this machine)</label>
+            <input id="ingestSource" type="text" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm font-mono" placeholder="/path/to/source" />
+            <label class="block text-xs text-slate-500">Mode</label>
+            <select id="ingestMode" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm">
+              <option value="code">code</option>
+              <option value="domain">domain</option>
+              <option value="rfc">rfc</option>
+              <option value="mib">mib</option>
+              <option value="wiki">wiki</option>
+              <option value="rally">rally</option>
+              <option value="customer">customer</option>
+              <option value="community">community</option>
+              <option value="release-notes">release-notes</option>
+              <option value="theory">theory</option>
+              <option value="status">status</option>
+            </select>
+            <label class="block text-xs text-slate-500">Domain</label>
+            <input id="ingestDomain" type="text" value="general" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm" />
+            <label class="block text-xs text-slate-500">Collection (optional)</label>
+            <input id="ingestCollection" type="text" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm" />
+            <label class="block text-xs text-slate-500">Server env <code class="text-cyan-500/90">RAG_GUI_DB_PATH</code></label>
+            <div id="ragGuiDbPathPanel" class="rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs font-mono text-slate-400 break-all" role="status">
+              Loading…
+            </div>
+            <p class="text-[11px] text-slate-500 leading-relaxed">
+              Set this environment variable when you start the dashboard (e.g. <code class="text-slate-400">RAG_GUI_DB_PATH=/path/to/VectorDB uvicorn …</code>) to use a fixed Chroma folder for search, chat, and status. Leave unset to use the default under <code class="text-slate-400">Studio-Portable-RAG/VectorDB</code>.
+            </p>
+            <label class="block text-xs text-slate-500">DB path (optional ingest override only)</label>
+            <input id="ingestDbPath" type="text" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm font-mono" placeholder="leave empty to use RAG_GUI_DB_PATH or default" />
+          </div>
+          <div class="space-y-3 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Options</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="optGitDiff" class="rounded border-slate-600" /> Git diff only</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="optCleanStale" class="rounded border-slate-600" /> Clean stale</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="optRecreate" class="rounded border-slate-600" /> Recreate collection</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="optDryRun" class="rounded border-slate-600" /> Dry run</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="optForce" class="rounded border-slate-600" /> Force</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="optMibDep" class="rounded border-slate-600" /> Keep deprecated MIBs</label>
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="optVerbose" class="rounded border-slate-600" /> Verbose</label>
+            </div>
+            <label class="block text-xs text-slate-500">Git diff base</label>
+            <input id="ingestGitBase" type="text" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm font-mono" placeholder="main / HEAD~1 / tag" />
+            <label class="block text-xs text-slate-500">Concept registry path</label>
+            <input id="ingestConceptReg" type="text" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm font-mono" placeholder="optional path to concept_registry.json" />
+            <div class="flex gap-2 pt-2 items-center">
+              <span id="ingestSpinner" class="hidden dr-spin w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full shrink-0" title="Working"></span>
+              <button type="button" id="btnRunIngest" class="flex-1 py-2.5 rounded-lg bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 font-semibold text-white shadow-lg shadow-violet-900/30">Run ingestion</button>
+              <button type="button" id="btnCancelIngest" class="px-4 py-2.5 rounded-lg bg-red-900/50 border border-red-800 text-red-200 hover:bg-red-900/80 text-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div class="flex-1 min-h-[200px] rounded-xl border border-slate-800 bg-black/60 overflow-hidden flex flex-col">
+          <div class="px-3 py-2 border-b border-slate-800 text-xs text-slate-500 font-mono">Live output</div>
+          <pre id="ingestTerminal" class="flex-1 overflow-auto p-3 text-xs font-mono text-emerald-400/95 terminal-scroll whitespace-pre-wrap"></pre>
+        </div>
+      </section>
+
+      <!-- Chat tab -->
+      <section id="panel-chat" class="hidden flex-1 flex min-h-0">
+        <div class="flex-1 flex flex-col min-w-0 border-r border-slate-800">
+          <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-4 chat-scroll"></div>
+          <div class="p-4 border-t border-slate-800 bg-slate-900/50">
+            <div class="flex gap-2">
+              <textarea id="chatInput" rows="2" class="flex-1 rounded-xl bg-slate-950 border border-slate-700 px-4 py-3 text-sm resize-none focus:ring-2 focus:ring-violet-600 focus:border-transparent" placeholder="Ask about your codebase…"></textarea>
+              <button type="button" id="btnSendChat" class="self-end px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 font-semibold text-white">Send</button>
+            </div>
+          </div>
+        </div>
+        <aside class="w-full max-w-xs shrink-0 p-4 bg-slate-900/30 border-l border-slate-800 overflow-y-auto hidden md:block">
+          <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Search settings</h2>
+          <label class="block text-xs text-slate-500 mb-1">Top K</label>
+          <input type="range" id="chatTopK" min="1" max="25" value="5" class="w-full accent-violet-500" />
+          <div class="text-right text-xs text-slate-400 mb-3"><span id="chatTopKVal">5</span></div>
+          <label class="block text-xs text-slate-500 mb-1">Search type</label>
+          <select id="chatSearchType" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm mb-3">
+            <option value="auto">auto</option>
+            <option value="code">code</option>
+            <option value="domain">domain</option>
+            <option value="troubleshoot">troubleshoot</option>
+            <option value="reference">reference</option>
+          </select>
+          <label class="block text-xs text-slate-500 mb-1">Query mode</label>
+          <select id="chatMode" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm mb-3">
+            <option value="semantic">semantic</option>
+            <option value="concept">concept</option>
+            <option value="codebase">codebase</option>
+          </select>
+          <label class="block text-xs text-slate-500 mb-1">Domain filter</label>
+          <input id="chatDomain" type="text" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm mb-3" placeholder="optional" />
+          <label class="block text-xs text-slate-500 mb-1">Answer model (how replies are written)</label>
+          <select id="chatLlmProvider" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm mb-2">
+            <option value="ollama" selected>Local Ollama (same PC)</option>
+            <option value="anthropic">Claude (Anthropic API)</option>
+            <option value="deepseek">DeepSeek (API)</option>
+          </select>
+          <div id="rowApiKey" class="hidden mb-3 space-y-1">
+            <label class="block text-xs text-slate-500">API key (sent only to your server; not stored on our side)</label>
+            <input id="chatApiKey" type="password" autocomplete="off" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm font-mono" placeholder="sk-ant-… or sk-…" />
+            <label class="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+              <input type="checkbox" id="chatRememberKey" class="rounded border-slate-600" /> Remember in this browser (local storage)
+            </label>
+          </div>
+          <label class="block text-xs text-slate-500 mb-1">Model name</label>
+          <input id="chatLlmModel" type="text" value="qwen2.5-coder:32b" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm font-mono mb-1" />
+          <p id="chatModelHint" class="text-xs text-slate-600 mb-3">Ollama: pull with <span class="font-mono">ollama pull qwen2.5-coder:32b</span></p>
+          <label class="flex items-center gap-2 cursor-pointer text-sm mb-2">
+            <input type="checkbox" id="chatUseLlm" checked class="rounded border-slate-600" /> Chat (LLM answer)
+          </label>
+          <p class="text-xs text-slate-600">Search still uses local Ollama embeddings. Start Ollama before chatting. Retrieved context appears below each answer.</p>
+        </aside>
+      </section>
+
+      <!-- Agent tab -->
+      <section id="panel-agent" class="hidden flex-1 flex min-h-0">
+        <div class="flex-1 flex flex-col min-w-0 border-r border-slate-800">
+          <div id="agentOutput" class="flex-1 overflow-y-auto p-4 space-y-3 chat-scroll"></div>
+          <div class="p-4 border-t border-slate-800 bg-slate-900/50">
+            <div class="flex gap-2">
+              <textarea id="agentInput" rows="3" class="flex-1 rounded-xl bg-slate-950 border border-slate-700 px-4 py-3 text-sm resize-none focus:ring-2 focus:ring-violet-600 focus:border-transparent font-mono" placeholder="Describe a task for the agent&#10;e.g. &quot;Refactor the auth module and run the tests&quot;"></textarea>
+              <div class="flex flex-col gap-2 self-end">
+                <button type="button" id="btnRunAgent" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 font-semibold text-white shadow-lg shadow-violet-900/30">Run Agent</button>
+                <button type="button" id="btnCancelAgent" class="px-6 py-2 rounded-xl bg-red-900/40 border border-red-800/60 text-red-300 hover:bg-red-900/70 text-sm" disabled>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="w-full max-w-xs shrink-0 bg-slate-900/30 border-l border-slate-800 overflow-y-auto hidden md:flex flex-col">
+          <div class="p-4 border-b border-slate-800">
+            <div id="agentStatusBadge" class="px-3 py-2 rounded-lg bg-slate-800 text-slate-400 text-xs font-mono text-center">Idle</div>
+          </div>
+          <div class="p-4 space-y-3">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Agent Settings</h2>
+            <label class="block text-xs text-slate-500 mb-1">LLM Provider</label>
+            <select id="agentLlmProvider" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm mb-2">
+              <option value="ollama" selected>Local Ollama</option>
+              <option value="anthropic">Claude (Anthropic)</option>
+              <option value="deepseek">DeepSeek (API)</option>
+            </select>
+            <div id="agentRowApiKey" class="hidden mb-2 space-y-1">
+              <label class="block text-xs text-slate-500">API key</label>
+              <input id="agentApiKey" type="password" autocomplete="off" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm font-mono" placeholder="sk-…" />
+            </div>
+            <label class="block text-xs text-slate-500 mb-1">Model</label>
+            <input id="agentLlmModel" type="text" value="qwen2.5-coder:32b" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm font-mono mb-2" />
+            <label class="block text-xs text-slate-500 mb-1">Max iterations</label>
+            <input type="range" id="agentMaxIter" min="1" max="25" value="10" class="w-full accent-violet-500" />
+            <div class="text-right text-xs text-slate-400 mb-3"><span id="agentMaxIterVal">10</span></div>
+            <label class="block text-xs text-slate-500 mb-1">Workspace override (optional, absolute path on server)</label>
+            <input id="agentWorkspaceOverride" type="text" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-[11px] font-mono mb-2" placeholder="" title="Leave empty to use default below" />
+            <label class="block text-xs text-slate-500 mb-1">Default workspace (from server)</label>
+            <div id="agentWorkspaceLine" class="rounded-lg border border-slate-700 bg-slate-950/80 px-2 py-2 text-[11px] font-mono text-slate-400 break-all" title="">Loading…</div>
+            <div id="agentInfraLine" class="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+              <span id="agentChipShell" class="px-2 py-0.5 rounded bg-slate-800 text-slate-500">Shell: …</span>
+              <span id="agentChipOllama" class="px-2 py-0.5 rounded bg-slate-800 text-slate-500">Ollama: …</span>
+            </div>
+            <p class="text-[10px] text-slate-600 mt-1 leading-relaxed">Empty override uses <code class="text-slate-500">RAG_AGENT_WORKSPACE</code> or repo root. Shell can be disabled with <code class="text-slate-500">RAG_AGENT_ALLOW_SHELL=0</code> (not a full sandbox either way).</p>
+          </div>
+          <div class="flex-1 p-4 border-t border-slate-800 overflow-y-auto">
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Action Timeline</h2>
+            <div id="agentTimeline" class="space-y-2 text-xs"></div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let browseRel = '';
+    let chatHistory = [];
+    const MAX_INGEST_LINES = 550;
+
+    function mdToSafeHtml(src) {
+      if (!src) return '';
+      const raw = marked.parse(String(src));
+      if (window.DOMPurify && typeof DOMPurify.sanitize === 'function') {
+        return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+      }
+      return raw;
+    }
+
+    async function formatApiError(res) {
+      try {
+        const j = await res.json();
+        const d = j.detail;
+        if (typeof d === 'string') return d;
+        if (Array.isArray(d)) {
+          return d
+            .map((x) => {
+              const loc = Array.isArray(x.loc) ? x.loc.join('.') : '';
+              const m = x.msg || x.message || '';
+              return [loc, m].filter(Boolean).join(' — ') || JSON.stringify(x);
+            })
+            .join(' · ');
+        }
+        if (typeof j.message === 'string') return j.message;
+        return JSON.stringify(j);
+      } catch (e) {
+        return res.statusText || String(res.status);
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function appendTerminalLine(el, line) {
+      let t = el.textContent;
+      t += line + '\n';
+      const lines = t.split('\n');
+      if (lines.length > MAX_INGEST_LINES) {
+        t = '… (older log lines removed so the page stays fast) …\n' + lines.slice(-MAX_INGEST_LINES).join('\n');
+      }
+      el.textContent = t;
+    }
+
+    function appendChatError(message) {
+      const wrap = document.createElement('div');
+      wrap.className = 'flex justify-start';
+      const bubble = document.createElement('div');
+      bubble.className =
+        'max-w-[85%] rounded-2xl rounded-bl-md bg-slate-800 border border-red-900/50 px-4 py-3 text-sm text-red-300';
+      bubble.textContent = message;
+      wrap.appendChild(bubble);
+      $('chatMessages').appendChild(wrap);
+      $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+    }
+
+    async function parseSSE(response, onEvent) {
+      const reader = response.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 2);
+          if (!block || block.startsWith(':')) continue;
+          for (const line of block.split('\n')) {
+            if (line.startsWith('data:')) {
+              const raw = line.slice(5).trim();
+              try {
+                onEvent(JSON.parse(raw));
+              } catch (e) { console.warn('SSE parse', e); }
+            }
+          }
+        }
+      }
+    }
+
+    async function loadStatus() {
+      try {
+        const r = await fetch('/api/status');
+        if (!r.ok) {
+          $('dbBadge').textContent = await formatApiError(r);
+          $('ingestBanner').classList.remove('show');
+          const envEl = $('ragGuiDbEnvLine');
+          if (envEl) {
+            envEl.textContent = 'RAG_GUI_DB_PATH: —';
+            envEl.title = '';
+          }
+          const pnl = $('ragGuiDbPathPanel');
+          if (pnl) pnl.textContent = 'Could not load status (see DB badge).';
+          return;
+        }
+        const j = await r.json();
+        const eff = j.db_path || '';
+        const src = j.db_path_source === 'env' ? 'from RAG_GUI_DB_PATH' : 'default path';
+        $('dbBadge').textContent = 'DB: ' + eff;
+        $('dbBadge').title = eff + (j.rag_gui_db_path ? '\nRAG_GUI_DB_PATH=' + j.rag_gui_db_path : '\n(RAG_GUI_DB_PATH unset)');
+        const envLine = j.rag_gui_db_path
+          ? 'RAG_GUI_DB_PATH=' + j.rag_gui_db_path
+          : 'RAG_GUI_DB_PATH: (not set)';
+        $('ragGuiDbEnvLine').textContent = envLine;
+        $('ragGuiDbEnvLine').title = envLine + ' · effective: ' + eff + ' (' + src + ')';
+        const panel = $('ragGuiDbPathPanel');
+        if (panel) {
+          if (j.rag_gui_db_path) {
+            panel.innerHTML =
+              '<span class="text-emerald-400/90">Set</span> → <span class="text-slate-300">' +
+              escapeHtml(j.rag_gui_db_path) +
+              '</span><br /><span class="text-slate-500 mt-1 inline-block">Resolved DB: ' +
+              escapeHtml(eff) +
+              '</span>';
+          } else {
+            panel.innerHTML =
+              '<span class="text-slate-500">Not set</span> — using default <span class="text-slate-300">Studio-Portable-RAG/VectorDB</span>.<br /><span class="text-slate-500 mt-1 inline-block">Resolved DB: ' +
+              escapeHtml(eff) +
+              '</span>';
+          }
+        }
+        $('statusPanel').textContent = j.status || '';
+        $('statusPanel').classList.remove('hidden');
+        const ban = $('ingestBanner');
+        if (j.ingest_running) {
+          ban.textContent =
+            'Ingestion is running — search and chat are paused until it finishes.';
+          ban.classList.add('show');
+        } else if (j.agent_running) {
+          ban.textContent =
+            'An agent session is running — ingestion is blocked until it finishes.';
+          ban.classList.add('show');
+        } else {
+          ban.classList.remove('show');
+        }
+        const aw = $('agentWorkspaceLine');
+        const ao = $('agentWorkspaceOverride');
+        if (aw && j.agent_default_workspace != null) {
+          aw.textContent = j.agent_default_workspace;
+          aw.title =
+            (j.rag_agent_workspace_env
+              ? 'RAG_AGENT_WORKSPACE=' + j.rag_agent_workspace_env
+              : 'RAG_AGENT_WORKSPACE not set (using repo root)') +
+            ' · effective: ' +
+            j.agent_default_workspace;
+          if (ao && !ao.value.trim()) {
+            ao.placeholder = 'Default: ' + j.agent_default_workspace;
+          }
+        }
+        const sh = $('agentChipShell');
+        if (sh && typeof j.agent_shell_enabled === 'boolean') {
+          sh.textContent = j.agent_shell_enabled ? 'Shell: enabled' : 'Shell: disabled';
+          sh.className =
+            'px-2 py-0.5 rounded text-[10px] ' +
+            (j.agent_shell_enabled ? 'bg-slate-800 text-amber-200/90' : 'bg-slate-800 text-slate-400');
+        }
+        const om = $('agentChipOllama');
+        if (om && typeof j.ollama_reachable === 'boolean') {
+          om.textContent = j.ollama_reachable ? 'Ollama: reachable' : 'Ollama: down';
+          om.className =
+            'px-2 py-0.5 rounded text-[10px] ' +
+            (j.ollama_reachable ? 'bg-slate-800 text-emerald-400/90' : 'bg-red-950/80 text-red-300');
+        }
+      } catch (e) {
+        $('dbBadge').textContent = 'Status error';
+        const envEl = $('ragGuiDbEnvLine');
+        if (envEl) {
+          envEl.textContent = 'RAG_GUI_DB_PATH: —';
+          envEl.title = '';
+        }
+        const pnl = $('ragGuiDbPathPanel');
+        if (pnl) pnl.textContent = 'Network or server error loading status.';
+      }
+    }
+
+    async function loadBrowse() {
+      const q = new URLSearchParams({ path: browseRel });
+      const r = await fetch('/api/browse?' + q);
+      const j = await r.json();
+      $('browsePath').textContent = j.root + (browseRel ? '/' + browseRel : '');
+      const sel = $('browseList');
+      sel.innerHTML = '';
+      const list = j.entries || [];
+      for (const e of list) {
+        const opt = document.createElement('option');
+        opt.value = e.path;
+        opt.textContent = (e.type === 'directory' ? '📁 ' : '📄 ') + e.name;
+        opt.dataset.type = e.type;
+        sel.appendChild(opt);
+      }
+      if (list.length === 0) {
+        const opt = document.createElement('option');
+        opt.disabled = true;
+        opt.textContent =
+          '(Nothing listed — this folder is empty, or only hidden files exist. Add a project folder here, or type another path below, e.g. …/DomainRAG/Studio-Portable-RAG/DomainDocs)';
+        sel.appendChild(opt);
+      }
+    }
+
+    function switchTab(name) {
+      document.querySelectorAll('.tab-btn').forEach((b) => {
+        const on = b.dataset.tab === name;
+        b.classList.toggle('bg-violet-600', on);
+        b.classList.toggle('text-white', on);
+        b.classList.toggle('text-slate-400', !on);
+        b.classList.toggle('hover:text-white', !on);
+        b.classList.toggle('hover:bg-slate-800/80', !on);
+      });
+      $('panel-ingest').classList.toggle('hidden', name !== 'ingest');
+      $('panel-chat').classList.toggle('hidden', name !== 'chat');
+      $('panel-chat').classList.toggle('flex', name === 'chat');
+      $('panel-agent').classList.toggle('hidden', name !== 'agent');
+      $('panel-agent').classList.toggle('flex', name === 'agent');
+    }
+
+    document.querySelectorAll('.tab-btn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+    $('browseUp').onclick = () => {
+      const parts = browseRel.split('/').filter(Boolean);
+      parts.pop();
+      browseRel = parts.join('/');
+      loadBrowse();
+    };
+    $('browseList').ondblclick = () => {
+      const sel = $('browseList');
+      const opt = sel.options[sel.selectedIndex];
+      if (!opt || opt.dataset.type !== 'directory') return;
+      browseRel = opt.value;
+      loadBrowse();
+    };
+    $('btnUseSource').onclick = () => {
+      $('ingestSource').value = $('browsePath').textContent.trim();
+    };
+
+    $('btnRefreshStatus').onclick = loadStatus;
+    $('chatTopK').oninput = () => { $('chatTopKVal').textContent = $('chatTopK').value; };
+
+    const MODEL_HINTS = {
+      ollama: 'Ollama default: qwen2.5-coder:32b — run: ollama pull qwen2.5-coder:32b',
+      anthropic: 'Claude examples: claude-sonnet-4-20250514, claude-3-5-sonnet-20241022',
+      deepseek: 'DeepSeek examples: deepseek-chat, deepseek-coder',
+    };
+
+    function syncLlmProviderUi() {
+      const p = $('chatLlmProvider').value;
+      $('rowApiKey').classList.toggle('hidden', p === 'ollama');
+      $('chatModelHint').textContent = MODEL_HINTS[p] || '';
+      if (p === 'anthropic') {
+        const k = localStorage.getItem('rag_dash_key_anthropic');
+        if (k && !$('chatApiKey').value) $('chatApiKey').value = k;
+      } else if (p === 'deepseek') {
+        const k = localStorage.getItem('rag_dash_key_deepseek');
+        if (k && !$('chatApiKey').value) $('chatApiKey').value = k;
+      }
+    }
+    $('chatLlmProvider').onchange = syncLlmProviderUi;
+
+    $('btnRunIngest').onclick = async () => {
+      const term = $('ingestTerminal');
+      term.textContent = '';
+      const body = {
+        mode: $('ingestMode').value || null,
+        source: $('ingestSource').value.trim() || null,
+        domain: $('ingestDomain').value.trim() || 'general',
+        collection: $('ingestCollection').value.trim() || null,
+        db_path: $('ingestDbPath').value.trim() || null,
+        git_diff: $('optGitDiff').checked,
+        git_diff_base: $('ingestGitBase').value.trim() || null,
+        concept_registry: $('ingestConceptReg').value.trim() || null,
+        dry_run: $('optDryRun').checked,
+        force: $('optForce').checked,
+        clean_stale: $('optCleanStale').checked,
+        recreate_collection: $('optRecreate').checked,
+        mib_keep_deprecated: $('optMibDep').checked,
+        verbose: $('optVerbose').checked,
+      };
+      $('btnRunIngest').disabled = true;
+      $('ingestSpinner').classList.remove('hidden');
+      try {
+        const res = await fetch('/api/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.status === 409) {
+          appendTerminalLine(term, 'Another ingest is already running.');
+          return;
+        }
+        await parseSSE(res, (data) => {
+          if (data.line != null) appendTerminalLine(term, data.line);
+          if (data.done) {
+            appendTerminalLine(term, `--- finished (exit code ${data.exit_code}) ---`);
+            term.scrollTop = term.scrollHeight;
+            loadStatus();
+          }
+          if (data.error) appendTerminalLine(term, 'ERROR: ' + data.error);
+          term.scrollTop = term.scrollHeight;
+        });
+      } finally {
+        $('btnRunIngest').disabled = false;
+        $('ingestSpinner').classList.add('hidden');
+      }
+    };
+
+    $('btnCancelIngest').onclick = async () => {
+      await fetch('/api/ingest/cancel', { method: 'POST' });
+    };
+
+    function appendChat(role, mainMd, contextMdRaw) {
+      const wrap = document.createElement('div');
+      wrap.className = role === 'user' ? 'flex justify-end' : 'flex justify-start';
+      const bubble = document.createElement('div');
+      bubble.className = role === 'user'
+        ? 'max-w-[85%] rounded-2xl rounded-br-md bg-violet-600/90 text-white px-4 py-3 text-sm'
+        : 'max-w-[85%] rounded-2xl rounded-bl-md bg-slate-800 border border-slate-700 px-4 py-3 text-sm prose prose-invert prose-sm max-w-none';
+      if (role === 'user') bubble.textContent = mainMd;
+      else bubble.innerHTML = mdToSafeHtml(mainMd);
+      wrap.appendChild(bubble);
+      $('chatMessages').appendChild(wrap);
+      if (contextMdRaw && role === 'assistant') {
+        const acc = document.createElement('details');
+        acc.className = 'max-w-[85%] mt-2 ml-0 rounded-lg border border-slate-700 bg-slate-900/80 text-xs';
+        acc.innerHTML =
+          '<summary class="cursor-pointer px-3 py-2 text-slate-400 font-medium">Retrieved context</summary><div class="context-md p-3 border-t border-slate-800 text-slate-300 overflow-x-auto"></div>';
+        acc.querySelector('.context-md').innerHTML = mdToSafeHtml(contextMdRaw);
+        $('chatMessages').appendChild(acc);
+      }
+      $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+      if (window.hljs) hljs.highlightAll();
+    }
+
+    $('btnSendChat').onclick = async () => {
+      const text = $('chatInput').value.trim();
+      if (!text) return;
+      $('chatInput').value = '';
+      appendChat('user', text);
+
+      const payload = {
+        query: text,
+        mode: $('chatMode').value,
+        search_type: $('chatSearchType').value,
+        domain: $('chatDomain').value.trim(),
+        repo: '',
+        top_k: parseInt($('chatTopK').value, 10),
+        chat: $('chatUseLlm').checked,
+        llm_provider: $('chatLlmProvider').value,
+        llm_model: $('chatLlmModel').value.trim() || 'qwen2.5-coder:32b',
+        api_key: $('chatApiKey').value.trim(),
+        system_prompt: '',
+        timeout: 120,
+        history: chatHistory,
+      };
+      if ($('chatRememberKey').checked && $('chatLlmProvider').value === 'anthropic' && payload.api_key) {
+        localStorage.setItem('rag_dash_key_anthropic', payload.api_key);
+      }
+      if ($('chatRememberKey').checked && $('chatLlmProvider').value === 'deepseek' && payload.api_key) {
+        localStorage.setItem('rag_dash_key_deepseek', payload.api_key);
+      }
+
+      if (!payload.chat) {
+        try {
+          const res = await fetch('/api/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            appendChatError(await formatApiError(res));
+            return;
+          }
+          const j = await res.json();
+          const md = j.context_markdown || '';
+          const searchedQ = j.search_query || '';
+          const brief = j.no_hits
+            ? 'No matching chunks found.'
+            : searchedQ && searchedQ !== text
+              ? 'Hybrid search results (searched: "' +
+                escapeHtml(searchedQ) +
+                '") — open **Retrieved context** below.'
+              : 'Hybrid search results — open **Retrieved context** below.';
+          appendChat('assistant', brief, j.no_hits ? '' : md);
+          chatHistory.push({ role: 'user', content: text });
+          chatHistory.push({ role: 'assistant', content: j.no_hits ? 'No matching chunks.' : md.slice(0, 500) });
+          if (chatHistory.length > 20) chatHistory.splice(0, chatHistory.length - 20);
+        } catch (e) {
+          appendChatError(e.message || String(e));
+        }
+        return;
+      }
+
+      const res = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        appendChatError(await formatApiError(res));
+        return;
+      }
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const j = await res.json();
+        const ctx = j.context_markdown || '';
+        const searchedQ = j.search_query || '';
+        let brief = '';
+        if (j.no_hits) {
+          brief =
+            searchedQ && searchedQ !== text
+              ? 'No matching chunks found (searched: "' + escapeHtml(searchedQ) + '").'
+              : 'No matching chunks found.';
+        } else {
+          brief = ctx
+            ? searchedQ && searchedQ !== text
+              ? 'Here is what was retrieved (searched: "' + escapeHtml(searchedQ) + '").'
+              : 'Here is what was retrieved.'
+            : 'No answer.';
+        }
+        appendChat('assistant', brief, j.no_hits || !ctx ? '' : ctx);
+        chatHistory.push({ role: 'user', content: text });
+        chatHistory.push({ role: 'assistant', content: (brief || ctx).slice(0, 500) });
+        if (chatHistory.length > 20) chatHistory.splice(0, chatHistory.length - 20);
+        return;
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'flex justify-start w-full flex-col items-start';
+      let agentStatus = null;
+      if (chatHistory.length > 0) {
+        agentStatus = document.createElement('div');
+        agentStatus.className = 'text-xs text-cyan-400/80 font-mono mb-2 flex items-center gap-2 max-w-[85%]';
+        agentStatus.innerHTML =
+          '<span class="dr-spin inline-block w-3 h-3 border border-cyan-400 border-t-transparent rounded-full shrink-0"></span> Agent thinking\u2026';
+        wrap.appendChild(agentStatus);
+      }
+      const bubble = document.createElement('div');
+      bubble.className = 'max-w-[85%] rounded-2xl rounded-bl-md bg-slate-800 border border-slate-700 px-4 py-3 text-sm prose prose-invert prose-sm max-w-none';
+      bubble.innerHTML = mdToSafeHtml('…');
+      wrap.appendChild(bubble);
+      $('chatMessages').appendChild(wrap);
+      let full = '';
+      let gotFirstToken = false;
+      let sseStreamError = false;
+      try {
+        await parseSSE(res, (data) => {
+          if (data.type === 'agent_action' && data.action === 'search') {
+            if (!agentStatus) {
+              agentStatus = document.createElement('div');
+              agentStatus.className =
+                'text-xs text-cyan-400/80 font-mono mb-2 flex items-center gap-2 max-w-[85%]';
+              wrap.insertBefore(agentStatus, bubble);
+            }
+            const wasRewritten = data.query !== data.original;
+            agentStatus.innerHTML = wasRewritten
+              ? '<span class="text-cyan-400 shrink-0">&#128269;</span><span>Searching for: <span class="text-slate-200">"' +
+                escapeHtml(data.query) +
+                '"</span></span>'
+              : '<span class="text-cyan-400 shrink-0">&#128269;</span><span>Searching codebase\u2026</span>';
+            $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+            return;
+          }
+          if (data.error) {
+            sseStreamError = true;
+            if (agentStatus) {
+              const sp = agentStatus.querySelector('.dr-spin');
+              if (sp) sp.remove();
+            }
+            appendChatError(data.error);
+            return;
+          }
+          if (data.token) {
+            if (!gotFirstToken) {
+              gotFirstToken = true;
+              if (agentStatus) {
+                const sp = agentStatus.querySelector('.dr-spin');
+                if (sp) sp.remove();
+              }
+            }
+            full += data.token;
+            bubble.innerHTML = mdToSafeHtml(full);
+            if (hljs) hljs.highlightAll();
+          }
+          if (data.done) {
+            if (agentStatus && !agentStatus.querySelector('span.text-cyan-400')) {
+              agentStatus.remove();
+            }
+            if (!full.trim()) {
+              bubble.textContent =
+                'No answer from the model. Check that Ollama is running and the model is installed (ollama pull).';
+              bubble.classList.add('text-amber-300');
+            }
+            const ctx = data.context_markdown || '';
+            if (ctx) {
+              const acc = document.createElement('details');
+              acc.className = 'max-w-[85%] mt-2 rounded-lg border border-slate-700 bg-slate-900/80 text-xs';
+              acc.innerHTML =
+                '<summary class="cursor-pointer px-3 py-2 text-slate-400 font-medium">Retrieved context</summary><div class="context-md p-3 border-t border-slate-800 text-slate-300 overflow-x-auto"></div>';
+              const sum = acc.querySelector('summary');
+              if (data.search_query && data.search_query !== text) {
+                sum.innerHTML =
+                  'Retrieved context <span class="text-slate-500 font-normal">(searched: "' +
+                  escapeHtml(data.search_query) +
+                  '")</span>';
+              }
+              acc.querySelector('.context-md').innerHTML = mdToSafeHtml(ctx);
+              $('chatMessages').appendChild(acc);
+              if (hljs) hljs.highlightAll();
+            }
+            chatHistory.push({ role: 'user', content: text });
+            chatHistory.push({
+              role: 'assistant',
+              content: sseStreamError
+                ? '[Response failed — see error above.]'
+                : full.slice(0, 500),
+            });
+            if (chatHistory.length > 20) chatHistory.splice(0, chatHistory.length - 20);
+          }
+        });
+      } finally {
+        if (agentStatus) {
+          const sp = agentStatus.querySelector('.dr-spin');
+          if (sp) sp.remove();
+        }
+        $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+      }
+    };
+
+    // ===== Agent Workspace logic =====
+
+    const TOOL_ICONS = {
+      read_file: '\u{1F4C4}',
+      edit_file: '\u{270F}\uFE0F',
+      create_file: '\u{1F4DD}',
+      run_terminal_command: '\u{1F4BB}',
+      search_codebase: '\u{1F50D}',
+      unknown: '\u{2753}',
+    };
+
+    let agentRunning = false;
+
+    $('agentMaxIter').oninput = () => { $('agentMaxIterVal').textContent = $('agentMaxIter').value; };
+
+    $('agentLlmProvider').onchange = () => {
+      const p = $('agentLlmProvider').value;
+      $('agentRowApiKey').classList.toggle('hidden', p === 'ollama');
+      if (p === 'anthropic') {
+        const k = localStorage.getItem('rag_dash_key_anthropic');
+        if (k && !$('agentApiKey').value) $('agentApiKey').value = k;
+      } else if (p === 'deepseek') {
+        const k = localStorage.getItem('rag_dash_key_deepseek');
+        if (k && !$('agentApiKey').value) $('agentApiKey').value = k;
+      }
+    };
+
+    function agentAppendBlock(html, cls) {
+      const el = document.createElement('div');
+      el.className = cls || '';
+      el.innerHTML = html;
+      $('agentOutput').appendChild(el);
+      $('agentOutput').scrollTop = $('agentOutput').scrollHeight;
+      return el;
+    }
+
+    function agentAppendToolResult(toolName, success, output) {
+      const det = document.createElement('details');
+      det.className = 'rounded-lg border text-xs mb-1 ' + (success ? 'border-slate-700 bg-slate-900/60' : 'border-red-900/50 bg-red-950/30');
+      if (!success) det.open = true;
+      const icon = success ? '<span class="text-emerald-400">OK</span>' : '<span class="text-red-400">FAIL</span>';
+      det.innerHTML =
+        '<summary class="cursor-pointer px-3 py-2 text-slate-400 font-mono font-medium">' +
+        icon + ' ' + escapeHtml(toolName) +
+        '</summary><pre class="p-3 border-t border-slate-800 text-slate-300 overflow-x-auto whitespace-pre-wrap font-mono text-[11px]">' +
+        escapeHtml(output) + '</pre>';
+      $('agentOutput').appendChild(det);
+      $('agentOutput').scrollTop = $('agentOutput').scrollHeight;
+    }
+
+    function agentTimelineAdd(toolName, target, iteration, success) {
+      const item = document.createElement('div');
+      const sClass = success === undefined ? '' : success ? ' success' : ' fail';
+      item.className = 'agent-timeline-item py-1' + sClass;
+      const icon = TOOL_ICONS[toolName] || TOOL_ICONS.unknown;
+      const tgt = target ? ': ' + escapeHtml(String(target).slice(0, 40)) : '';
+      item.innerHTML =
+        '<span class="text-slate-500 mr-1">#' + iteration + '</span>' +
+        '<span>' + icon + ' ' + escapeHtml(toolName) + '</span>' +
+        '<span class="text-slate-500 block truncate">' + tgt + '</span>';
+      $('agentTimeline').appendChild(item);
+      $('agentTimeline').scrollTop = $('agentTimeline').scrollHeight;
+    }
+
+    function agentSetStatus(text, color) {
+      const badge = $('agentStatusBadge');
+      badge.textContent = text;
+      badge.className = 'px-3 py-2 rounded-lg text-xs font-mono text-center ' + (color || 'bg-slate-800 text-slate-400');
+    }
+
+    function agentShowBanner(type, message) {
+      const colors = {
+        complete: 'bg-emerald-950/60 border-emerald-800 text-emerald-200',
+        failed: 'bg-red-950/60 border-red-800 text-red-200',
+        cancelled: 'bg-amber-950/60 border-amber-800 text-amber-200',
+      };
+      const cls = colors[type] || colors.failed;
+      agentAppendBlock(
+        '<div class="rounded-lg border px-4 py-3 text-sm ' + cls + '">' + escapeHtml(message) + '</div>',
+        'mt-2'
+      );
+    }
+
+    $('btnRunAgent').onclick = async () => {
+      const task = $('agentInput').value.trim();
+      if (!task) return;
+
+      $('agentOutput').innerHTML = '';
+      $('agentTimeline').innerHTML = '';
+      agentSetStatus('Starting...', 'bg-violet-900/60 text-violet-200');
+
+      $('btnRunAgent').disabled = true;
+      $('btnCancelAgent').disabled = false;
+      agentRunning = true;
+
+      const wsOverride = ($('agentWorkspaceOverride') && $('agentWorkspaceOverride').value.trim()) || '';
+      const payload = {
+        task: task,
+        workspace: wsOverride,
+        llm_provider: $('agentLlmProvider').value,
+        llm_model: $('agentLlmModel').value.trim() || 'qwen2.5-coder:32b',
+        api_key: $('agentApiKey').value.trim(),
+        max_iterations: parseInt($('agentMaxIter').value, 10),
+      };
+
+      let tokenEl = null;
+      let tokenBuf = '';
+
+      try {
+        const res = await fetch('/api/agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          agentShowBanner('failed', await formatApiError(res));
+          return;
+        }
+
+        await parseSSE(res, (data) => {
+          if (data.type === 'agent_state') {
+            if (data.status === 'planning') {
+              agentSetStatus('Planning...', 'bg-violet-900/60 text-violet-200');
+            } else if (data.status === 'thinking') {
+              agentSetStatus(
+                'Thinking (' + data.iteration + '/' + data.max + ')...',
+                'bg-cyan-900/60 text-cyan-200'
+              );
+              tokenEl = null;
+              tokenBuf = '';
+            } else if (data.status === 'complete') {
+              agentSetStatus('Complete', 'bg-emerald-900/60 text-emerald-200');
+              agentShowBanner('complete', data.summary || 'Task completed successfully.');
+            } else if (data.status === 'failed') {
+              agentSetStatus('Failed', 'bg-red-900/60 text-red-200');
+              agentShowBanner('failed', data.reason || 'Agent failed.');
+              if (data.rolled_back && data.rolled_back.length > 0) {
+                agentAppendBlock(
+                  '<details class="rounded-lg border border-slate-700 bg-slate-900/60 text-xs mt-1"><summary class="cursor-pointer px-3 py-2 text-slate-400">Rolled back files</summary><pre class="p-3 border-t border-slate-800 text-slate-300 whitespace-pre-wrap font-mono">' +
+                  escapeHtml(data.rolled_back.join('\n')) + '</pre></details>'
+                );
+              }
+            } else if (data.status === 'cancelled') {
+              agentSetStatus('Cancelled', 'bg-amber-900/60 text-amber-200');
+              agentShowBanner('cancelled', 'Agent cancelled. File changes rolled back.');
+            }
+            return;
+          }
+
+          if (data.type === 'agent_action') {
+            agentTimelineAdd(data.tool, data.target, data.iteration);
+            return;
+          }
+
+          if (data.type === 'token') {
+            if (!tokenEl) {
+              tokenEl = document.createElement('div');
+              tokenEl.className = 'prose prose-invert prose-sm max-w-none rounded-xl bg-slate-800/60 border border-slate-700 px-4 py-3 text-sm';
+              $('agentOutput').appendChild(tokenEl);
+            }
+            tokenBuf += data.text;
+            tokenEl.innerHTML = mdToSafeHtml(tokenBuf);
+            $('agentOutput').scrollTop = $('agentOutput').scrollHeight;
+            return;
+          }
+
+          if (data.type === 'tool_result') {
+            agentAppendToolResult(data.tool, data.success, data.output || '');
+            const items = $('agentTimeline').querySelectorAll('.agent-timeline-item');
+            if (items.length > 0) {
+              const last = items[items.length - 1];
+              last.classList.toggle('success', data.success);
+              last.classList.toggle('fail', !data.success);
+            }
+            return;
+          }
+
+          if (data.type === 'error') {
+            agentShowBanner('failed', data.message || 'Unknown error');
+            return;
+          }
+        });
+      } catch (e) {
+        agentShowBanner('failed', 'Connection error: ' + (e.message || String(e)));
+      } finally {
+        $('btnRunAgent').disabled = false;
+        $('btnCancelAgent').disabled = true;
+        agentRunning = false;
+        if (window.hljs) hljs.highlightAll();
+      }
+    };
+
+    $('btnCancelAgent').onclick = async () => {
+      $('btnCancelAgent').disabled = true;
+      try {
+        await fetch('/api/agent/cancel', { method: 'POST' });
+      } catch (e) {
+        console.warn('Cancel failed:', e);
+      }
+    };
+
+    loadStatus();
+    loadBrowse();
+    switchTab('ingest');
+    syncLlmProviderUi();
+  </script>
+</body>
+</html>

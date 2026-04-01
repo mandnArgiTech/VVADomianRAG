@@ -16,7 +16,10 @@ param(
     [string]$Repo = "",        # Optional: ingest only this sub-folder of the source folder
     [string]$Source = "",      # Optional: source folder or file
     [string]$DBPath = "",      # Optional: VectorDB folder
-    [int]$Workers = 2          # Parallel embedding threads
+    [int]$Workers = 2,          # Parallel embedding threads
+    [switch]$GitDiff,
+    [string]$GitDiffBase = "",
+    [string]$ConceptRegistry = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -243,6 +246,13 @@ try {
     if ($CleanStale) { [void]$ingestArgs.Add("--clean-stale") }
     if ($RecreateCollection) { [void]$ingestArgs.Add("--recreate-collection") }
     if ($Verbose) { [void]$ingestArgs.Add("--verbose") }
+    if ($GitDiff) { [void]$ingestArgs.Add("--git-diff") }
+    if ($GitDiffBase -ne "") {
+        [void]$ingestArgs.Add("--git-diff-base"); [void]$ingestArgs.Add($GitDiffBase)
+    }
+    if ($ConceptRegistry -ne "") {
+        [void]$ingestArgs.Add("--concept-registry"); [void]$ingestArgs.Add($ConceptRegistry)
+    }
 
     $ingestProc = Start-Process -FilePath $pythonExe `
         -ArgumentList ($ingestArgs.ToArray()) `
