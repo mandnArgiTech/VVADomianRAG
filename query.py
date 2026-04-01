@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-query.py — CLI semantic / concept search against Universal Domain RAG (Chroma + Ollama).
-Standalone; does not import mcp_server.
+query.py — Terminal AI agent: hybrid RAG search (BM25 + dense + RRF), optional LLM chat,
+stateful REPL, and rich terminal output. Standalone; does not import mcp_server.
 """
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import argparse
 import json
 import logging
 import os
-import readline
 import signal
 import sys
 import urllib.request
@@ -17,9 +16,43 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    import readline
+except ImportError:  # pragma: no cover
+    readline = None  # type: ignore[assignment]
+
 import chromadb
 from langchain_chroma import Chroma
+from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
+
+from hybrid_search import (
+    HYBRID_AVAILABLE,
+    get_bm25_index,
+    reciprocal_rank_fusion,
+    search_bm25_ranked_ids,
+    stable_doc_id,
+)
+
+try:
+    import ollama as _ollama_mod
+
+    OLLAMA_LIB_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _ollama_mod = None  # type: ignore[assignment]
+    OLLAMA_LIB_AVAILABLE = False
+
+try:
+    from rich.console import Console
+    from rich.live import Live
+    from rich.markdown import Markdown
+
+    RICH_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    Console = None  # type: ignore[misc, assignment]
+    Live = None  # type: ignore[misc, assignment]
+    Markdown = None  # type: ignore[misc, assignment]
+    RICH_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Constants (aligned with mcp_server.py)
@@ -35,6 +68,16 @@ MAX_K = max(1, int(os.environ.get("MCP_MAX_K", "25")))
 RESULT_CHUNK_MAX_CHARS = max(512, int(os.environ.get("MCP_RESULT_CHUNK_MAX_CHARS", "4096")))
 DEFAULT_TIMEOUT = int(os.environ.get("QUERY_CLI_TIMEOUT", "120"))
 HISTORY_FILE = Path.home() / ".rag_query_history"
+
+HYBRID_SEARCH = os.environ.get("HYBRID_SEARCH", "1").strip().lower() not in ("0", "false", "no")
+RRF_K = float(os.environ.get("RRF_K", "60"))
+RAG_CONTEXT_MAX_CHARS = max(4096, int(os.environ.get("RAG_CONTEXT_MAX_CHARS", "32000")))
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a Senior Engineering AI assistant. Answer the user's question using strictly "
+    "the provided context. If the context does not contain enough information, say so "
+    "clearly. Cite sources by file path or document name when possible. Be concise."
+)
 
 LANG_TAG = {
     ".py": "python",
@@ -68,6 +111,65 @@ EXIT_OK = 0
 EXIT_NO_RESULTS = 1
 EXIT_ARG = 2
 EXIT_INFRA = 3
+
+log = logging.getLogger("query")
+
+
+def _resolve_db_abs(db_path: str, cmap: Dict[str, Chroma]) -> str:
+    if db_path.strip():
+        return os.path.abspath(db_path)
+    for vs in cmap.values():
+        pd = getattr(vs, "_persist_directory", None) or getattr(vs, "persist_directory", None)
+        if pd:
+            return os.path.abspath(str(pd))
+    return ""
+
+
+def _hybrid_candidate_cap(k: int, env_var: str) -> int:
+    raw = os.environ.get(env_var, "").strip()
+    if raw.isdigit():
+        return max(1, int(raw))
+    return max(40, k * 4)
+
+
+def _make_console(*, no_color: bool, file=None) -> Any:
+    if not RICH_AVAILABLE or Console is None:
+        return None
+    return Console(no_color=no_color, file=file or sys.stdout)
+
+
+def _print_rich(console: Any, text: str, *, use_markdown: bool = True) -> None:
+    if console and RICH_AVAILABLE and Markdown is not None and use_markdown:
+        console.print(Markdown(text))
+    else:
+        print(text)
+
+
+def _status_spinner(console: Any, message: str) -> Any:
+    if console and RICH_AVAILABLE:
+        return console.status(message, spinner="dots")
+
+    class _NoOp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+    return _NoOp()
+
+
+def _stream_chunk_text(chunk: Any) -> str:
+    if chunk is None:
+        return ""
+    msg = getattr(chunk, "message", None)
+    if msg is None and isinstance(chunk, dict):
+        msg = chunk.get("message")
+    if msg is None:
+        return ""
+    if isinstance(msg, dict):
+        return str(msg.get("content") or "")
+    return str(getattr(msg, "content", None) or "")
 
 
 def detect_embedding_model(db_path: str) -> str:
@@ -201,6 +303,10 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
         header.append(f"**File:** {repo + '/' + src if repo else src}")
         if cname:
             header.append(f"**Component:** {cname} ({ctype})")
+        dep = (meta.get("dependencies") or "").strip()
+        if dep:
+            dshow = dep if len(dep) <= 500 else dep[:500] + "…"
+            header.append(f"**dependencies:** {dshow}")
         lang = LANG_TAG.get(ext, "")
         fence = _fence_for(content)
         return "### Code\n" + "\n".join(header) + f"\n\n{fence}{lang}\n{content}\n{fence}"
@@ -283,43 +389,119 @@ def _sync_multi_search(
     domain: str,
     repo_filter: str,
     cmap: Dict[str, Chroma],
+    db_path: str = "",
 ) -> List[SearchHit]:
     if not cmap:
         raise RuntimeError("ChromaDB has no collections.")
     targets = _select_collection_names(cmap, search_type, domain)
-    merged: List[Tuple[Any, Optional[float], str, str]] = []
     per = max(1, k // max(1, len(targets)) if targets else k)
+    use_hybrid = HYBRID_SEARCH and HYBRID_AVAILABLE and bool(_resolve_db_abs(db_path, cmap))
+    if HYBRID_SEARCH and not HYBRID_AVAILABLE:
+        log.warning(
+            "HYBRID_SEARCH is on but rank-bm25 is not installed; using dense-only. pip install rank-bm25"
+        )
+
+    def _hit(doc: Any, score: Optional[float], st: str, cname: str) -> SearchHit:
+        return SearchHit(
+            content=doc.page_content or "",
+            score=float(score) if score is not None else None,
+            source_type=st,
+            metadata=dict(doc.metadata or {}),
+            collection=cname,
+        )
+
+    if not use_hybrid:
+        merged: List[Tuple[Any, Optional[float], str, str]] = []
+        for name in targets:
+            vs = cmap[name]
+            flt: Optional[Dict[str, str]] = None
+            if repo_filter.strip():
+                flt = {"repository": repo_filter.strip()}
+            try:
+                try:
+                    pairs = vs.similarity_search_with_score(query, k=per, filter=flt)
+                except TypeError:
+                    pairs = vs.similarity_search_with_score(query, k=per)
+            except Exception as exc:
+                log.warning("Skipping collection %s: %s", name, exc)
+                continue
+            for doc, score in pairs:
+                meta = doc.metadata or {}
+                st = _infer_source_type(meta)
+                if search_type.lower() == "troubleshoot":
+                    ct = (meta.get("content_type") or "").lower()
+                    if ct not in ("edge_case", "workaround", "bug_report"):
+                        continue
+                merged.append((doc, score, st, name))
+        merged.sort(key=lambda x: x[1] if x[1] is not None else 1e9)
+        return [_hit(doc, score, st, cn) for doc, score, st, cn in merged[:k]]
+
+    db_abs = _resolve_db_abs(db_path, cmap)
+    dense_cap = _hybrid_candidate_cap(k, "HYBRID_DENSE_CANDIDATES")
+    bm25_cap = _hybrid_candidate_cap(k, "HYBRID_BM25_CANDIDATES")
+    fused: List[Tuple[Any, Optional[float], str, str, float]] = []
+
     for name in targets:
         vs = cmap[name]
         flt: Optional[Dict[str, str]] = None
         if repo_filter.strip():
             flt = {"repository": repo_filter.strip()}
         try:
-            pairs = vs.similarity_search_with_score(query, k=per, filter=flt)
-        except TypeError:
-            pairs = vs.similarity_search_with_score(query, k=per)
+            try:
+                pairs = vs.similarity_search_with_score(query, k=dense_cap, filter=flt)
+            except TypeError:
+                pairs = vs.similarity_search_with_score(query, k=dense_cap)
+        except Exception as exc:
+            log.warning("Skipping collection %s: %s", name, exc)
+            continue
+
+        dense_ids: List[str] = []
+        dense_map: Dict[str, Tuple[Any, float]] = {}
         for doc, score in pairs:
+            sid = stable_doc_id(name, doc.metadata or {}, doc.page_content)
+            dense_ids.append(sid)
+            dense_map[sid] = (doc, score)
+
+        bm25_ids: List[str] = []
+        col = getattr(vs, "_collection", None)
+        if col is not None and db_abs:
+            idx = get_bm25_index(db_abs, name)
+            if idx.ensure_loaded(col):
+                bm25_ids = search_bm25_ranked_ids(idx, query, bm25_cap, repo_filter)
+        rank_lists = [dense_ids, bm25_ids] if bm25_ids else [dense_ids]
+        rrf_scores = reciprocal_rank_fusion(rank_lists, k=RRF_K)
+        if not rrf_scores:
+            continue
+
+        bm25_rank = {sid: r for r, sid in enumerate(bm25_ids)}
+        dense_rank = {sid: r for r, sid in enumerate(dense_ids)}
+        sorted_sids = sorted(
+            rrf_scores.keys(),
+            key=lambda sid: (
+                -rrf_scores[sid],
+                bm25_rank.get(sid, 10**9),
+                dense_rank.get(sid, 10**9),
+            ),
+        )
+        idx_ref = get_bm25_index(db_abs, name) if col is not None else None
+        for sid in sorted_sids:
+            if sid in dense_map:
+                doc, _dscore = dense_map[sid]
+            elif idx_ref is not None and sid in idx_ref.id_to_doc:
+                text, meta = idx_ref.id_to_doc[sid]
+                doc = Document(page_content=text, metadata=meta)
+            else:
+                continue
             meta = doc.metadata or {}
             st = _infer_source_type(meta)
             if search_type.lower() == "troubleshoot":
                 ct = (meta.get("content_type") or "").lower()
                 if ct not in ("edge_case", "workaround", "bug_report"):
                     continue
-            merged.append((doc, score, st, name))
-    merged.sort(key=lambda x: x[1] if x[1] is not None else 1e9)
-    out: List[SearchHit] = []
-    for doc, score, st, cname in merged[:k]:
-        meta = dict(doc.metadata or {})
-        out.append(
-            SearchHit(
-                content=doc.page_content or "",
-                score=float(score) if score is not None else None,
-                source_type=st,
-                metadata=meta,
-                collection=cname,
-            )
-        )
-    return out
+            fused.append((doc, None, st, name, rrf_scores[sid]))
+
+    fused.sort(key=lambda x: x[4], reverse=True)
+    return [_hit(doc, score, st, cn) for doc, score, st, cn, _ in fused[:k]]
 
 
 def _concept_parts(concepts_field: str) -> List[str]:
@@ -470,12 +652,16 @@ def format_concept_markdown(hits: List[SearchHit], concept: str) -> str:
     return "\n\n".join(parts)
 
 
-def format_json_output(query: str, hits: List[SearchHit], mode: str) -> str:
-    payload = {
+def format_json_output(
+    query: str, hits: List[SearchHit], mode: str, answer: str = ""
+) -> str:
+    payload: Dict[str, Any] = {
         "query": query,
         "mode": mode,
         "results": [asdict(h) for h in hits],
     }
+    if answer:
+        payload["answer"] = answer
     return json.dumps(payload, indent=2)
 
 
@@ -494,6 +680,203 @@ def format_plain(hits: List[SearchHit]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
+def _build_context_blocks(hits: List[SearchHit]) -> str:
+    blocks: List[str] = []
+    total = 0
+    for i, h in enumerate(hits, 1):
+        src = h.metadata.get("relative_path") or h.metadata.get("source", "?")
+        block = f"[Source {i}: {src} ({h.source_type})]\n{h.content}"
+        if total + len(block) > RAG_CONTEXT_MAX_CHARS:
+            blocks.append(f"\n[... {len(hits) - i + 1} more chunks omitted due to context limit]")
+            break
+        blocks.append(block)
+        total += len(block)
+    return "\n\n---\n\n".join(blocks)
+
+
+def _collect_llm_answer(
+    user_query: str,
+    hits: List[SearchHit],
+    llm_model: str,
+    system_prompt: str,
+    history_messages: Optional[List[Dict[str, str]]] = None,
+) -> str:
+    if not OLLAMA_LIB_AVAILABLE or _ollama_mod is None:
+        print("Warning: ollama package not installed; skipping LLM answer.", file=sys.stderr)
+        return ""
+    context = _build_context_blocks(hits)
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    if history_messages:
+        messages.extend(history_messages)
+    messages.append(
+        {
+            "role": "user",
+            "content": f"Context:\n\n{context}\n\n---\n\nQuestion: {user_query}",
+        }
+    )
+    try:
+        resp = _ollama_mod.chat(model=llm_model, messages=messages, stream=False)
+        msg = getattr(resp, "message", None) or (resp.get("message") if isinstance(resp, dict) else None)
+        if isinstance(msg, dict):
+            return str(msg.get("content") or "")
+        return str(getattr(msg, "content", None) or "")
+    except Exception as exc:
+        err = str(exc).lower()
+        if "not found" in err or "pull" in err:
+            print(
+                f"Error: model {llm_model!r} not found. Run: ollama pull {llm_model}",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Error: LLM call failed: {exc}", file=sys.stderr)
+        return ""
+
+
+def _stream_llm_answer(
+    user_query: str,
+    hits: List[SearchHit],
+    llm_model: str,
+    system_prompt: str,
+    console: Any,
+    history_messages: Optional[List[Dict[str, str]]] = None,
+) -> str:
+    if not OLLAMA_LIB_AVAILABLE or _ollama_mod is None:
+        print("Warning: ollama package not installed; skipping LLM answer.", file=sys.stderr)
+        return ""
+    context = _build_context_blocks(hits)
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    if history_messages:
+        messages.extend(history_messages)
+    messages.append(
+        {
+            "role": "user",
+            "content": f"Context:\n\n{context}\n\n---\n\nQuestion: {user_query}",
+        }
+    )
+    try:
+        stream = _ollama_mod.chat(model=llm_model, messages=messages, stream=True)
+    except Exception as exc:
+        err = str(exc).lower()
+        if "not found" in err or "pull" in err:
+            print(
+                f"Error: model {llm_model!r} not found. Run: ollama pull {llm_model}",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Error: LLM call failed: {exc}", file=sys.stderr)
+        return ""
+
+    parts: List[str] = []
+    try:
+        if console and RICH_AVAILABLE and Live is not None and Markdown is not None:
+            with Live(Markdown(""), console=console, refresh_per_second=12, transient=False) as live:
+                for chunk in stream:
+                    tok = _stream_chunk_text(chunk)
+                    if tok:
+                        parts.append(tok)
+                        live.update(Markdown("".join(parts)))
+        else:
+            for chunk in stream:
+                tok = _stream_chunk_text(chunk)
+                if tok:
+                    parts.append(tok)
+                    print(tok, end="", flush=True)
+            if parts:
+                print()
+    except KeyboardInterrupt:
+        print("\n(generation interrupted)", file=sys.stderr)
+    return "".join(parts)
+
+
+class ConversationMemory:
+    def __init__(self, max_turns: int = 5) -> None:
+        self.max_turns = max(1, max_turns)
+        self.turns: List[Dict[str, str]] = []
+
+    def add_turn(self, raw_query: str, reformulated: str, answer_summary: str) -> None:
+        self.turns.append(
+            {
+                "query": raw_query,
+                "reformulated": reformulated,
+                "answer_summary": answer_summary[:500],
+            }
+        )
+        if len(self.turns) > self.max_turns:
+            self.turns = self.turns[-self.max_turns :]
+
+    def clear(self) -> None:
+        self.turns.clear()
+
+    def is_empty(self) -> bool:
+        return not self.turns
+
+    def recent_context_text(self, n: int = 2) -> str:
+        if not self.turns:
+            return ""
+        lines: List[str] = []
+        for t in self.turns[-n:]:
+            q = t["reformulated"] or t["query"]
+            lines.append(f"Q: {q}")
+            if t.get("answer_summary"):
+                lines.append(f"A: {t['answer_summary']}")
+        return "\n".join(lines)
+
+    def show(self) -> str:
+        if not self.turns:
+            return "(no conversation history)"
+        lines: List[str] = []
+        for i, t in enumerate(self.turns, 1):
+            q = t["query"]
+            r = t["reformulated"]
+            extra = f"  → search: {r}" if r and r != q else ""
+            lines.append(f"  {i}. {q}{extra}")
+        return "\n".join(lines)
+
+    def history_messages_for_llm(self) -> List[Dict[str, str]]:
+        out: List[Dict[str, str]] = []
+        for t in self.turns[-3:]:
+            out.append({"role": "user", "content": t["reformulated"] or t["query"]})
+            if t.get("answer_summary"):
+                out.append({"role": "assistant", "content": t["answer_summary"]})
+        return out
+
+
+def reformulate_query(raw_query: str, memory: ConversationMemory, llm_model: str) -> str:
+    if memory.is_empty():
+        return raw_query
+    if len(raw_query.split()) > 8:
+        return raw_query
+    if not OLLAMA_LIB_AVAILABLE or _ollama_mod is None:
+        return raw_query
+    ctx = memory.recent_context_text(2)
+    prompt = (
+        "Rewrite this follow-up into ONE standalone search query (under 20 words) "
+        "that someone could type without prior context.\n\n"
+        f"Prior turns:\n{ctx}\n\nFollow-up: {raw_query}\n\nStandalone query:"
+    )
+    try:
+        resp = _ollama_mod.chat(
+            model=llm_model,
+            messages=[{"role": "user", "content": prompt}],
+            stream=False,
+            options={"num_predict": 80},
+        )
+        msg = getattr(resp, "message", None) or (
+            resp.get("message") if isinstance(resp, dict) else None
+        )
+        text = ""
+        if isinstance(msg, dict):
+            text = str(msg.get("content") or "").strip()
+        else:
+            text = str(getattr(msg, "content", None) or "").strip()
+        text = text.split("\n")[0].strip().strip('"').strip("'")
+        if 3 < len(text) < 200:
+            return text
+    except Exception:
+        pass
+    return raw_query
+
+
 class SessionState:
     def __init__(self, ns: argparse.Namespace) -> None:
         self.domain = ns.domain or ""
@@ -503,6 +886,12 @@ class SessionState:
         self.out_format = ns.format
         self.mode = ns.mode  # semantic | concept | codebase
         self.timeout = int(ns.timeout)
+        self.chat = bool(getattr(ns, "chat", False))
+        env_llm = (os.environ.get("RAG_LLM_MODEL", "") or "").strip()
+        self.llm_model = (getattr(ns, "llm_model", None) or env_llm or "llama3").strip()
+        sp = (getattr(ns, "system_prompt", None) or "").strip()
+        self.system_prompt = sp if sp else DEFAULT_SYSTEM_PROMPT
+        self.history_depth = max(1, int(getattr(ns, "history_depth", 5)))
 
     def apply_set(self, key: str, value: str) -> str:
         k = key.lower().strip()
@@ -534,6 +923,18 @@ class SessionState:
                 self.timeout = max(1, int(v))
             except ValueError:
                 return "timeout must be an integer"
+        elif k in ("history_depth", "history-depth"):
+            try:
+                self.history_depth = max(1, int(v))
+            except ValueError:
+                return "history_depth must be an integer"
+        elif k == "chat":
+            if v.lower() in ("1", "true", "yes", "on"):
+                self.chat = True
+            elif v.lower() in ("0", "false", "no", "off"):
+                self.chat = False
+            else:
+                return "chat must be on or off"
         else:
             return f"Unknown key: {key}"
         return f"OK: {k} = {v!r}"
@@ -542,11 +943,14 @@ class SessionState:
         return (
             f"domain={self.domain!r} repo={self.repo!r} k={self.top_k} "
             f"search_type={self.search_type!r} format={self.out_format!r} "
-            f"mode={self.mode!r} timeout={self.timeout}"
+            f"mode={self.mode!r} timeout={self.timeout} chat={self.chat} "
+            f"llm_model={self.llm_model!r} history_depth={self.history_depth}"
         )
 
 
 def _setup_readline() -> None:
+    if readline is None:
+        return
     try:
         if HISTORY_FILE.exists():
             readline.read_history_file(str(HISTORY_FILE))
@@ -556,6 +960,8 @@ def _setup_readline() -> None:
 
 
 def _save_history() -> None:
+    if readline is None:
+        return
     try:
         readline.write_history_file(str(HISTORY_FILE))
     except OSError:
@@ -570,6 +976,7 @@ def repl_loop(
     embedder: OllamaEmbeddings,
 ) -> int:
     st = SessionState(ns)
+    memory = ConversationMemory(st.history_depth)
     log = logging.getLogger("query")
     _setup_readline()
     print("Interactive RAG query. Type /help for commands, Ctrl+D to exit.")
@@ -591,8 +998,9 @@ def repl_loop(
             return EXIT_OK
         if line == "/help":
             print(
-                "Commands: /set <key> <value>, /show, /help, /status, /quit\n"
-                "Keys: domain, k, type, repo, format, mode, timeout\n"
+                "Commands: /set, /show, /help, /status, /history, /clear, /quit\n"
+                "  /set <key> <value>\n"
+                "Keys: domain, k, type, repo, format, mode, timeout, chat, history_depth\n"
                 "Anything else is treated as a search query."
             )
             continue
@@ -602,36 +1010,59 @@ def repl_loop(
         if line == "/status":
             print(run_status(db_path))
             continue
+        if line == "/history":
+            print(memory.show())
+            continue
+        if line == "/clear":
+            memory.clear()
+            print("Conversation memory cleared.")
+            continue
         if line.startswith("/set "):
             rest = line[5:].strip()
             parts = rest.split(None, 1)
             if len(parts) < 2:
                 print("Usage: /set <key> <value>")
                 continue
-            print(st.apply_set(parts[0], parts[1]))
+            msg = st.apply_set(parts[0], parts[1])
+            print(msg)
+            key0 = parts[0].lower().strip()
+            if msg.startswith("OK") and key0 in ("history_depth", "history-depth"):
+                memory.max_turns = st.history_depth
             continue
-        # Search
+
+        raw_query = line
+        search_query = raw_query
+        if st.chat and st.mode != "concept" and not memory.is_empty():
+            search_query = reformulate_query(raw_query, memory, st.llm_model)
+            if search_query != raw_query:
+                print(f'(searching for: "{search_query}")')
+
+        rich_ui = RICH_AVAILABLE and st.out_format == "markdown"
+        console = _make_console(no_color=bool(ns.no_color)) if rich_ui else None
+
         effective_type = "code" if st.mode == "codebase" else st.search_type
         try:
-            if st.mode == "concept":
-                hits = run_with_timeout(
-                    st.timeout,
-                    concept_search_hits,
-                    line,
-                    st.domain,
-                    cmap,
-                )
-            else:
-                hits = run_with_timeout(
-                    st.timeout,
-                    _sync_multi_search,
-                    line,
-                    st.top_k,
-                    effective_type,
-                    st.domain,
-                    st.repo,
-                    cmap,
-                )
+            with _status_spinner(console, "Searching..."):
+                if st.mode == "concept":
+                    hits = run_with_timeout(
+                        st.timeout,
+                        concept_search_hits,
+                        search_query,
+                        st.domain,
+                        cmap,
+                    )
+                else:
+                    hits = run_with_timeout(
+                        st.timeout,
+                        _sync_multi_search,
+                        search_query,
+                        st.top_k,
+                        effective_type,
+                        st.domain,
+                        st.repo,
+                        cmap,
+                        db_path,
+                    )
         except (TimeoutError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             continue
@@ -641,27 +1072,89 @@ def repl_loop(
             continue
         if not hits:
             if st.mode == "concept":
-                print(f"No chunks tagged with concept '{line}'.")
+                print(f"No chunks tagged with concept '{search_query}'.")
             else:
                 print("No matching chunks found.")
             continue
+
+        hist_msgs = memory.history_messages_for_llm() if st.chat else None
+
+        if st.chat:
+            if st.mode == "concept":
+                if st.out_format == "json":
+                    ans = _collect_llm_answer(
+                        raw_query,
+                        hits,
+                        st.llm_model,
+                        st.system_prompt,
+                        hist_msgs,
+                    )
+                    print(format_json_output(raw_query, hits, "concept", answer=ans))
+                elif st.out_format == "markdown":
+                    ans = _stream_llm_answer(
+                        raw_query,
+                        hits,
+                        st.llm_model,
+                        st.system_prompt,
+                        console,
+                        hist_msgs,
+                    )
+                else:
+                    ans = _stream_llm_answer(
+                        raw_query,
+                        hits,
+                        st.llm_model,
+                        st.system_prompt,
+                        None,
+                        hist_msgs,
+                    )
+                memory.add_turn(raw_query, search_query, ans or "(no answer)")
+                continue
+
+            if st.out_format == "json":
+                ans = _collect_llm_answer(
+                    raw_query,
+                    hits,
+                    st.llm_model,
+                    st.system_prompt,
+                    hist_msgs,
+                )
+                print(format_json_output(raw_query, hits, st.mode, answer=ans))
+            elif st.out_format == "markdown":
+                ans = _stream_llm_answer(
+                    raw_query,
+                    hits,
+                    st.llm_model,
+                    st.system_prompt,
+                    console,
+                    hist_msgs,
+                )
+            else:
+                ans = _stream_llm_answer(
+                    raw_query,
+                    hits,
+                    st.llm_model,
+                    st.system_prompt,
+                    None,
+                    hist_msgs,
+                )
+            memory.add_turn(raw_query, search_query, ans or "(no answer)")
+            continue
+
         if st.mode == "concept":
-            text = (
-                format_json_output(line, hits, "concept")
-                if st.out_format == "json"
-                else format_concept_markdown(hits, line)
-                if st.out_format == "markdown"
-                else format_plain(hits)
-            )
+            if st.out_format == "json":
+                print(format_json_output(raw_query, hits, "concept"))
+            elif st.out_format == "markdown":
+                _print_rich(console, format_concept_markdown(hits, raw_query))
+            else:
+                print(format_plain(hits))
         else:
-            text = (
-                format_json_output(line, hits, st.mode)
-                if st.out_format == "json"
-                else format_markdown(hits, line)
-                if st.out_format == "markdown"
-                else format_plain(hits)
-            )
-        print(text)
+            if st.out_format == "json":
+                print(format_json_output(raw_query, hits, st.mode))
+            elif st.out_format == "markdown":
+                _print_rich(console, format_markdown(hits, raw_query))
+            else:
+                print(format_plain(hits))
     return EXIT_OK
 
 
@@ -694,7 +1187,29 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Output format",
     )
     p.add_argument("-o", "--output", default="", help="Write output to file instead of stdout")
-    p.add_argument("--no-color", action="store_true", help="Disable ANSI (reserved for future use)")
+    p.add_argument(
+        "-c",
+        "--chat",
+        action="store_true",
+        help="After retrieval, generate an answer with the LLM (Ollama chat)",
+    )
+    p.add_argument(
+        "--llm-model",
+        default=(os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "llama3",
+        help="Ollama chat model for --chat (default: env RAG_LLM_MODEL or llama3)",
+    )
+    p.add_argument(
+        "--system-prompt",
+        default="",
+        help="Override default RAG system prompt when using --chat",
+    )
+    p.add_argument(
+        "--history-depth",
+        type=int,
+        default=5,
+        help="REPL: max conversation turns to remember with --chat (default: 5)",
+    )
+    p.add_argument("--no-color", action="store_true", help="Disable color (rich/ANSI)")
     p.add_argument(
         "--db-path",
         default=os.environ.get("DB_PATH", "").strip() or str(Path.cwd() / "VectorDB"),
@@ -771,26 +1286,36 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (TypeError, ValueError):
         k = TOP_K_DEFAULT
 
+    q = ns.query.strip()
+    spin_console = _make_console(no_color=bool(ns.no_color)) if (
+        RICH_AVAILABLE and ns.format == "markdown"
+    ) else None
+    display_console = _make_console(no_color=bool(ns.no_color)) if (
+        RICH_AVAILABLE and ns.format == "markdown" and not ns.output
+    ) else None
+
     try:
-        if ns.mode == "concept":
-            hits = run_with_timeout(
-                int(ns.timeout),
-                concept_search_hits,
-                ns.query.strip(),
-                ns.domain,
-                cmap,
-            )
-        else:
-            hits = run_with_timeout(
-                int(ns.timeout),
-                _sync_multi_search,
-                ns.query,
-                k,
-                effective_type,
-                ns.domain,
-                ns.repo,
-                cmap,
-            )
+        with _status_spinner(spin_console, "Searching..."):
+            if ns.mode == "concept":
+                hits = run_with_timeout(
+                    int(ns.timeout),
+                    concept_search_hits,
+                    q,
+                    ns.domain,
+                    cmap,
+                )
+            else:
+                hits = run_with_timeout(
+                    int(ns.timeout),
+                    _sync_multi_search,
+                    q,
+                    k,
+                    effective_type,
+                    ns.domain,
+                    ns.repo,
+                    cmap,
+                    db_path,
+                )
     except TimeoutError as exc:
         if not ns.quiet:
             print(f"Error: {exc}", file=sys.stderr)
@@ -809,25 +1334,58 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(msg)
         return EXIT_NO_RESULTS
 
+    llm_model = (ns.llm_model or "").strip() or "llama3"
+    system_prompt = (ns.system_prompt or "").strip() or DEFAULT_SYSTEM_PROMPT
+
+    if ns.chat:
+        if ns.mode == "concept":
+            mode_label = "concept"
+        else:
+            mode_label = ns.mode
+        if ns.format == "json":
+            ans = _collect_llm_answer(q, hits, llm_model, system_prompt, None)
+            text = format_json_output(q, hits, mode_label, answer=ans)
+            if ns.output:
+                Path(ns.output).write_text(text, encoding="utf-8")
+            else:
+                print(text)
+            return EXIT_OK
+        if ns.format == "plain":
+            if ns.output:
+                ans = _collect_llm_answer(q, hits, llm_model, system_prompt, None)
+                Path(ns.output).write_text(ans + ("\n" if ans and not ans.endswith("\n") else ""), encoding="utf-8")
+            else:
+                _stream_llm_answer(q, hits, llm_model, system_prompt, None, None)
+            return EXIT_OK
+        # markdown
+        if ns.output:
+            ans = _collect_llm_answer(q, hits, llm_model, system_prompt, None)
+            Path(ns.output).write_text(ans + ("\n" if ans and not ans.endswith("\n") else ""), encoding="utf-8")
+        else:
+            _stream_llm_answer(q, hits, llm_model, system_prompt, display_console, None)
+        return EXIT_OK
+
     if ns.mode == "concept":
         text = (
-            format_json_output(ns.query.strip(), hits, "concept")
+            format_json_output(q, hits, "concept")
             if ns.format == "json"
-            else format_concept_markdown(hits, ns.query.strip())
+            else format_concept_markdown(hits, q)
             if ns.format == "markdown"
             else format_plain(hits)
         )
     else:
         text = (
-            format_json_output(ns.query, hits, ns.mode)
+            format_json_output(q, hits, ns.mode)
             if ns.format == "json"
-            else format_markdown(hits, ns.query)
+            else format_markdown(hits, q)
             if ns.format == "markdown"
             else format_plain(hits)
         )
 
     if ns.output:
         Path(ns.output).write_text(text, encoding="utf-8")
+    elif ns.format == "markdown" and display_console:
+        _print_rich(display_console, text)
     else:
         print(text)
     return EXIT_OK
