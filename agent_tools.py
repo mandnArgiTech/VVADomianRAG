@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -42,11 +43,15 @@ class AgentSession:
         workspace_root: Path,
         cmap: Dict[str, Any],
         db_path: str,
+        chroma_client: Optional[Any] = None,
+        chroma_embedder: Optional[Any] = None,
     ):
         self.session_id = session_id
         self.workspace_root = workspace_root.resolve()
         self.cmap = cmap
         self.db_path = db_path
+        self.chroma_client = chroma_client
+        self.chroma_embedder = chroma_embedder
         self.backed_up: Dict[str, Path] = {}  # rel_path -> backup_path
         self.created_files: Set[str] = set()   # rel_paths created by the agent
         self._backup_dir = self.workspace_root / ".rag_agent_backups" / session_id
@@ -352,14 +357,18 @@ def search_codebase(
     query_mod: Any,
     domain: str = "",
     top_k: int = 5,
+    search_type: str = "auto",
 ) -> ToolResult:
     if query_mod is None:
         return ToolResult(success=False, output="", error="query.py module not available")
     if not session.cmap:
         return ToolResult(success=False, output="", error="No vector DB collections loaded")
+    st = (search_type or "auto").strip().lower()
+    if st not in ("auto", "code", "domain", "troubleshoot", "reference"):
+        st = "auto"
     try:
         hits = query_mod._sync_multi_search(
-            query, top_k, "auto", domain, "", session.cmap, session.db_path,
+            query, top_k, st, domain, "", session.cmap, session.db_path,
         )
         if not hits:
             return ToolResult(success=True, output="No matching results found.")
@@ -367,6 +376,172 @@ def search_codebase(
         return ToolResult(success=True, output=md)
     except Exception as exc:
         return ToolResult(success=False, output="", error=f"Search error: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Web search tool
+# ---------------------------------------------------------------------------
+
+_DDGS_AVAILABLE: Optional[bool] = None
+_DDGS_IMPL: str = ""  # "ddgs" | "duckduckgo_search"
+
+
+def _check_ddgs() -> bool:
+    global _DDGS_AVAILABLE, _DDGS_IMPL
+    if _DDGS_AVAILABLE is None:
+        try:
+            from ddgs import DDGS  # noqa: F401
+
+            _DDGS_AVAILABLE = True
+            _DDGS_IMPL = "ddgs"
+        except ImportError:
+            try:
+                from duckduckgo_search import DDGS  # noqa: F401
+
+                _DDGS_AVAILABLE = True
+                _DDGS_IMPL = "duckduckgo_search"
+            except ImportError:
+                _DDGS_AVAILABLE = False
+                _DDGS_IMPL = ""
+    return _DDGS_AVAILABLE
+
+
+def web_search(
+    session: Optional[AgentSession] = None,
+    query: str = "",
+    max_results: int = 3,
+) -> ToolResult:
+    """Search the web via ddgs (preferred) or duckduckgo-search; return top results as markdown."""
+    if not _check_ddgs():
+        return ToolResult(
+            success=False, output="",
+            error="Install web search: pip install ddgs   (or: pip install duckduckgo-search)",
+        )
+    k = min(max_results, 5)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            if _DDGS_IMPL == "ddgs":
+                from ddgs import DDGS
+
+                with DDGS() as ddgs:
+                    results = list(ddgs.text(query, max_results=k))
+            else:
+                from duckduckgo_search import DDGS
+
+                with DDGS() as ddgs:
+                    results = list(ddgs.text(query, max_results=k))
+        if not results:
+            return ToolResult(success=True, output="No web results found for that query.")
+        parts: List[str] = []
+        for i, r in enumerate(results, 1):
+            title = r.get("title", "Untitled")
+            body = r.get("body", "")
+            href = r.get("href", "")
+            parts.append(f"### {i}. {title}\n{body}\n[Source]({href})")
+        return ToolResult(success=True, output="\n\n".join(parts))
+    except Exception as exc:
+        return ToolResult(success=False, output="", error=f"Web search failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Long-term memory tool — write + ingest into VectorDB
+# ---------------------------------------------------------------------------
+
+_TOOLS_REPO_ROOT = Path(__file__).resolve().parent
+_SP_RAG = _TOOLS_REPO_ROOT / "Studio-Portable-RAG"
+_MEMORY_SUBDIRS = {
+    "domain_docs": _SP_RAG / "DomainDocs",
+    "wiki": _SP_RAG / "Wiki",
+}
+
+_TITLE_SANITIZE_RE = re.compile(r"[^\w\s\-]")
+
+
+def _memory_root_for_storage(storage: str) -> Path:
+    st = (storage or "domain_docs").strip().lower().replace("-", "_")
+    if st == "wiki":
+        return _MEMORY_SUBDIRS["wiki"]
+    return _MEMORY_SUBDIRS["domain_docs"]
+
+
+def remember_concept(
+    session: AgentSession,
+    title: str,
+    content: str,
+    domain: str = "general",
+    storage: str = "domain_docs",
+) -> ToolResult:
+    """Save knowledge under Studio-Portable-RAG/DomainDocs or .../Wiki and ingest into VectorDB."""
+    safe_title = _TITLE_SANITIZE_RE.sub("", title).strip().replace(" ", "_")[:80]
+    if not safe_title:
+        return ToolResult(success=False, output="", error="Title is empty after sanitization.")
+    root = _memory_root_for_storage(storage)
+    root.mkdir(parents=True, exist_ok=True)
+    filepath = (root / f"{safe_title}.md").resolve()
+    try:
+        filepath.relative_to(root.resolve())
+    except ValueError:
+        return ToolResult(success=False, output="", error="Invalid title: path traversal detected.")
+
+    try:
+        filepath.write_text(content, encoding="utf-8")
+    except Exception as exc:
+        return ToolResult(success=False, output="", error=f"Failed to write file: {exc}")
+
+    try:
+        from domain_feeder import feed_domain_document
+
+        try:
+            import query as _query_mod
+
+            embed_model = _query_mod.embedding_model_from_db_path(session.db_path)
+        except Exception:
+            embed_model = "nomic-embed-text"
+        stats = feed_domain_document(
+            filepath=str(filepath),
+            domain=domain or "general",
+            db_path=session.db_path,
+            embed_model=embed_model,
+            source_type="domain_doc",
+            chroma_client=session.chroma_client,
+            embedder=session.chroma_embedder,
+        )
+        chunk_count = stats.get("chunk_count", stats.get("chunks_upserted", "?"))
+        try:
+            rel_disp = str(filepath.relative_to(_TOOLS_REPO_ROOT))
+        except ValueError:
+            rel_disp = str(filepath)
+        return ToolResult(
+            success=True,
+            output=f"Saved '{title}' to {rel_disp} and ingested into VectorDB ({chunk_count} chunks).",
+        )
+    except ImportError:
+        try:
+            rel_disp = str(filepath.relative_to(_TOOLS_REPO_ROOT))
+        except ValueError:
+            rel_disp = str(filepath)
+        return ToolResult(
+            success=False,
+            output="",
+            error=(
+                f"File saved to {rel_disp} but domain_feeder is unavailable — "
+                "run ingestion on that path manually."
+            ),
+        )
+    except Exception as exc:
+        try:
+            rel_disp = str(filepath.relative_to(_TOOLS_REPO_ROOT))
+        except ValueError:
+            rel_disp = str(filepath)
+        return ToolResult(
+            success=False,
+            output="",
+            error=(
+                f"File saved to {rel_disp} but RAG ingestion failed: {exc}. "
+                "Re-run ingest on DomainDocs/Wiki or fix Ollama/embeddings, then retry remember_concept."
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +554,8 @@ TOOL_REGISTRY: Dict[str, Callable[..., ToolResult]] = {
     "create_file": create_file,
     "run_terminal_command": run_terminal_command,
     "search_codebase": search_codebase,
+    "web_search": web_search,
+    "remember_concept": remember_concept,
 }
 
 _TOOL_DESC_LINES = [
@@ -386,10 +563,13 @@ _TOOL_DESC_LINES = [
     "edit_file(filepath, search_block, replace_block) — Replace an exact substring in a file. Include 3+ surrounding lines for uniqueness. Always read_file first.",
     "create_file(filepath, content) — Create a new file. Fails if it already exists.",
     "run_terminal_command(command, cwd?, timeout?) — Run a shell command. Default timeout 30s. cwd is relative to workspace. Blocklist + timeout only; not a sandbox.",
-    "search_codebase(query, domain?, top_k?) — Search the ingested RAG vector database.",
+    "search_codebase(query, domain?, top_k?, search_type?) — Search RAG. search_type: auto|code|domain|troubleshoot|reference.",
+    "web_search(query, max_results?) — Search the web via DuckDuckGo. Returns top results as markdown.",
+    "remember_concept(title, content, domain?, storage?) — Save to DomainDocs/ (default) or Wiki/ (storage=wiki); ingest into VectorDB.",
 ]
 
-# Backward-compatible combined string (includes shell line; use tool_descriptions_for_agent_prompt for LLM)
+_SHELL_LINE_PREFIX = "run_terminal_command"
+
 TOOL_DESCRIPTIONS = "\n".join(_TOOL_DESC_LINES)
 
 
@@ -398,5 +578,5 @@ def tool_descriptions_for_agent_prompt() -> str:
     if is_agent_shell_enabled():
         return "\n".join(_TOOL_DESC_LINES)
     return "\n".join(
-        line for line in _TOOL_DESC_LINES if not line.startswith("run_terminal_command")
+        line for line in _TOOL_DESC_LINES if not line.startswith(_SHELL_LINE_PREFIX)
     )

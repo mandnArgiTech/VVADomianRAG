@@ -172,17 +172,19 @@ def _stream_chunk_text(chunk: Any) -> str:
     return str(getattr(msg, "content", None) or "")
 
 
-def detect_embedding_model(db_path: str) -> str:
-    env_val = os.environ.get("EMBEDDING_MODEL", "").strip()
-    if env_val:
-        return env_val
+def embedding_model_from_db_path(db_path: str) -> str:
+    """Resolve embedding model from on-disk DB config / Chroma dims only (no EMBEDDING_MODEL env).
+
+    Use for ingestion paths that must match an existing VectorDB; ``detect_embedding_model`` still
+    honors the env override first for query-time behavior.
+    """
     config_path = os.path.join(db_path, "ingestion_config.json")
     if os.path.exists(config_path):
         try:
             with open(config_path, encoding="utf-8") as fh:
                 model = json.load(fh).get("embedding_model", "")
             if model:
-                return model
+                return str(model).strip()
         except Exception:
             pass
     try:
@@ -199,6 +201,13 @@ def detect_embedding_model(db_path: str) -> str:
     except Exception:
         pass
     return "nomic-embed-text"
+
+
+def detect_embedding_model(db_path: str) -> str:
+    env_val = os.environ.get("EMBEDDING_MODEL", "").strip()
+    if env_val:
+        return env_val
+    return embedding_model_from_db_path(db_path)
 
 
 def check_ollama(timeout: float = 3.0) -> bool:

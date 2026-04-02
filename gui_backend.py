@@ -17,6 +17,12 @@ Environment:
   RAG_AGENT_CMD_TIMEOUT — Shell tool timeout seconds (default 30).
   RAG_AGENT_CTX_LIMIT  — Approximate token budget for context truncation heuristics (default 32000).
   RAG_AGENT_ALLOW_SHELL — If 0/false/no/off, disables run_terminal_command (default: enabled).
+
+  GET /api/agent/tool-schemas — OpenAI-style JSON tool definitions for integrations (Ollama agent
+  uses <tool_call> text tags; Anthropic and DeepSeek use native tool calling in the ReAct loop).
+
+  GET /api/vision/status — Docling/Pillow availability for the Vision Parser tab.
+  POST /api/vision/parse — multipart PDF upload; streams SSE JSON events from util.universal_vision_parser.
 """
 from __future__ import annotations
 
@@ -24,17 +30,19 @@ import asyncio
 import json
 import logging
 import os
+import queue
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Tuple, Union
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -89,6 +97,151 @@ from agent_tools import (
     is_agent_shell_enabled,
     tool_descriptions_for_agent_prompt,
 )
+
+
+def _agent_tool_param_schema(
+    properties: Dict[str, Any], required: List[str]
+) -> Dict[str, Any]:
+    return {"type": "object", "properties": properties, "required": required}
+
+
+def openai_style_agent_tool_schemas() -> List[Dict[str, Any]]:
+    """OpenAI Chat Completions ``tools`` shape (HTTP schema + DeepSeek native loop)."""
+    str_p = {"type": "string", "description": "Parameter."}
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a workspace file; lines are 1-indexed.",
+                "parameters": _agent_tool_param_schema(
+                    {
+                        "filepath": {**str_p, "description": "Path relative to workspace root."},
+                        "start_line": {"type": "integer"},
+                        "end_line": {"type": "integer"},
+                    },
+                    ["filepath"],
+                ),
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "edit_file",
+                "description": "Replace an exact substring in a file; include surrounding lines for uniqueness.",
+                "parameters": _agent_tool_param_schema(
+                    {
+                        "filepath": str_p,
+                        "search_block": str_p,
+                        "replace_block": str_p,
+                    },
+                    ["filepath", "search_block", "replace_block"],
+                ),
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "create_file",
+                "description": "Create a new file under the workspace (fails if it exists).",
+                "parameters": _agent_tool_param_schema(
+                    {"filepath": str_p, "content": str_p},
+                    ["filepath", "content"],
+                ),
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_terminal_command",
+                "description": "Run a shell command (optional cwd relative to workspace). May be disabled server-side.",
+                "parameters": _agent_tool_param_schema(
+                    {
+                        "command": str_p,
+                        "cwd": str_p,
+                        "timeout": {"type": "number"},
+                    },
+                    ["command"],
+                ),
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_codebase",
+                "description": "Hybrid RAG search over ingested collections.",
+                "parameters": _agent_tool_param_schema(
+                    {
+                        "query": str_p,
+                        "domain": str_p,
+                        "top_k": {"type": "integer"},
+                        "search_type": {
+                            "type": "string",
+                            "enum": ["auto", "code", "domain", "troubleshoot", "reference"],
+                        },
+                    },
+                    ["query"],
+                ),
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Web search (ddgs or duckduckgo-search).",
+                "parameters": _agent_tool_param_schema(
+                    {
+                        "query": str_p,
+                        "max_results": {"type": "integer"},
+                    },
+                    ["query"],
+                ),
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "remember_concept",
+                "description": "Persist markdown to Studio-Portable-RAG/DomainDocs or Wiki and ingest into Chroma.",
+                "parameters": _agent_tool_param_schema(
+                    {
+                        "title": str_p,
+                        "content": str_p,
+                        "domain": str_p,
+                        "storage": {
+                            "type": "string",
+                            "enum": ["domain_docs", "wiki"],
+                            "description": "domain_docs (default) or wiki",
+                        },
+                    },
+                    ["title", "content"],
+                ),
+            },
+        },
+    ]
+
+
+def _agent_tools_openai_style() -> List[Dict[str, Any]]:
+    """OpenAI ``tools`` list for agent loop; omits shell tool when disabled."""
+    tools = openai_style_agent_tool_schemas()
+    if not is_agent_shell_enabled():
+        tools = [
+            t for t in tools if t.get("function", {}).get("name") != "run_terminal_command"
+        ]
+    return tools
+
+
+def _anthropic_tool_schemas() -> List[Dict[str, Any]]:
+    """Anthropic Messages API ``tools`` entries derived from OpenAI-style schemas."""
+    return [
+        {
+            "name": t["function"]["name"],
+            "description": t["function"]["description"],
+            "input_schema": t["function"]["parameters"],
+        }
+        for t in _agent_tools_openai_style()
+    ]
+
 
 # -----------------------------------------------------------------------------
 # ANSI stripping for ingest terminal output (tqdm, etc.)
@@ -148,14 +301,18 @@ def resolve_db_path(*, form_path: Optional[str] = None) -> str:
 def resolved_source_base() -> Path:
     raw = os.environ.get("RAG_GUI_SOURCE_BASE", "").strip()
     if raw:
-        return Path(raw).expanduser().resolve()
+        p = Path(raw).expanduser().resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
     for candidate in (
         REPO_ROOT / "Studio-Portable-RAG" / "Codebase",
         REPO_ROOT / "Codebase",
     ):
         if candidate.is_dir():
             return candidate.resolve()
-    return (REPO_ROOT / "Codebase").resolve()
+    fallback = (REPO_ROOT / "Codebase").resolve()
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
 
 
 def resolve_agent_workspace(raw: str) -> Path:
@@ -270,6 +427,11 @@ async def ensure_chroma(db_path: str) -> Tuple[Any, Any, Dict[str, Any], str]:
 _ingest_lock = threading.Lock()
 _ingest_proc: Optional[subprocess.Popen] = None
 _ingest_busy = False
+
+_vision_lock = threading.Lock()
+_vision_busy = False
+
+MAX_VISION_PDF_BYTES = 80 * 1024 * 1024
 
 
 def _reject_query_while_ingesting() -> None:
@@ -390,6 +552,16 @@ class QueryBody(BaseModel):
 _SENTINEL = object()
 
 
+@dataclass
+class _NativeToolCall:
+    """Emitted by cloud LLM iterators after streaming completes (one tool per step)."""
+
+    name: str
+    kwargs: Dict[str, Any]
+    tool_call_id: str
+    text_before: str
+
+
 def _run_search_sync(
     db_path: str,
     qtext: str,
@@ -456,6 +628,7 @@ def _iter_llm_tokens(
     llm_model: str,
     system_prompt: str,
     history_messages: Optional[List[Dict[str, str]]],
+    extra_context: str = "",
 ) -> Any:
     """Sync generator of token strings; empty if ollama missing or error."""
     if query_mod is None or not getattr(query_mod, "OLLAMA_LIB_AVAILABLE", False):
@@ -466,6 +639,8 @@ def _iter_llm_tokens(
         yield from ()
         return
     ctx = query_mod._build_context_blocks(hits)
+    if extra_context.strip():
+        ctx = f"{ctx}\n\n## Additional Web Context\n{extra_context.strip()}"
     sp = (system_prompt or "").strip() or query_mod.DEFAULT_SYSTEM_PROMPT
     messages: List[Dict[str, str]] = [{"role": "system", "content": sp}]
     if history_messages:
@@ -497,8 +672,13 @@ async def async_token_stream(
     llm_model: str,
     system_prompt: str,
     history_messages: Optional[List[Dict[str, str]]],
+    extra_context: str = "",
 ) -> AsyncIterator[str]:
-    it = iter(_iter_llm_tokens(user_query, hits, llm_model, system_prompt, history_messages))
+    it = iter(
+        _iter_llm_tokens(
+            user_query, hits, llm_model, system_prompt, history_messages, extra_context
+        )
+    )
 
     def _next() -> Any:
         try:
@@ -573,11 +753,17 @@ async def _async_from_sync_text_iterator(sync_iter_factory: Any) -> AsyncIterato
         yield str(piece)
 
 
-async def stream_chat_tokens(body: QueryBody, hits: List[Any]) -> AsyncIterator[str]:
+async def stream_chat_tokens(
+    body: QueryBody,
+    hits: List[Any],
+    extra_context: str = "",
+    *,
+    user_query_for_llm: Optional[str] = None,
+) -> AsyncIterator[str]:
     """Stream answer tokens from Ollama, Claude (Anthropic), or DeepSeek."""
     if query_mod is None:
         return
-    user_q = body.query.strip()
+    user_q = (user_query_for_llm if user_query_for_llm is not None else body.query).strip()
 
     if body.llm_provider == "ollama":
         async for tok in async_token_stream(
@@ -586,11 +772,14 @@ async def stream_chat_tokens(body: QueryBody, hits: List[Any]) -> AsyncIterator[
             body.llm_model,
             body.system_prompt,
             body.history or None,
+            extra_context or "",
         ):
             yield tok
         return
 
     ctx = await asyncio.to_thread(query_mod._build_context_blocks, hits)
+    if extra_context:
+        ctx = f"{ctx}\n\n## Additional Web Context\n{extra_context}"
     sp = (body.system_prompt or "").strip() or query_mod.DEFAULT_SYSTEM_PROMPT
     user_block = f"Context:\n\n{ctx}\n\n---\n\nQuestion: {user_q}"
     msgs: List[Dict[str, str]] = []
@@ -683,6 +872,7 @@ async def api_status() -> Dict[str, Any]:
         "rag_agent_workspace_env": env_ws or None,
         "agent_shell_enabled": is_agent_shell_enabled(),
         "ollama_reachable": ollama_ok,
+        "vision_running": _vision_busy,
     }
 
 
@@ -714,6 +904,151 @@ async def api_browse(path: str = "") -> Dict[str, Any]:
     return {"root": str(root), "path": path, "entries": entries}
 
 
+@app.get("/api/vision/status")
+async def api_vision_status() -> Dict[str, Any]:
+    """Report Docling/Pillow availability and whether a vision parse is running."""
+    try:
+        from util.universal_vision_parser import check_vision_dependencies
+    except ImportError as exc:
+        return {
+            "docling_available": False,
+            "pillow_available": False,
+            "vision_busy": False,
+            "import_error": str(exc),
+        }
+    d = check_vision_dependencies()
+    return {
+        "docling_available": d.get("docling_available", False),
+        "pillow_available": d.get("pillow_available", False),
+        "vision_busy": _vision_busy,
+    }
+
+
+@app.post("/api/vision/parse")
+async def api_vision_parse(
+    file: UploadFile = File(...),
+    vision_provider: str = Form("ollama"),
+    custom_prompt: str = Form(""),
+    vision_model: str = Form(""),
+    api_key: str = Form(""),
+) -> StreamingResponse:
+    """Stream vision-augmented PDF parsing as SSE (JSON events per line)."""
+    global _vision_busy
+
+    if _agent_busy:
+        raise HTTPException(
+            status_code=409,
+            detail="An agent session is running. Wait for it to finish before vision parsing.",
+        )
+    with _ingest_lock:
+        if _ingest_busy:
+            raise HTTPException(
+                status_code=409,
+                detail="Ingestion is running. Wait for it to finish before vision parsing.",
+            )
+
+    fname = (file.filename or "").strip().lower()
+    if not fname.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Upload a PDF file (.pdf).")
+
+    prov = (vision_provider or "ollama").strip().lower()
+    if prov not in ("ollama", "anthropic", "openai"):
+        raise HTTPException(status_code=400, detail="vision_provider must be ollama, anthropic, or openai.")
+
+    if prov == "anthropic":
+        if not ANTHROPIC_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Install anthropic: pip install anthropic")
+        if not (api_key or "").strip():
+            raise HTTPException(status_code=400, detail="Enter your Anthropic API key for vision parsing.")
+    elif prov == "openai":
+        if not OPENAI_SDK_AVAILABLE:
+            raise HTTPException(status_code=503, detail="Install openai: pip install openai")
+        if not (api_key or "").strip():
+            raise HTTPException(status_code=400, detail="Enter your OpenAI API key for vision parsing.")
+    elif prov == "ollama":
+        if query_mod is None or not getattr(query_mod, "OLLAMA_LIB_AVAILABLE", False):
+            raise HTTPException(
+                status_code=503,
+                detail="Ollama Python client unavailable; install ollama package.",
+            )
+        ollama_ok = await asyncio.to_thread(query_mod.check_ollama)
+        if not ollama_ok:
+            raise HTTPException(
+                status_code=503,
+                detail="Ollama is not reachable at http://127.0.0.1:11434 — start Ollama first.",
+            )
+
+    raw = await file.read()
+    if len(raw) > MAX_VISION_PDF_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"PDF too large (max {MAX_VISION_PDF_BYTES // (1024 * 1024)} MB).",
+        )
+
+    if not _vision_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="Another vision parse is already running. Wait for it to finish.",
+        )
+
+    tmp_path: Optional[str] = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix=".pdf", prefix="vision_")
+        os.close(fd)
+        Path(tmp_path).write_bytes(raw)
+    except Exception as exc:
+        _vision_lock.release()
+        raise HTTPException(status_code=500, detail=f"Could not save upload: {exc}") from exc
+
+    kw = {
+        "vision_provider": prov,
+        "vision_model": (vision_model or "").strip(),
+        "api_key": (api_key or "").strip(),
+        "custom_prompt": (custom_prompt or "").strip(),
+    }
+
+    async def event_stream() -> AsyncIterator[str]:
+        global _vision_busy
+        _vision_busy = True
+        q: "queue.Queue[Optional[Dict[str, Any]]]" = queue.Queue()
+
+        def worker() -> None:
+            try:
+                from util.universal_vision_parser import parse_pdf_with_vision
+
+                for ev in parse_pdf_with_vision(tmp_path or "", **kw):
+                    q.put(ev)
+            except Exception as exc:
+                log.exception("Vision parse worker failed")
+                q.put({"type": "error", "message": str(exc)})
+            finally:
+                q.put(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        try:
+            while True:
+                ev = await asyncio.to_thread(q.get)
+                if ev is None:
+                    break
+                try:
+                    payload = json.dumps(jsonable_encoder(ev))
+                except Exception as ser_exc:
+                    payload = json.dumps(
+                        {"type": "error", "message": f"Serialize failed: {ser_exc}"}
+                    )
+                yield f"data: {payload}\n\n"
+        finally:
+            _vision_busy = False
+            _vision_lock.release()
+            try:
+                if tmp_path and Path(tmp_path).is_file():
+                    Path(tmp_path).unlink(missing_ok=True)
+            except OSError as exc:
+                log.warning("Could not remove temp PDF: %s", exc)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @app.post("/api/ingest/cancel")
 async def api_ingest_cancel() -> Dict[str, str]:
     global _ingest_proc, _ingest_busy
@@ -736,6 +1071,11 @@ async def api_ingest_cancel() -> Dict[str, str]:
 async def api_ingest(body: IngestBody) -> StreamingResponse:
     global _ingest_proc, _ingest_busy
 
+    if _vision_busy:
+        raise HTTPException(
+            status_code=409,
+            detail="Vision PDF parsing is running. Wait for it to finish before ingesting.",
+        )
     if _agent_busy:
         raise HTTPException(
             status_code=409,
@@ -996,10 +1336,32 @@ async def api_query(body: QueryBody) -> Any:
                     detail="Enter your DeepSeek API key, or switch the answer model to Local Ollama.",
                 )
 
-    search_query = body.query.strip()
+    raw_query = body.query.strip()
+    cleaned_query, chat_mentions = parse_at_mentions(raw_query)
+    search_query = cleaned_query or raw_query
+
+    web_context = ""
+    if "web" in chat_mentions:
+        try:
+            from agent_tools import web_search as _ws
+            wr = await asyncio.to_thread(
+                _ws,
+                session=None,
+                query=search_query,
+            )
+            if wr.success and wr.output:
+                web_context = wr.output
+        except Exception as exc:
+            log.warning("@web pre-flight failed: %s", exc)
+
+    if "docs" in chat_mentions:
+        # Filter to domain-doc collections via search_type (not domain=domain_doc — that
+        # substring does not match names like nms_domain; see query._select_collection_names).
+        body.search_type = "domain"
+
     if body.history:
         search_query = await rewrite_query(
-            body.query.strip(),
+            search_query,
             body.history,
             body.llm_provider,
             body.llm_model,
@@ -1062,9 +1424,17 @@ async def api_query(body: QueryBody) -> Any:
         )
 
     async def sse_chat() -> AsyncIterator[str]:
-        yield f"data: {json.dumps({'type': 'agent_action', 'action': 'search', 'query': search_query, 'original': body.query.strip()})}\n\n"
+        yield f"data: {json.dumps({'type': 'agent_action', 'action': 'search', 'query': search_query, 'original': raw_query})}\n\n"
+        if web_context:
+            yield f"data: {json.dumps({'type': 'agent_action', 'action': 'web_search', 'query': search_query})}\n\n"
         try:
-            async for tok in stream_chat_tokens(body, hits):
+            llm_q = (cleaned_query or raw_query) if chat_mentions else None
+            async for tok in stream_chat_tokens(
+                body,
+                hits,
+                extra_context=web_context,
+                user_query_for_llm=llm_q,
+            ):
                 yield f"data: {json.dumps({'token': tok})}\n\n"
         except Exception as exc:
             log.exception("Chat stream failed")
@@ -1106,11 +1476,12 @@ _AGENT_CTX_LIMIT = int(os.environ.get("RAG_AGENT_CTX_LIMIT", "32000"))
 # ---------------------------------------------------------------------------
 
 
-def build_agent_system_prompt() -> str:
+def build_agent_system_prompt(provider: Literal["ollama", "anthropic", "deepseek"] = "ollama") -> str:
     desc = tool_descriptions_for_agent_prompt()
     shell_disabled = not is_agent_shell_enabled()
     verify_line = (
-        "4. VERIFY: After every edit, run a verification command via run_terminal_command (e.g. python -m py_compile, pytest) when available."
+        "4. VERIFY: For CODE files (.py, .js, .c, etc.), run a verification command via run_terminal_command "
+        "(e.g., syntax check, pytest). For MARKDOWN or DOC files, NO verification is needed."
         if not shell_disabled
         else "4. VERIFY: You cannot run shell commands on this server. After edits, reason about correctness from read_file output; state what the user should run locally to verify."
     )
@@ -1119,12 +1490,10 @@ Terminal access uses regex blocklists and a timeout only. This is NOT a full san
 """
     no_shell_note = ""
     if shell_disabled:
-        no_shell_note = "\n## run_terminal_command\nThis tool is **disabled** on this server. Use read_file, edit_file, create_file, and search_codebase only. End with <task_complete> describing changes and suggested local verification commands.\n"
+        no_shell_note = "\n## run_terminal_command\nThis tool is **disabled** on this server. Use read_file, edit_file, create_file, search_codebase, web_search, and remember_concept. End with <task_complete> describing changes and suggested local verification commands.\n"
 
-    return f"""\
-You are an autonomous coding agent. You work inside a single workspace root with the tools listed below.
-
-## Tool usage
+    if provider == "ollama":
+        tool_usage = """## Tool usage
 To use a tool, emit EXACTLY:
 <tool_call>{{"name":"tool_name","kwargs":{{...}}}}</tool_call>
 
@@ -1132,19 +1501,38 @@ Rules:
 - Only ONE tool call per response. Wait for the result before continuing.
 - Tool results arrive as the next user message prefixed with [Tool Result: tool_name].
 - NEVER emit <tool_call> inside a markdown code fence.
+"""
+        integrations = (
+            "## Integrations\n"
+            "- OpenAI-style tool JSON (for custom clients) is available at GET /api/agent/tool-schemas.\n"
+            "- This Ollama session uses <tool_call> text tags in the ReAct loop.\n"
+        )
+    else:
+        tool_usage = """## Tool usage
+Native function tools are attached to this request. Call at most one tool per turn, then wait for the tool result message before continuing.
+"""
 
+        integrations = (
+            "## Integrations\n"
+            "- OpenAI-style tool JSON (for custom clients) is available at GET /api/agent/tool-schemas.\n"
+            "- This session uses native tool calling (no <tool_call> XML).\n"
+        )
+
+    return f"""\
+You are an autonomous coding agent. You work inside a single workspace root with the tools listed below.
+
+{tool_usage}
 ## Available tools
 {desc}
 {no_shell_note}
 {shell_security}
 ## Workflow
 1. PLAN: Think step-by-step about how to accomplish the task.
-2. SEARCH/READ: Use search_codebase or read_file to understand the current code.
-3. EDIT/CREATE: Use edit_file or create_file to make changes.
+2. SEARCH/READ: Use search_codebase, web_search, or read_file to gather context.
+3. EDIT/CREATE: Use edit_file or create_file to make changes. Use remember_concept to save important findings to the RAG database for future retrieval.
 {verify_line}
 5. If verification fails (or you cannot verify), read outputs, fix, and repeat as needed.
-6. COMPLETE: When the task is fully resolved, emit:
-<task_complete>Your summary of what was done</task_complete>
+6. COMPLETE: Once the files are written, you MUST immediately emit <task_complete>Summary of work</task_complete> to save your work. If you do not emit this tag, your files will be rolled back and deleted.
 
 ## edit_file rules
 - search_block must be an EXACT substring of the current file content.
@@ -1152,6 +1540,12 @@ Rules:
 - Never pass entire file contents as search_block.
 - Always read_file first if you are unsure of the current content.
 
+## web_search & remember_concept
+- Use web_search when the user asks about external APIs, current best practices, or information not in the codebase.
+- Use remember_concept to persist useful knowledge (architecture decisions, learned patterns, research findings) so future searches can retrieve it.
+- remember_concept writes under Studio-Portable-RAG/DomainDocs by default; use kwargs \"storage\": \"wiki\" for Studio-Portable-RAG/Wiki instead.
+
+{integrations}
 ## Important
 - <task_complete> is the ONLY way to end the session. You MUST emit it when done.
 - Never attempt destructive system commands. Respect tool errors.
@@ -1258,20 +1652,114 @@ class StreamingBuffer:
 # agent_llm_stream — unified async token generator for all providers
 # ---------------------------------------------------------------------------
 
-def _merge_consecutive_roles(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Merge consecutive messages with the same role (required by Anthropic)."""
+def _agent_message_has_tool_meta(msg: Dict[str, Any]) -> bool:
+    return any(
+        k.startswith("_")
+        for k in msg
+        if k not in ("role", "content")
+    )
+
+
+def _merge_consecutive_roles_for_agent(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge consecutive same-role messages when both are plain (no _tool_call metadata)."""
     if not messages:
         return messages
-    merged: List[Dict[str, str]] = [dict(messages[0])]
+    merged: List[Dict[str, Any]] = [dict(messages[0])]
     for msg in messages[1:]:
-        if msg["role"] == merged[-1]["role"]:
-            merged[-1]["content"] += "\n---\n" + msg["content"]
+        prev = merged[-1]
+        if (
+            msg.get("role") == prev.get("role")
+            and not _agent_message_has_tool_meta(msg)
+            and not _agent_message_has_tool_meta(prev)
+        ):
+            prev["content"] = (prev.get("content") or "") + "\n---\n" + (msg.get("content") or "")
         else:
             merged.append(dict(msg))
     return merged
 
 
-def _iter_agent_ollama(messages: List[Dict[str, str]], model: str) -> Any:
+def _ollama_agent_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Strip internal keys; Ollama only sees role + content."""
+    return [
+        {"role": m["role"], "content": m.get("content", "")}
+        for m in messages
+        if m.get("role") in ("system", "user", "assistant")
+    ]
+
+
+def _strip_tool_result_prefix(user_content: str) -> str:
+    if user_content.startswith("[Tool Result:"):
+        idx = user_content.find("]\n")
+        if idx >= 0:
+            return user_content[idx + 2 :]
+    return user_content
+
+
+def _anthropic_api_messages(nonsys: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for m in nonsys:
+        role = m.get("role")
+        if role == "assistant" and "_tool_call" in m:
+            tc = m["_tool_call"]
+            blocks: List[Dict[str, Any]] = []
+            txt = (m.get("content") or "").strip()
+            if txt:
+                blocks.append({"type": "text", "text": txt})
+            inp = tc.get("input")
+            if not isinstance(inp, dict):
+                inp = {}
+            blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": tc["id"],
+                    "name": tc["name"],
+                    "input": inp,
+                }
+            )
+            out.append({"role": "assistant", "content": blocks})
+            continue
+        if role == "user" and m.get("_tool_call_id"):
+            body = _strip_tool_result_prefix(m.get("content", ""))
+            tr: Dict[str, Any] = {
+                "type": "tool_result",
+                "tool_use_id": m["_tool_call_id"],
+                "content": body,
+            }
+            if m.get("_tool_is_error"):
+                tr["is_error"] = True
+            out.append({"role": "user", "content": [tr]})
+            continue
+        out.append({"role": role, "content": m.get("content", "")})
+    return out
+
+
+def _deepseek_api_messages(msgs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for m in msgs:
+        role = m.get("role")
+        if role == "assistant" and m.get("_tool_calls_openai"):
+            entry = {
+                "role": "assistant",
+                "content": (m.get("content") or "").strip() or "",
+                "tool_calls": m["_tool_calls_openai"],
+            }
+            out.append(entry)
+            continue
+        if role == "user" and m.get("_tool_call_id"):
+            body = _strip_tool_result_prefix(m.get("content", ""))
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": m["_tool_call_id"],
+                    "content": body,
+                }
+            )
+            continue
+        out.append({"role": role, "content": m.get("content", "")})
+    return out
+
+
+def _iter_agent_ollama(messages: List[Dict[str, Any]], model: str) -> Any:
     if query_mod is None or not getattr(query_mod, "OLLAMA_LIB_AVAILABLE", False):
         yield "Error: Ollama is not available."
         return
@@ -1279,8 +1767,9 @@ def _iter_agent_ollama(messages: List[Dict[str, str]], model: str) -> Any:
     if om is None:
         yield "Error: Ollama module not loaded."
         return
+    clean = _ollama_agent_messages(messages)
     try:
-        stream = om.chat(model=model, messages=messages, stream=True)
+        stream = om.chat(model=model, messages=clean, stream=True)
     except Exception as exc:
         log.warning("agent ollama.chat failed: %s", exc)
         yield f"Error: Ollama call failed: {exc}"
@@ -1291,53 +1780,133 @@ def _iter_agent_ollama(messages: List[Dict[str, str]], model: str) -> Any:
             yield tok
 
 
-def _iter_agent_anthropic(messages: List[Dict[str, str]], model: str, api_key: str) -> Any:
+def _iter_agent_anthropic(messages: List[Dict[str, Any]], model: str, api_key: str) -> Any:
     if not ANTHROPIC_AVAILABLE or anthropic is None:
         yield "Error: install anthropic (pip install anthropic)."
         return
-    merged = _merge_consecutive_roles(messages)
+    merged = _merge_consecutive_roles_for_agent(messages)
     system_content = ""
-    non_system: List[Dict[str, str]] = []
+    non_system: List[Dict[str, Any]] = []
     for m in merged:
-        if m["role"] == "system":
-            system_content += ("\n" + m["content"]) if system_content else m["content"]
+        if m.get("role") == "system":
+            c = m.get("content") or ""
+            system_content += ("\n" + c) if system_content else c
         else:
             non_system.append(m)
-    if not non_system or non_system[0]["role"] != "user":
+    if not non_system or non_system[0].get("role") != "user":
         non_system.insert(0, {"role": "user", "content": "(continue)"})
-    with anthropic.Anthropic(api_key=api_key).messages.stream(
-        model=model or "claude-3-5-haiku-20241022",
-        max_tokens=8192,
-        system=system_content,
-        messages=[{"role": m["role"], "content": m["content"]} for m in non_system],
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
+    api_messages = _anthropic_api_messages(non_system)
+    text_parts: List[str] = []
+    try:
+        with anthropic.Anthropic(api_key=api_key).messages.stream(
+            model=model or "claude-3-5-haiku-20241022",
+            max_tokens=8192,
+            system=system_content,
+            messages=api_messages,
+            tools=_anthropic_tool_schemas(),
+            tool_choice={"type": "auto"},
+        ) as stream:
+            for text in stream.text_stream:
+                text_parts.append(text)
+                yield text
+            final = stream.get_final_message()
+    except Exception as exc:
+        log.warning("agent anthropic stream failed: %s", exc)
+        yield f"Error: Anthropic call failed: {exc}"
+        return
+
+    if getattr(final, "stop_reason", None) == "tool_use" and final.content:
+        for block in final.content:
+            if getattr(block, "type", None) == "tool_use":
+                raw_in = getattr(block, "input", None)
+                kwargs: Dict[str, Any] = raw_in if isinstance(raw_in, dict) else {}
+                yield _NativeToolCall(
+                    name=getattr(block, "name", "") or "",
+                    kwargs=kwargs,
+                    tool_call_id=getattr(block, "id", "") or "",
+                    text_before="".join(text_parts),
+                )
+                return
 
 
-def _iter_agent_deepseek(messages: List[Dict[str, str]], model: str, api_key: str) -> Any:
+def _iter_agent_deepseek(messages: List[Dict[str, Any]], model: str, api_key: str) -> Any:
     if not OPENAI_SDK_AVAILABLE or OpenAI is None:
         yield "Error: install openai (pip install openai)."
         return
+    merged = _merge_consecutive_roles_for_agent(messages)
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-    stream = client.chat.completions.create(
-        model=model or "deepseek-chat",
-        messages=[{"role": m["role"], "content": m["content"]} for m in messages],
-        stream=True,
+    api_messages = _deepseek_api_messages(merged)
+    text_parts: List[str] = []
+    tc_accum: Dict[int, Dict[str, str]] = {}
+    try:
+        stream = client.chat.completions.create(
+            model=model or "deepseek-chat",
+            messages=api_messages,
+            tools=_agent_tools_openai_style(),
+            tool_choice="auto",
+            stream=True,
+        )
+        for chunk in stream:
+            choice = chunk.choices[0] if chunk.choices else None
+            if choice is None:
+                continue
+            delta = choice.delta
+            if delta is None:
+                continue
+            c = getattr(delta, "content", None)
+            if c:
+                text_parts.append(c)
+                yield c
+            tcs = getattr(delta, "tool_calls", None)
+            if not tcs:
+                continue
+            for tc in tcs:
+                idx = int(getattr(tc, "index", 0) or 0)
+                if idx not in tc_accum:
+                    tc_accum[idx] = {"id": "", "name": "", "arguments": ""}
+                tid = getattr(tc, "id", None)
+                if tid:
+                    tc_accum[idx]["id"] = (tc_accum[idx]["id"] or "") + tid
+                fn = getattr(tc, "function", None)
+                if fn is not None:
+                    n = getattr(fn, "name", None)
+                    if n:
+                        tc_accum[idx]["name"] += n
+                    a = getattr(fn, "arguments", None)
+                    if a:
+                        tc_accum[idx]["arguments"] += a
+    except Exception as exc:
+        log.warning("agent deepseek stream failed: %s", exc)
+        yield f"Error: DeepSeek call failed: {exc}"
+        return
+
+    if not tc_accum:
+        return
+    first_idx = min(tc_accum.keys())
+    first = tc_accum[first_idx]
+    raw_args = first.get("arguments") or "{}"
+    try:
+        kwargs = json.loads(raw_args)
+        if not isinstance(kwargs, dict):
+            kwargs = {}
+    except json.JSONDecodeError:
+        log.warning("DeepSeek tool arguments JSON decode failed: %s", raw_args[:200])
+        kwargs = {}
+    yield _NativeToolCall(
+        name=first.get("name", "") or "",
+        kwargs=kwargs,
+        tool_call_id=first.get("id", "") or "",
+        text_before="".join(text_parts),
     )
-    for chunk in stream:
-        delta = chunk.choices[0].delta
-        if delta and getattr(delta, "content", None):
-            yield delta.content
 
 
 async def agent_llm_stream(
-    messages: List[Dict[str, str]],
+    messages: List[Dict[str, Any]],
     provider: str,
     model: str,
     api_key: str,
-) -> AsyncIterator[str]:
-    """Unified async token generator for the agent loop."""
+) -> AsyncIterator[Union[str, _NativeToolCall]]:
+    """Unified async generator: text tokens and optional trailing native tool call."""
     if provider == "anthropic":
         factory = lambda: _iter_agent_anthropic(messages, model, api_key)
     elif provider == "deepseek":
@@ -1354,17 +1923,20 @@ async def agent_llm_stream(
             return _SENTINEL
 
     while True:
-        tok = await asyncio.to_thread(_next)
-        if tok is _SENTINEL:
+        item = await asyncio.to_thread(_next)
+        if item is _SENTINEL:
             break
-        yield str(tok)
+        if isinstance(item, _NativeToolCall):
+            yield item
+        else:
+            yield str(item)
 
 
 # ---------------------------------------------------------------------------
 # Context window management
 # ---------------------------------------------------------------------------
 
-def _truncate_old_messages(messages: List[Dict[str, str]], ctx_limit: int) -> None:
+def _truncate_old_messages(messages: List[Dict[str, Any]], ctx_limit: int) -> None:
     """Truncate older tool results when estimated context exceeds ~80% of limit; keep last 3 tool results full."""
     total_chars = sum(len(m["content"]) for m in messages)
     est_tokens = total_chars / 3.5
@@ -1395,6 +1967,16 @@ def _truncate_old_messages(messages: List[Dict[str, str]], ctx_limit: int) -> No
 
 _TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
 _TASK_DONE_RE = re.compile(r"<task_complete>(.*?)</task_complete>", re.DOTALL)
+_MD_FENCE_RE = re.compile(r"```(?:json|JSON)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+
+
+def _strip_md_fences(raw: str) -> str:
+    """Strip markdown code fences that LLMs (qwen2.5, etc.) wrap around tool JSON."""
+    stripped = raw.strip()
+    m = _MD_FENCE_RE.search(stripped)
+    if m:
+        return m.group(1).strip()
+    return stripped
 
 
 def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
@@ -1402,10 +1984,11 @@ def _parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
     m = _TOOL_CALL_RE.search(text)
     if not m:
         return None
+    inner = _strip_md_fences(m.group(1))
     try:
-        return json.loads(m.group(1).strip())
+        return json.loads(inner)
     except json.JSONDecodeError as exc:
-        return {"_parse_error": str(exc), "_raw": m.group(1).strip()}
+        return {"_parse_error": str(exc), "_raw": inner[:300]}
 
 
 def _parse_task_complete(text: str) -> Optional[str]:
@@ -1416,6 +1999,9 @@ def _parse_task_complete(text: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Tool dispatch helper
 # ---------------------------------------------------------------------------
+
+_TOOLS_NEEDING_QUERY_MOD = {"search_codebase"}
+
 
 def _dispatch_tool(
     tool_data: Dict[str, Any],
@@ -1443,10 +2029,181 @@ def _dispatch_tool(
     kwargs.pop("session", None)
     kwargs.pop("query_mod", None)
 
-    if name == "search_codebase":
+    if name in _TOOLS_NEEDING_QUERY_MOD:
         return name, TOOL_REGISTRY[name](session=session, query_mod=query_module, **kwargs)
-    else:
-        return name, TOOL_REGISTRY[name](session=session, **kwargs)
+    return name, TOOL_REGISTRY[name](session=session, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# execute_agent_step — one iteration of the ReAct loop (provider-agnostic)
+# ---------------------------------------------------------------------------
+
+_STEP_TOOL = "tool"
+_STEP_COMPLETE = "complete"
+_STEP_TEXT = "text"
+_STEP_ERROR = "error"
+
+
+async def execute_agent_step(
+    messages: List[Dict[str, Any]],
+    provider: str,
+    model: str,
+    api_key: str,
+    session: AgentSession,
+    query_module: Any,
+    iteration: int,
+) -> AsyncIterator[Dict[str, Any]]:
+    """Execute one ReAct step: stream LLM, parse response, dispatch tool if needed.
+
+    Yields dicts with ``type`` key:
+      - ``token``       – partial text for the UI
+      - ``agent_action`` – tool call about to execute
+      - ``tool_result``  – tool execution output
+      - ``step_result``  – final summary of the step (always last yield)
+    The caller inspects the ``step_result`` event to decide whether to continue,
+    complete, or rollback.
+    """
+    buf = StreamingBuffer()
+    native: Optional[_NativeToolCall] = None
+    try:
+        async for item in agent_llm_stream(messages, provider, model, api_key):
+            if isinstance(item, _NativeToolCall):
+                native = item
+                continue
+            for segment in buf.feed(item):
+                if segment:
+                    yield {"type": "token", "text": segment}
+    except Exception as exc:
+        log.exception("Agent LLM stream error in execute_agent_step")
+        yield {"type": "step_result", "kind": _STEP_ERROR, "error": str(exc)}
+        return
+
+    buf.end_stream()
+    remaining = buf.flush_remaining()
+    if remaining and not remaining.lstrip().startswith("<"):
+        yield {"type": "token", "text": remaining}
+
+    full_response = buf.full_response
+
+    if native is not None:
+        tool_data: Dict[str, Any] = {"name": native.name, "kwargs": native.kwargs}
+        tool_name = tool_data.get("name", "unknown")
+        tool_kwargs = tool_data.get("kwargs", {})
+        target_hint = (
+            tool_kwargs.get("filepath")
+            or tool_kwargs.get("title", "")[:60]
+            or tool_kwargs.get("command", "")[:60]
+            or tool_kwargs.get("query", "")[:60]
+            or ""
+        ) if isinstance(tool_kwargs, dict) else ""
+        if tool_name == "remember_concept" and isinstance(tool_kwargs, dict):
+            st = str(tool_kwargs.get("storage", "domain_docs"))[:24]
+            target_hint = f"{st}:{target_hint}" if target_hint else st
+
+        yield {"type": "agent_action", "tool": tool_name, "target": target_hint, "iteration": iteration}
+
+        name, result = await asyncio.to_thread(_dispatch_tool, tool_data, session, query_module)
+
+        result_for_sse = result.output[:2000] if result.output else result.error[:2000]
+        yield {"type": "tool_result", "tool": name, "success": result.success, "output": result_for_sse}
+
+        yield {
+            "type": "step_result",
+            "kind": _STEP_TOOL,
+            "full_response": full_response,
+            "tool_name": name,
+            "tool_result": result,
+            "native_tool_meta": {
+                "tool_call_id": native.tool_call_id,
+                "name": native.name,
+                "kwargs": native.kwargs,
+                "provider": provider,
+            },
+        }
+        return
+
+    summary = _parse_task_complete(full_response)
+    if summary is not None:
+        yield {"type": "step_result", "kind": _STEP_COMPLETE, "summary": summary, "full_response": full_response}
+        return
+
+    tool_data = _parse_tool_call(full_response)
+    if tool_data is None:
+        yield {"type": "step_result", "kind": _STEP_TEXT, "full_response": full_response}
+        return
+
+    tool_name = tool_data.get("name", "unknown")
+    tool_kwargs = tool_data.get("kwargs", {})
+    target_hint = (
+        tool_kwargs.get("filepath")
+        or tool_kwargs.get("title", "")[:60]
+        or tool_kwargs.get("command", "")[:60]
+        or tool_kwargs.get("query", "")[:60]
+        or ""
+    ) if isinstance(tool_kwargs, dict) else ""
+    if tool_name == "remember_concept" and isinstance(tool_kwargs, dict):
+        st = str(tool_kwargs.get("storage", "domain_docs"))[:24]
+        target_hint = f"{st}:{target_hint}" if target_hint else st
+
+    yield {"type": "agent_action", "tool": tool_name, "target": target_hint, "iteration": iteration}
+
+    name, result = await asyncio.to_thread(_dispatch_tool, tool_data, session, query_module)
+
+    result_for_sse = result.output[:2000] if result.output else result.error[:2000]
+    yield {"type": "tool_result", "tool": name, "success": result.success, "output": result_for_sse}
+
+    yield {
+        "type": "step_result",
+        "kind": _STEP_TOOL,
+        "full_response": full_response,
+        "tool_name": name,
+        "tool_result": result,
+    }
+
+
+# ---------------------------------------------------------------------------
+# @ mention parsing (pre-flight context injection)
+# ---------------------------------------------------------------------------
+
+_AT_MENTION_RE = re.compile(r"@(web|codebase|docs)\b", re.IGNORECASE)
+
+
+def parse_at_mentions(text: str) -> Tuple[str, set]:
+    """Return (cleaned_text, set_of_lowercase_mentions) from ``@web``, ``@codebase``, ``@docs``."""
+    mentions = {m.lower() for m in _AT_MENTION_RE.findall(text)}
+    cleaned = _AT_MENTION_RE.sub("", text).strip()
+    return cleaned, mentions
+
+
+async def _preflight_context(
+    mentions: set,
+    query_text: str,
+    session: AgentSession,
+    query_module: Any,
+) -> str:
+    """Run pre-flight retrieval for @mentions, returning markdown context block."""
+    from agent_tools import web_search as _ws, search_codebase as _sc
+    parts: List[str] = []
+
+    if "web" in mentions:
+        wr = await asyncio.to_thread(_ws, session, query_text)
+        if wr.success and wr.output:
+            parts.append(f"## Web Search Results\n{wr.output}")
+
+    if "docs" in mentions:
+        sr = await asyncio.to_thread(
+            _sc, session, query_text, query_module, domain="", top_k=5, search_type="domain",
+        )
+        if sr.success and sr.output and sr.output != "No matching results found.":
+            parts.append(f"## Domain Docs Search\n{sr.output}")
+    if "codebase" in mentions:
+        sr = await asyncio.to_thread(
+            _sc, session, query_text, query_module, domain="", top_k=5, search_type="code",
+        )
+        if sr.success and sr.output and sr.output != "No matching results found.":
+            parts.append(f"## Codebase Search Results\n{sr.output}")
+
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -1465,8 +2222,10 @@ async def agent_sse_stream(body: AgentBody) -> AsyncIterator[str]:
         return
 
     db_path = resolve_db_path(form_path=body.db_path)
+    chroma_client = None
+    chroma_embedder = None
     try:
-        _, _, cmap, _ = await ensure_chroma(db_path)
+        chroma_client, chroma_embedder, cmap, _ = await ensure_chroma(db_path)
     except Exception:
         cmap = {}
 
@@ -1475,12 +2234,27 @@ async def agent_sse_stream(body: AgentBody) -> AsyncIterator[str]:
         workspace_root=workspace,
         cmap=cmap,
         db_path=db_path,
+        chroma_client=chroma_client,
+        chroma_embedder=chroma_embedder,
     )
 
     max_iter = min(body.max_iterations, 25)
-    messages: List[Dict[str, str]] = [
-        {"role": "system", "content": build_agent_system_prompt()},
-        {"role": "user", "content": body.task},
+
+    cleaned_task, mentions = parse_at_mentions(body.task)
+    task_content = cleaned_task or body.task
+
+    if mentions:
+        yield f"data: {json.dumps({'type': 'agent_state', 'status': 'gathering_context', 'mentions': sorted(mentions)})}\n\n"
+        try:
+            ctx = await _preflight_context(mentions, cleaned_task, session, query_mod)
+            if ctx:
+                task_content = f"{cleaned_task}\n\n---\n## Pre-fetched Context\n{ctx}"
+        except Exception as exc:
+            log.warning("Pre-flight @mention context failed: %s", exc)
+
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": build_agent_system_prompt(body.llm_provider)},
+        {"role": "user", "content": task_content},
     ]
 
     yield f"data: {json.dumps({'type': 'agent_state', 'status': 'planning', 'session_id': session_id})}\n\n"
@@ -1496,63 +2270,103 @@ async def agent_sse_stream(body: AgentBody) -> AsyncIterator[str]:
 
             yield f"data: {json.dumps({'type': 'agent_state', 'status': 'thinking', 'iteration': iteration, 'max': max_iter})}\n\n"
 
-            buf = StreamingBuffer()
-            try:
-                async for tok in agent_llm_stream(messages, body.llm_provider, body.llm_model, body.api_key):
-                    for segment in buf.feed(tok):
-                        if segment:
-                            yield f"data: {json.dumps({'type': 'token', 'text': segment})}\n\n"
-            except Exception as exc:
-                log.exception("Agent LLM stream error")
-                yield f"data: {json.dumps({'type': 'error', 'message': f'LLM error: {exc}'})}\n\n"
-                rolled = session.rollback()
-                yield f"data: {json.dumps({'type': 'agent_state', 'status': 'failed', 'reason': f'LLM error: {exc}', 'rolled_back': rolled})}\n\n"
-                return
+            step_result = None
+            async for event in execute_agent_step(
+                messages, body.llm_provider, body.llm_model, body.api_key,
+                session, query_mod, iteration,
+            ):
+                if event["type"] == "step_result":
+                    step_result = event
+                else:
+                    yield f"data: {json.dumps(event)}\n\n"
+                    if (
+                        event.get("type") == "tool_result"
+                        and event.get("tool") == "remember_concept"
+                        and event.get("success")
+                    ):
+                        yield f"data: {json.dumps({'type': 'agent_status', 'status': 'memory_saved', 'message': 'Agent saved new knowledge to RAG Database'})}\n\n"
 
-            buf.end_stream()
-            remaining = buf.flush_remaining()
-            if remaining and not remaining.lstrip().startswith("<"):
-                yield f"data: {json.dumps({'type': 'token', 'text': remaining})}\n\n"
-
-            full_response = buf.full_response
-
-            summary = _parse_task_complete(full_response)
-            if summary is not None:
-                session.cleanup()
-                yield f"data: {json.dumps({'type': 'agent_state', 'status': 'complete', 'summary': summary})}\n\n"
-                return
-
-            tool_data = _parse_tool_call(full_response)
-            if tool_data is None:
-                messages.append({"role": "assistant", "content": full_response})
+            if step_result is None:
                 continue
 
-            if _agent_cancel.is_set():
+            kind = step_result["kind"]
+
+            if kind == _STEP_ERROR:
                 rolled = session.rollback()
-                yield f"data: {json.dumps({'type': 'agent_state', 'status': 'cancelled', 'rolled_back': rolled})}\n\n"
+                err_msg = step_result.get("error", "unknown")
+                yield f"data: {json.dumps({'type': 'error', 'message': 'LLM error: ' + err_msg})}\n\n"
+                yield f"data: {json.dumps({'type': 'agent_state', 'status': 'failed', 'reason': 'LLM error: ' + err_msg, 'rolled_back': rolled})}\n\n"
                 return
 
-            tool_name = tool_data.get("name", "unknown")
-            tool_kwargs = tool_data.get("kwargs", {})
-            target_hint = (
-                tool_kwargs.get("filepath")
-                or tool_kwargs.get("command", "")[:60]
-                or tool_kwargs.get("query", "")[:60]
-                or ""
-            ) if isinstance(tool_kwargs, dict) else ""
+            if kind == _STEP_COMPLETE:
+                session.cleanup()
+                yield f"data: {json.dumps({'type': 'agent_state', 'status': 'complete', 'summary': step_result['summary']})}\n\n"
+                return
 
-            yield f"data: {json.dumps({'type': 'agent_action', 'tool': tool_name, 'target': target_hint, 'iteration': iteration})}\n\n"
+            if kind == _STEP_TOOL:
+                if _agent_cancel.is_set():
+                    rolled = session.rollback()
+                    yield f"data: {json.dumps({'type': 'agent_state', 'status': 'cancelled', 'rolled_back': rolled})}\n\n"
+                    return
+                tr = step_result["tool_result"]
+                tool_output = tr.output if tr.success else (tr.error or tr.output)
+                ntm = step_result.get("native_tool_meta")
+                prov = body.llm_provider
+                if ntm and prov == "anthropic":
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": step_result["full_response"],
+                            "_tool_call": {
+                                "id": ntm["tool_call_id"],
+                                "name": ntm["name"],
+                                "input": ntm["kwargs"],
+                            },
+                        }
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"[Tool Result: {step_result['tool_name']}]\n{tool_output}",
+                            "_tool_call_id": ntm["tool_call_id"],
+                            "_tool_is_error": not tr.success,
+                        }
+                    )
+                elif ntm and prov == "deepseek":
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": step_result["full_response"],
+                            "_tool_calls_openai": [
+                                {
+                                    "id": ntm["tool_call_id"],
+                                    "type": "function",
+                                    "function": {
+                                        "name": ntm["name"],
+                                        "arguments": json.dumps(ntm["kwargs"]),
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"[Tool Result: {step_result['tool_name']}]\n{tool_output}",
+                            "_tool_call_id": ntm["tool_call_id"],
+                        }
+                    )
+                else:
+                    messages.append({"role": "assistant", "content": step_result["full_response"]})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"[Tool Result: {step_result['tool_name']}]\n{tool_output}",
+                        }
+                    )
+                continue
 
-            tool_name, result = await asyncio.to_thread(
-                _dispatch_tool, tool_data, session, query_mod
-            )
-
-            result_for_sse = result.output[:2000] if result.output else result.error[:2000]
-            yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'success': result.success, 'output': result_for_sse})}\n\n"
-
-            messages.append({"role": "assistant", "content": full_response})
-            tool_output = result.output if result.success else (result.error or result.output)
-            messages.append({"role": "user", "content": f"[Tool Result: {tool_name}]\n{tool_output}"})
+            messages.append({"role": "assistant", "content": step_result.get("full_response", "")})
 
         rolled = session.rollback()
         yield f"data: {json.dumps({'type': 'agent_state', 'status': 'failed', 'reason': f'Max iterations ({max_iter}) reached. All file changes rolled back.', 'rolled_back': rolled})}\n\n"
@@ -1569,6 +2383,23 @@ async def agent_sse_stream(body: AgentBody) -> AsyncIterator[str]:
 # ---------------------------------------------------------------------------
 # Agent endpoints
 # ---------------------------------------------------------------------------
+
+@app.get("/api/agent/tool-schemas")
+async def api_agent_tool_schemas() -> JSONResponse:
+    """OpenAI-compatible tool definitions; shell tool omitted when RAG_AGENT_ALLOW_SHELL disables it."""
+    tools = _agent_tools_openai_style()
+    return JSONResponse(
+        jsonable_encoder(
+            {
+                "tools": tools,
+                "note": (
+                    "Ollama dashboard agent uses <tool_call> XML in the ReAct loop; "
+                    "Anthropic and DeepSeek use native tools with the same schemas."
+                ),
+            }
+        )
+    )
+
 
 @app.post("/api/agent")
 async def api_agent(body: AgentBody) -> StreamingResponse:

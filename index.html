@@ -17,6 +17,12 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+    });
+  </script>
   <style>
     /* If the Tailwind CDN is blocked, the page still works */
     html, body { min-height: 100%; margin: 0; }
@@ -30,6 +36,11 @@
     .agent-timeline-item { border-left: 2px solid #334155; padding-left: 12px; margin-left: 6px; }
     .agent-timeline-item.success { border-left-color: #22c55e; }
     .agent-timeline-item.fail { border-left-color: #ef4444; }
+    .at-menu { position: absolute; z-index: 50; background: #1e293b; border: 1px solid #334155; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,.5); overflow: hidden; min-width: 180px; }
+    .at-menu-item { padding: 8px 14px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; color: #e2e8f0; }
+    .at-menu-item:hover, .at-menu-item.active { background: #334155; }
+    .at-menu-item kbd { font-size: 11px; color: #94a3b8; font-family: 'JetBrains Mono', monospace; }
+    .memory-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.3); color: #fbbf24; font-size: 12px; font-weight: 500; }
   </style>
 </head>
 <body class="h-full bg-slate-950 text-slate-100 antialiased">
@@ -63,6 +74,7 @@
       <button type="button" data-tab="ingest" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium bg-violet-600 text-white">Ingestion Console</button>
       <button type="button" data-tab="chat" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">AI Chat Studio</button>
       <button type="button" data-tab="agent" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">Agent Workspace</button>
+      <button type="button" data-tab="vision" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">Vision Parser</button>
     </nav>
 
     <main class="flex-1 flex flex-col min-h-0">
@@ -250,6 +262,67 @@
           </div>
         </aside>
       </section>
+
+      <!-- Vision Parser tab -->
+      <section id="panel-vision" class="hidden flex-1 flex min-h-0">
+        <div class="flex-1 flex flex-col min-w-0 border-r border-slate-800">
+          <div class="p-4 border-b border-slate-800 space-y-3">
+            <input type="file" id="visionFileInput" accept=".pdf,application/pdf" class="hidden" />
+            <div
+              id="visionDropZone"
+              class="rounded-xl border-2 border-dashed border-slate-600 bg-slate-900/40 px-6 py-10 text-center cursor-pointer hover:border-violet-500/60 hover:bg-slate-900/60 transition-colors"
+            >
+              <p class="text-sm text-slate-300 font-medium">Drop a PDF here or click to browse</p>
+              <p id="visionFileLabel" class="text-xs text-slate-500 mt-2 font-mono truncate max-w-full">No file selected</p>
+            </div>
+            <div class="flex flex-wrap gap-2 items-center">
+              <button type="button" id="btnVisionParse" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 font-semibold text-white text-sm disabled:opacity-40 disabled:cursor-not-allowed">Parse with vision</button>
+              <button type="button" id="btnVisionCancel" class="px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 text-sm disabled:opacity-40" disabled>Cancel</button>
+              <button type="button" id="btnVisionDownload" class="px-4 py-2.5 rounded-xl bg-emerald-900/50 border border-emerald-700/60 text-emerald-200 text-sm disabled:opacity-40" disabled>Download Markdown</button>
+            </div>
+            <p class="text-[10px] text-slate-600 leading-relaxed">
+              Cancel closes the live stream in your browser; the server may still run that parse to completion in the background.
+            </p>
+            <div id="visionProgressWrap" class="hidden">
+              <div class="h-2 rounded-full bg-slate-800 overflow-hidden">
+                <div id="visionProgressBar" class="h-full bg-violet-500 transition-all duration-300" style="width: 0%"></div>
+              </div>
+              <p id="visionProgressText" class="text-xs text-slate-500 mt-1 font-mono"></p>
+            </div>
+          </div>
+          <div id="visionOutput" class="flex-1 overflow-y-auto p-4 space-y-3 chat-scroll text-sm">
+            <p class="text-slate-500 text-xs">Parsed markdown preview appears here. Diagram captions stream in as collapsible sections.</p>
+          </div>
+          <div class="border-t border-slate-800 p-4 max-h-[40vh] overflow-hidden flex flex-col min-h-0">
+            <div class="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wider">Full preview</div>
+            <div id="visionPreview" class="flex-1 overflow-y-auto prose prose-invert prose-sm max-w-none rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm"></div>
+          </div>
+        </div>
+        <aside class="w-full max-w-xs shrink-0 bg-slate-900/30 border-l border-slate-800 overflow-y-auto hidden md:flex flex-col p-4 space-y-4">
+          <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Vision settings</h2>
+          <label class="block text-xs text-slate-500 mb-1">VLM provider</label>
+          <select id="visionProvider" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm">
+            <option value="ollama" selected>Local Ollama (vision)</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (GPT-4o)</option>
+          </select>
+          <div id="visionRowApiKey" class="hidden space-y-1">
+            <label class="block text-xs text-slate-500">API key</label>
+            <input id="visionApiKey" type="password" autocomplete="off" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm font-mono" placeholder="sk-…" />
+          </div>
+          <label class="block text-xs text-slate-500 mb-1">Model override</label>
+          <input id="visionModel" type="text" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-sm font-mono" placeholder="leave empty for default" />
+          <p id="visionModelHint" class="text-[10px] text-slate-600 leading-relaxed">Defaults: Ollama <code class="text-slate-500">llama3.2-vision</code>, Anthropic <code class="text-slate-500">claude-sonnet-4-20250514</code>, OpenAI <code class="text-slate-500">gpt-4o</code></p>
+          <label class="block text-xs text-slate-500 mb-1">Custom caption prompt (optional)</label>
+          <textarea id="visionCustomPrompt" rows="4" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-2 py-2 text-xs font-mono resize-none" placeholder="Default: electrical engineer / schematic analysis prompt"></textarea>
+          <div class="flex flex-wrap gap-1.5 text-[10px]">
+            <span id="visionChipDocling" class="px-2 py-0.5 rounded bg-slate-800 text-slate-500">Docling: …</span>
+            <span id="visionChipPillow" class="px-2 py-0.5 rounded bg-slate-800 text-slate-500">Pillow: …</span>
+            <span id="visionChipBusy" class="px-2 py-0.5 rounded bg-slate-800 text-slate-500">Parse: idle</span>
+          </div>
+          <p class="text-[10px] text-slate-600 leading-relaxed">Requires <code class="text-slate-500">pip install docling Pillow</code>. Output is Markdown only — save and ingest via DomainDocs or the agent tab.</p>
+        </aside>
+      </section>
     </main>
   </div>
 
@@ -259,13 +332,33 @@
     let chatHistory = [];
     const MAX_INGEST_LINES = 550;
 
+    let _mermaidSeq = 0;
+
     function mdToSafeHtml(src) {
       if (!src) return '';
       const raw = marked.parse(String(src));
+      let html;
       if (window.DOMPurify && typeof DOMPurify.sanitize === 'function') {
-        return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+        html = DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+      } else {
+        html = raw;
       }
-      return raw;
+      html = html.replace(
+        /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
+        (_, body) => {
+          const id = 'mermaid-' + (++_mermaidSeq);
+          const decoded = body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"');
+          return '<div class="mermaid" id="' + id + '">' + decoded + '</div>';
+        }
+      );
+      return html;
+    }
+
+    function renderMermaid(root) {
+      if (!window.mermaid) return;
+      const nodes = (root || document).querySelectorAll('.mermaid:not([data-processed])');
+      if (nodes.length === 0) return;
+      try { mermaid.run({ nodes: Array.from(nodes) }); } catch (e) { console.warn('mermaid render', e); }
     }
 
     async function formatApiError(res) {
@@ -396,6 +489,10 @@
           ban.textContent =
             'An agent session is running — ingestion is blocked until it finishes.';
           ban.classList.add('show');
+        } else if (j.vision_running) {
+          ban.textContent =
+            'Vision PDF parsing is running — ingestion is blocked until it finishes.';
+          ban.classList.add('show');
         } else {
           ban.classList.remove('show');
         }
@@ -427,6 +524,7 @@
             'px-2 py-0.5 rounded text-[10px] ' +
             (j.ollama_reachable ? 'bg-slate-800 text-emerald-400/90' : 'bg-red-950/80 text-red-300');
         }
+        loadVisionStatus();
       } catch (e) {
         $('dbBadge').textContent = 'Status error';
         const envEl = $('ragGuiDbEnvLine');
@@ -436,6 +534,53 @@
         }
         const pnl = $('ragGuiDbPathPanel');
         if (pnl) pnl.textContent = 'Network or server error loading status.';
+        loadVisionStatus();
+      }
+    }
+
+    let visionLastMarkdown = '';
+    let visionParseAbort = null;
+
+    async function loadVisionStatus() {
+      const dl = $('visionChipDocling');
+      const pl = $('visionChipPillow');
+      const bz = $('visionChipBusy');
+      const btn = $('btnVisionParse');
+      if (!dl || !pl || !bz || !btn) return;
+      try {
+        const r = await fetch('/api/vision/status');
+        const v = await r.json();
+        const docOk = !!v.docling_available;
+        const pilOk = !!v.pillow_available;
+        dl.textContent = docOk ? 'Docling: installed' : 'Docling: missing';
+        dl.className =
+          'px-2 py-0.5 rounded text-[10px] ' + (docOk ? 'bg-slate-800 text-emerald-400/90' : 'bg-amber-950/80 text-amber-200');
+        pl.textContent = pilOk ? 'Pillow: installed' : 'Pillow: missing';
+        pl.className =
+          'px-2 py-0.5 rounded text-[10px] ' + (pilOk ? 'bg-slate-800 text-emerald-400/90' : 'bg-amber-950/80 text-amber-200');
+        const busy = !!v.vision_busy;
+        bz.textContent = busy ? 'Parse: running' : 'Parse: idle';
+        bz.className =
+          'px-2 py-0.5 rounded text-[10px] ' + (busy ? 'bg-violet-950/80 text-violet-200' : 'bg-slate-800 text-slate-500');
+        const parsing = $('btnVisionCancel') && !$('btnVisionCancel').disabled;
+        btn.disabled = !docOk || !pilOk || busy || parsing;
+      } catch (err) {
+        dl.textContent = 'Docling: ?';
+        pl.textContent = 'Pillow: ?';
+        bz.textContent = 'Parse: ?';
+      }
+    }
+
+    function syncVisionProviderUi() {
+      const p = $('visionProvider').value;
+      const row = $('visionRowApiKey');
+      if (row) row.classList.toggle('hidden', p === 'ollama');
+      if (p === 'anthropic') {
+        const k = localStorage.getItem('rag_dash_key_anthropic');
+        if (k && !$('visionApiKey').value) $('visionApiKey').value = k;
+      } else if (p === 'openai') {
+        let k = localStorage.getItem('rag_dash_key_openai');
+        if (k && !$('visionApiKey').value) $('visionApiKey').value = k;
       }
     }
 
@@ -477,6 +622,8 @@
       $('panel-chat').classList.toggle('flex', name === 'chat');
       $('panel-agent').classList.toggle('hidden', name !== 'agent');
       $('panel-agent').classList.toggle('flex', name === 'agent');
+      $('panel-vision').classList.toggle('hidden', name !== 'vision');
+      $('panel-vision').classList.toggle('flex', name === 'vision');
     }
 
     document.querySelectorAll('.tab-btn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
@@ -500,6 +647,162 @@
 
     $('btnRefreshStatus').onclick = loadStatus;
     $('chatTopK').oninput = () => { $('chatTopKVal').textContent = $('chatTopK').value; };
+
+    $('visionDropZone').onclick = () => $('visionFileInput').click();
+    $('visionFileInput').onchange = () => {
+      const f = $('visionFileInput').files[0];
+      $('visionFileLabel').textContent = f ? f.name : 'No file selected';
+    };
+    ['dragenter', 'dragover'].forEach((ev) => {
+      $('visionDropZone').addEventListener(ev, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        $('visionDropZone').classList.add('border-violet-400');
+      });
+    });
+    ['dragleave', 'drop'].forEach((ev) => {
+      $('visionDropZone').addEventListener(ev, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        $('visionDropZone').classList.remove('border-violet-400');
+      });
+    });
+    $('visionDropZone').addEventListener('drop', (e) => {
+      const fl = e.dataTransfer.files[0];
+      if (fl && fl.name.toLowerCase().endsWith('.pdf')) {
+        const dt = new DataTransfer();
+        dt.items.add(fl);
+        $('visionFileInput').files = dt.files;
+        $('visionFileLabel').textContent = fl.name;
+      }
+    });
+    $('visionProvider').onchange = syncVisionProviderUi;
+
+    $('btnVisionCancel').onclick = () => {
+      if (visionParseAbort) visionParseAbort.abort();
+    };
+
+    $('btnVisionParse').onclick = async () => {
+      const fin = $('visionFileInput').files[0];
+      if (!fin) {
+        alert('Choose a PDF file first.');
+        return;
+      }
+      const prov = $('visionProvider').value;
+      if (prov === 'anthropic' || prov === 'openai') {
+        const k = $('visionApiKey').value.trim();
+        if (!k) {
+          alert('Enter your API key for cloud vision.');
+          return;
+        }
+        if (prov === 'anthropic') localStorage.setItem('rag_dash_key_anthropic', k);
+        else localStorage.setItem('rag_dash_key_openai', k);
+      }
+
+      visionLastMarkdown = '';
+      $('btnVisionDownload').disabled = true;
+      $('visionPreview').innerHTML = '';
+      $('visionOutput').innerHTML = '';
+      $('visionProgressWrap').classList.remove('hidden');
+      $('visionProgressBar').style.width = '0%';
+      $('visionProgressText').textContent = 'Starting…';
+      $('btnVisionParse').disabled = true;
+      $('btnVisionCancel').disabled = false;
+
+      const fd = new FormData();
+      fd.append('file', fin);
+      fd.append('vision_provider', prov);
+      fd.append('vision_model', $('visionModel').value.trim());
+      fd.append('api_key', $('visionApiKey').value.trim());
+      fd.append('custom_prompt', $('visionCustomPrompt').value.trim());
+
+      visionParseAbort = new AbortController();
+      let streamBuf = '';
+
+      function appendStatus(msg) {
+        const d = document.createElement('div');
+        d.className = 'text-xs text-slate-500 font-mono py-0.5';
+        d.textContent = msg;
+        $('visionOutput').appendChild(d);
+        $('visionOutput').scrollTop = $('visionOutput').scrollHeight;
+      }
+
+      try {
+        const res = await fetch('/api/vision/parse', {
+          method: 'POST',
+          body: fd,
+          signal: visionParseAbort.signal,
+        });
+        if (!res.ok) {
+          appendStatus('Error: ' + (await formatApiError(res)));
+          return;
+        }
+        await parseSSE(res, (data) => {
+          if (data.type === 'status') {
+            appendStatus(data.message || '');
+            return;
+          }
+          if (data.type === 'progress') {
+            const t = Math.max(1, Number(data.total) || 0);
+            const c = Number(data.current) || 0;
+            const pct = Math.min(100, Math.round((100 * c) / t));
+            $('visionProgressBar').style.width = pct + '%';
+            $('visionProgressText').textContent = data.message || c + '/' + t;
+            return;
+          }
+          if (data.type === 'image_caption') {
+            const det = document.createElement('details');
+            det.className = 'rounded-lg border border-slate-700 bg-slate-900/50 text-xs mb-2';
+            det.open = true;
+            det.innerHTML =
+              '<summary class="cursor-pointer px-3 py-2 text-violet-300 font-medium">Diagram ' +
+              (data.index || '') +
+              '</summary><pre class="p-3 border-t border-slate-800 text-slate-300 whitespace-pre-wrap font-mono text-[11px]">' +
+              escapeHtml(data.caption || '') +
+              '</pre>';
+            $('visionOutput').appendChild(det);
+            $('visionOutput').scrollTop = $('visionOutput').scrollHeight;
+            return;
+          }
+          if (data.type === 'markdown_chunk') {
+            streamBuf += data.text || '';
+            return;
+          }
+          if (data.type === 'complete') {
+            visionLastMarkdown = data.markdown || streamBuf || '';
+            $('visionProgressBar').style.width = '100%';
+            $('visionProgressText').textContent =
+              'Done — ' + (data.total_images || 0) + ' image(s), ' + (data.elapsed_sec || '?') + 's';
+            $('visionPreview').innerHTML = mdToSafeHtml(visionLastMarkdown);
+            renderMermaid($('visionPreview'));
+            $('btnVisionDownload').disabled = !visionLastMarkdown;
+            return;
+          }
+          if (data.type === 'error') {
+            appendStatus('Error: ' + (data.message || 'unknown'));
+          }
+        });
+      } catch (e) {
+        if (e.name === 'AbortError') appendStatus('Cancelled.');
+        else appendStatus('Error: ' + (e.message || String(e)));
+      } finally {
+        $('btnVisionParse').disabled = false;
+        $('btnVisionCancel').disabled = true;
+        visionParseAbort = null;
+        loadVisionStatus();
+      }
+    };
+
+    $('btnVisionDownload').onclick = () => {
+      if (!visionLastMarkdown) return;
+      const blob = new Blob([visionLastMarkdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'vision_parsed.md';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
 
     const MODEL_HINTS = {
       ollama: 'Ollama default: qwen2.5-coder:32b — run: ollama pull qwen2.5-coder:32b',
@@ -593,6 +896,7 @@
       }
       $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
       if (window.hljs) hljs.highlightAll();
+      renderMermaid($('chatMessages'));
     }
 
     $('btnSendChat').onclick = async () => {
@@ -707,6 +1011,14 @@
       let sseStreamError = false;
       try {
         await parseSSE(res, (data) => {
+          if (data.type === 'agent_action' && data.action === 'web_search') {
+            if (agentStatus) {
+              agentStatus.innerHTML =
+                '<span class="text-amber-400 shrink-0">\u{1F310}</span><span>Searching the web\u2026</span>';
+            }
+            $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+            return;
+          }
           if (data.type === 'agent_action' && data.action === 'search') {
             if (!agentStatus) {
               agentStatus = document.createElement('div');
@@ -769,6 +1081,7 @@
               acc.querySelector('.context-md').innerHTML = mdToSafeHtml(ctx);
               $('chatMessages').appendChild(acc);
               if (hljs) hljs.highlightAll();
+              renderMermaid($('chatMessages'));
             }
             chatHistory.push({ role: 'user', content: text });
             chatHistory.push({
@@ -786,6 +1099,7 @@
           if (sp) sp.remove();
         }
         $('chatMessages').scrollTop = $('chatMessages').scrollHeight;
+        renderMermaid($('chatMessages'));
       }
     };
 
@@ -797,10 +1111,154 @@
       create_file: '\u{1F4DD}',
       run_terminal_command: '\u{1F4BB}',
       search_codebase: '\u{1F50D}',
+      web_search: '\u{1F310}',
+      remember_concept: '\u{1F9E0}',
       unknown: '\u{2753}',
     };
 
     let agentRunning = false;
+
+    // ===== @ mention menu =====
+    const AT_ITEMS = [
+      { tag: '@web', icon: '\u{1F310}', label: 'Web Search', desc: 'Search the internet' },
+      { tag: '@codebase', icon: '\u{1F4C1}', label: 'Codebase', desc: 'Search ingested code' },
+      { tag: '@docs', icon: '\u{1F4DA}', label: 'Domain Docs', desc: 'Search domain documents' },
+    ];
+
+    function createAtMenu() {
+      const menu = document.createElement('div');
+      menu.className = 'at-menu hidden';
+      menu.id = 'atMentionMenu';
+      menu.addEventListener('mousedown', (e) => e.preventDefault());
+      AT_ITEMS.forEach((item, i) => {
+        const row = document.createElement('div');
+        row.className = 'at-menu-item';
+        row.dataset.tag = item.tag;
+        row.dataset.idx = i;
+        row.innerHTML = '<span>' + item.icon + '</span><span>' + item.label + '</span><kbd>' + item.tag + '</kbd>';
+        menu.appendChild(row);
+      });
+      document.body.appendChild(menu);
+      return menu;
+    }
+
+    const atMenu = createAtMenu();
+    let _atTarget = null;
+    let _atActive = -1;
+
+    function showAtMenu(textarea) {
+      _atTarget = textarea;
+      _atActive = 0;
+      atMenu.classList.remove('hidden');
+      atMenu.style.display = '';
+      atMenu.style.position = 'fixed';
+      atMenu.style.zIndex = '60';
+      const rect = textarea.getBoundingClientRect();
+      let top = rect.top - atMenu.offsetHeight - 6;
+      if (top < 8) {
+        top = rect.bottom + 6;
+      }
+      if (top + atMenu.offsetHeight > window.innerHeight - 8) {
+        top = Math.max(8, window.innerHeight - atMenu.offsetHeight - 8);
+      }
+      let left = rect.left;
+      const maxLeft = Math.max(8, window.innerWidth - atMenu.offsetWidth - 8);
+      if (left > maxLeft) left = maxLeft;
+      if (left < 8) left = 8;
+      atMenu.style.left = left + 'px';
+      atMenu.style.top = top + 'px';
+      highlightAtItem(0);
+      const cursorPos = textarea.selectionStart;
+      const textBefore = textarea.value.substring(0, cursorPos);
+      const atIdx = textBefore.lastIndexOf('@');
+      atMenu.dataset.atPos = atIdx >= 0 ? atIdx : cursorPos - 1;
+    }
+
+    function hideAtMenu() {
+      atMenu.classList.add('hidden');
+      _atTarget = null;
+      _atActive = -1;
+    }
+
+    function highlightAtItem(idx) {
+      const items = atMenu.querySelectorAll('.at-menu-item');
+      items.forEach((el, i) => el.classList.toggle('active', i === idx));
+      _atActive = idx;
+    }
+
+    function selectAtItem(idx) {
+      if (!_atTarget) return;
+      const item = AT_ITEMS[idx];
+      if (!item) return;
+      const atPos = parseInt(atMenu.dataset.atPos || '0', 10);
+      const before = _atTarget.value.substring(0, atPos);
+      const after = _atTarget.value.substring(_atTarget.selectionStart);
+      _atTarget.value = before + item.tag + ' ' + after;
+      _atTarget.focus();
+      const newPos = atPos + item.tag.length + 1;
+      _atTarget.setSelectionRange(newPos, newPos);
+      hideAtMenu();
+    }
+
+    function handleAtInput(e) {
+      const ta = e.target;
+      const pos = ta.selectionStart;
+      const textBefore = ta.value.substring(0, pos);
+      const lastAt = textBefore.lastIndexOf('@');
+      if (lastAt >= 0) {
+        const typed = textBefore.substring(lastAt + 1);
+        if (typed.length <= 8 && !/\s/.test(typed)) {
+          showAtMenu(ta);
+          const filtered = AT_ITEMS.map((it, i) => ({...it, i})).filter(it => it.tag.substring(1).startsWith(typed.toLowerCase()));
+          const items = atMenu.querySelectorAll('.at-menu-item');
+          items.forEach(el => el.classList.add('hidden'));
+          filtered.forEach((f, fi) => {
+            items[f.i].classList.remove('hidden');
+            if (fi === 0) highlightAtItem(f.i);
+          });
+          if (filtered.length === 0) hideAtMenu();
+          return;
+        }
+      }
+      hideAtMenu();
+    }
+
+    function handleAtKeydown(e) {
+      if (atMenu.classList.contains('hidden')) return;
+      const visible = Array.from(atMenu.querySelectorAll('.at-menu-item:not(.hidden)'));
+      if (!visible.length) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const cur = visible.findIndex(el => el.classList.contains('active'));
+        const next = (cur + 1) % visible.length;
+        highlightAtItem(parseInt(visible[next].dataset.idx));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const cur = visible.findIndex(el => el.classList.contains('active'));
+        const prev = (cur - 1 + visible.length) % visible.length;
+        highlightAtItem(parseInt(visible[prev].dataset.idx));
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (_atActive >= 0) {
+          e.preventDefault();
+          selectAtItem(_atActive);
+        }
+      } else if (e.key === 'Escape') {
+        hideAtMenu();
+      }
+    }
+
+    atMenu.addEventListener('click', (e) => {
+      const item = e.target.closest('.at-menu-item');
+      if (item) selectAtItem(parseInt(item.dataset.idx));
+    });
+
+    ['chatInput', 'agentInput'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('input', handleAtInput);
+      el.addEventListener('keydown', handleAtKeydown);
+      el.addEventListener('blur', () => setTimeout(hideAtMenu, 150));
+    });
 
     $('agentMaxIter').oninput = () => { $('agentMaxIterVal').textContent = $('agentMaxIter').value; };
 
@@ -909,8 +1367,20 @@
         }
 
         await parseSSE(res, (data) => {
+          if (data.type === 'agent_status' && data.status === 'memory_saved') {
+            agentAppendBlock(
+              '<div class="memory-badge">\u{1F9E0} ' +
+              escapeHtml(data.message || 'Agent saved new knowledge to RAG Database') +
+              '</div>',
+              'my-1'
+            );
+            return;
+          }
+
           if (data.type === 'agent_state') {
-            if (data.status === 'planning') {
+            if (data.status === 'gathering_context') {
+              agentSetStatus('Gathering @context...', 'bg-amber-900/60 text-amber-200');
+            } else if (data.status === 'planning') {
               agentSetStatus('Planning...', 'bg-violet-900/60 text-violet-200');
             } else if (data.status === 'thinking') {
               agentSetStatus(
@@ -978,6 +1448,7 @@
         $('btnCancelAgent').disabled = true;
         agentRunning = false;
         if (window.hljs) hljs.highlightAll();
+        renderMermaid($('agentOutput'));
       }
     };
 
@@ -994,6 +1465,7 @@
     loadBrowse();
     switchTab('ingest');
     syncLlmProviderUi();
+    syncVisionProviderUi();
   </script>
 </body>
 </html>
