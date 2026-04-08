@@ -1,0 +1,53 @@
+/* Chunk Inspector — resizable gutters (Split.js injects .gutter) */
+#panel-chunk-inspector .gutter {
+  background: #334155;
+  flex-shrink: 0;
+  background-repeat: no-repeat;
+  background-position: 50%;
+}
+#panel-chunk-inspector .gutter.gutter-horizontal {
+  cursor: col-resize;
+  width: 8px;
+}
+#panel-chunk-inspector .gutter.gutter-vertical {
+  cursor: row-resize;
+  height: 6px;
+}
+#panel-chunk-inspector .gutter:hover {
+  background-color: #64748b;
+}
+
+#chunkVisualizerCode mark.chunk-mark {
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+#chunkVisualizerCode mark.chunk-mark.chunk-mark-selected {
+  outline: 2px solid #ef4444;
+  outline-offset: 1px;
+}
+
+#chunkMetaFloat {
+  z-index: 100;
+  max-width: min(420px, 92vw);
+  max-height: min(70vh, 520px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+#chunkMetaFloat .chunk-meta-drag-header {
+  cursor: grab;
+  user-select: none;
+}
+#chunkMetaFloat .chunk-meta-drag-header:active {
+  cursor: grabbing;
+}
+
+.chunk-list-row {
+  cursor: pointer;
+}
+.chunk-list-row:hover {
+  background: rgba(51, 65, 85, 0.5);
+}
+.chunk-list-row.chunk-list-selected {
+  background: rgba(99, 102, 241, 0.25);
+  border-left: 3px solid #818cf8;
+}

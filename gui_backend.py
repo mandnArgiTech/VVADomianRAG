@@ -21,6 +21,9 @@ Environment:
   GET /api/agent/tool-schemas — OpenAI-style JSON tool definitions for integrations (Ollama agent
   uses <tool_call> text tags; Anthropic and DeepSeek use native tool calling in the ReAct loop).
 
+  GET /api/file/raw — Raw UTF-8 file under RAG_GUI_SOURCE_BASE (Chunk Inspector).
+  GET /api/chunks/file — Chroma chunks for a file path (metadata source match).
+
   GET /api/vision/status — Docling/Pillow availability for the Vision Parser tab.
   POST /api/vision/parse — multipart PDF upload; streams SSE JSON events from util.universal_vision_parser.
 """
@@ -43,10 +46,11 @@ from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Tuple, Uni
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.staticfiles import StaticFiles
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 # Repo root = directory containing this file (ingest.py, query.py, hybrid_search.py live here)
@@ -826,6 +830,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_static_dir = REPO_ROOT / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -902,6 +910,73 @@ async def api_browse(path: str = "") -> Dict[str, Any]:
     except OSError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"root": str(root), "path": path, "entries": entries}
+
+
+@app.get("/api/file/raw")
+async def api_file_raw(path: str) -> PlainTextResponse:
+    """Return raw UTF-8 text for a file under RAG_GUI_SOURCE_BASE (path relative to browse root)."""
+    if not path.strip():
+        raise HTTPException(status_code=400, detail="path query parameter is required")
+    root = resolved_source_base()
+    target = safe_subpath(root, path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail=f"Not a file: {path}")
+    try:
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlainTextResponse(content=text, media_type="text/plain; charset=utf-8")
+
+
+@app.get("/api/chunks/file")
+async def api_chunks_file(path: str, db_path: Optional[str] = None) -> JSONResponse:
+    """List all Chroma chunks whose metadata source matches the resolved absolute file path."""
+    if not path.strip():
+        raise HTTPException(status_code=400, detail="path query parameter is required")
+    root = resolved_source_base()
+    abs_path = safe_subpath(root, path).resolve()
+    if not abs_path.is_file():
+        raise HTTPException(status_code=404, detail=f"Not a file: {path}")
+    abs_src = str(abs_path)
+    resolved = resolve_db_path(form_path=db_path)
+    _, _, cmap, _ = await ensure_chroma(resolved)
+    chunks_out: List[Dict[str, Any]] = []
+    for collection_name, collection in cmap.items():
+        try:
+            batch = await asyncio.to_thread(
+                lambda c=collection: c.get(
+                    where={"source": abs_src},
+                    include=["ids", "documents", "metadatas"],
+                )
+            )
+        except Exception as exc:  # pragma: no cover
+            log.warning("chunks/file: collection %s get failed: %s", collection_name, exc)
+            continue
+        ids = batch.get("ids") or []
+        docs = batch.get("documents") or []
+        metas = batch.get("metadatas") or []
+        for i, cid in enumerate(ids):
+            doc = docs[i] if i < len(docs) else ""
+            meta = metas[i] if i < len(metas) else {}
+            if isinstance(meta, dict):
+                meta_clean = jsonable_encoder(meta)
+            else:
+                meta_clean = {}
+            chunks_out.append(
+                {
+                    "chunk_id": cid,
+                    "text": doc if isinstance(doc, str) else (doc or ""),
+                    "metadata": meta_clean,
+                    "collection": collection_name,
+                }
+            )
+    payload = {
+        "file": path,
+        "abs_source": abs_src,
+        "total_chunks": len(chunks_out),
+        "chunks": chunks_out,
+    }
+    return JSONResponse(content=payload)
 
 
 @app.get("/api/vision/status")

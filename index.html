@@ -42,6 +42,7 @@
     .at-menu-item kbd { font-size: 11px; color: #94a3b8; font-family: 'JetBrains Mono', monospace; }
     .memory-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.3); color: #fbbf24; font-size: 12px; font-weight: 500; }
   </style>
+  <link rel="stylesheet" href="/static/chunk_visualizer.css" />
 </head>
 <body class="h-full bg-slate-950 text-slate-100 antialiased">
   <div id="app" class="min-h-full flex flex-col">
@@ -75,6 +76,7 @@
       <button type="button" data-tab="chat" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">AI Chat Studio</button>
       <button type="button" data-tab="agent" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">Agent Workspace</button>
       <button type="button" data-tab="vision" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">Vision Parser</button>
+      <button type="button" data-tab="chunks" class="tab-btn px-4 py-2 rounded-t-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/80">Chunk Inspector</button>
     </nav>
 
     <main class="flex-1 flex flex-col min-h-0">
@@ -323,9 +325,73 @@
           <p class="text-[10px] text-slate-600 leading-relaxed">Requires <code class="text-slate-500">pip install docling Pillow</code>. Output is Markdown only — save and ingest via DomainDocs or the agent tab.</p>
         </aside>
       </section>
+
+      <!-- Chunk Inspector tab -->
+      <section id="panel-chunk-inspector" class="hidden flex-1 flex flex-col min-h-0 bg-slate-950">
+        <div class="px-3 py-2 border-b border-slate-800 flex flex-wrap items-center gap-2 text-xs">
+          <span class="text-slate-500">Optional DB override (same as ingest)</span>
+          <input
+            id="chunkInspectDbPath"
+            type="text"
+            class="flex-1 min-w-[200px] max-w-xl rounded bg-slate-900 border border-slate-700 px-2 py-1 font-mono text-slate-300"
+            placeholder="leave empty for RAG_GUI_DB_PATH / default"
+          />
+          <button type="button" id="chunkBtnToggleLeft" class="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300">Toggle left</button>
+          <button type="button" id="chunkBtnToggleRight" class="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-300">Toggle right</button>
+        </div>
+        <div id="ci-h-root" class="flex-1 flex min-h-0 min-h-[320px]">
+          <div id="ci-left-col" class="flex flex-col min-h-0 min-w-0">
+            <div id="ci-top-explorer" class="flex flex-col min-h-0 border-b border-slate-800 overflow-hidden">
+              <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-800/80">Code explorer</div>
+              <div class="flex gap-1 px-2 py-1 items-center shrink-0">
+                <button type="button" id="chunkBrowseUp" class="px-2 py-0.5 rounded bg-slate-800 text-[11px] border border-slate-700">↑ Parent</button>
+                <span id="chunkBrowsePath" class="text-[10px] text-cyan-400/80 font-mono truncate flex-1"></span>
+              </div>
+              <select id="chunkBrowseList" size="8" class="flex-1 min-h-[120px] m-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono p-1"></select>
+              <div class="flex gap-1 px-2 pb-2 shrink-0">
+                <button type="button" id="chunkBtnOpenFile" class="flex-1 py-1.5 rounded-lg bg-violet-900/40 border border-violet-800 text-violet-200 text-xs">Open file</button>
+                <button type="button" id="chunkBtnRefresh" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-xs text-slate-300">Refresh</button>
+              </div>
+              <p class="text-[10px] text-slate-600 px-2 pb-2">Double-click folder to open; double-click file or use Open file. Paths are relative to Codebase root.</p>
+            </div>
+            <div id="ci-bottom-chunks" class="flex flex-col min-h-0 overflow-hidden">
+              <div class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-800/80">Ingested chunks</div>
+              <div id="chunkListInner" class="flex-1 overflow-y-auto chat-scroll text-left"></div>
+            </div>
+          </div>
+          <div id="ci-right-viz" class="flex flex-col min-h-0 min-w-0 flex-1 border-l border-slate-800">
+            <div class="px-3 py-2 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+              <h2 class="text-sm font-semibold text-slate-200">Visualizer</h2>
+              <span class="text-xs text-slate-400">Total chunks: <span id="chunkTotalLabel" class="text-cyan-400/90 font-mono">0</span></span>
+            </div>
+            <p id="chunkInspectorHint" class="text-[10px] text-slate-500 px-3 py-1 border-b border-slate-800/80 font-mono break-all"></p>
+            <div class="flex-1 overflow-auto min-h-0 terminal-scroll p-2">
+              <pre class="m-0 text-xs font-mono text-slate-200 whitespace-pre-wrap break-words"><code id="chunkVisualizerCode" class="text-slate-200">Select a file to inspect chunks.</code></pre>
+            </div>
+            <p class="text-[10px] text-slate-600 px-3 py-2 border-t border-slate-800 leading-relaxed">
+              Highlighting uses exact substring match after normalizing CRLF. Chunks truncated at 100k chars in ingest may not match. Overlapping chunk spans are skipped.
+            </p>
+          </div>
+        </div>
+        <div
+          id="chunkMetaFloat"
+          class="hidden fixed z-[100] w-[min(400px,92vw)] rounded-xl border border-slate-600 bg-slate-900 shadow-2xl flex flex-col max-h-[min(70vh,520px)]"
+        >
+          <div
+            id="chunkMetaDragHeader"
+            class="chunk-meta-drag-header flex items-center justify-between px-3 py-2 border-b border-slate-700 rounded-t-xl bg-slate-800/90"
+          >
+            <span class="text-xs font-semibold text-slate-200">Chunk metadata</span>
+            <button type="button" id="chunkBtnCloseMeta" class="text-slate-400 hover:text-white text-lg leading-none px-1">&times;</button>
+          </div>
+          <div id="chunkMetaFloatBody" class="overflow-y-auto p-3 text-sm flex-1"></div>
+        </div>
+      </section>
     </main>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/split.js/1.6.5/split.min.js" crossorigin="anonymous"></script>
+  <script src="/static/chunk_visualizer.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     let browseRel = '';
@@ -624,6 +690,14 @@
       $('panel-agent').classList.toggle('flex', name === 'agent');
       $('panel-vision').classList.toggle('hidden', name !== 'vision');
       $('panel-vision').classList.toggle('flex', name === 'vision');
+      $('panel-chunk-inspector').classList.toggle('hidden', name !== 'chunks');
+      $('panel-chunk-inspector').classList.toggle('flex', name === 'chunks');
+      if (name === 'chunks') {
+        setTimeout(() => {
+          if (window.ensureChunkSplits) window.ensureChunkSplits();
+          if (window.loadChunkBrowseForInspector) window.loadChunkBrowseForInspector();
+        }, 0);
+      }
     }
 
     document.querySelectorAll('.tab-btn').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
@@ -1463,6 +1537,7 @@
 
     loadStatus();
     loadBrowse();
+    if (window.initChunkInspector) window.initChunkInspector();
     switchTab('ingest');
     syncLlmProviderUi();
     syncVisionProviderUi();
