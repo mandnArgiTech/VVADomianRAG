@@ -1,0 +1,59 @@
+You are an elite Full-Stack RAG Architect. We are building a "Visual Chunk Inspector" for our Ngspice Domain RAG system. This feature will allow us to visually debug how the AST parser is chunking 1990s C-code by overlaying the ChromaDB chunks directly onto the raw source code.
+
+Target Files: 
+1. `gui_backend.py` (Backend APIs)
+2. `index.html` (Frontend Layout & UI)
+3. Custom CSS/JS files if your architecture requires them (e.g., `style.css`, `app.js`)
+
+Please implement this feature systematically using the following steps:
+
+Step 1: Backend API Endpoints (`gui_backend.py`)
+Add two new FastAPI endpoints to serve the raw files and their corresponding ChromaDB chunks.
+- Endpoint 1: `@app.get("/api/file/raw")`
+  - Accept a `path` query parameter.
+  - Use `resolved_source_base()` and `safe_subpath()` to locate the file.
+  - Return the raw file contents using `PlainTextResponse`.
+- Endpoint 2: `@app.get("/api/chunks/file")`
+  - Accept a `path` query parameter.
+  - Resolve the absolute path of the file.
+  - Connect to ChromaDB (`ensure_chroma`).
+  - Iterate through all available collections in `cmap`. Query each collection where `{"source": abs_src}`.
+  - Accumulate and return a JSON payload: `{"file": path, "total_chunks": len, "chunks": [{"chunk_id", "text", "metadata", "collection"}, ...]}`.
+
+Step 2: Frontend Layout Architecture (`index.html` & CSS)
+Design a highly interactive, dual-panel UI using CSS Grid/Flexbox or a library like Split.js.
+- The UI must be split into a Left Panel and a Right Panel. These panels should be resizable, dockable, and hideable.
+- Left Panel (Split Horizontally):
+  - Top Half: "Code Explorer" (A file tree hitting `/api/browse`).
+  - Bottom Half: "Ingested Chunks" (A list view showing chunks for the currently selected file).
+- Right Panel: "The Visualizer"
+  - Top header: Summary of chunking (e.g., "Total Chunks: 15").
+  - Main body: A `<pre><code>` block displaying the raw file.
+- Floating Metadata Panel:
+  - Create a floating, draggable, absolutely-positioned `div` (hidden by default) that will display detailed chunk metadata when a chunk is clicked.
+
+Step 3: Chunk Highlighting Logic (JavaScript)
+Implement the core visualizer logic. When a user clicks a file in the Code Explorer:
+- Fetch the raw text (`/api/file/raw`) and the chunks (`/api/chunks/file`).
+- Populate the Right Panel's `<code>` block with the raw text.
+- Iterate through the returned chunks and wrap their exact text occurrences in the raw code with `<mark>` tags using `innerHTML.replace()`.
+- Semantic Coloring: Apply inline styles to the `<mark>` tags based on `chunk.metadata.chunk_type`.
+  - default: `rgba(0, 150, 255, 0.2)` (Blue)
+  - `device_load_function`: `rgba(255, 100, 0, 0.3)` (Orange)
+  - `matrix_solver_function`: `rgba(0, 200, 50, 0.3)` (Green)
+- Protected/Ignored Code: Because we only wrap exact string matches from ChromaDB, legacy boilerplate bypassed by `.gitignore` or Tree-sitter must naturally remain un-highlighted plain text.
+
+Step 4: Interactive Syncing & Hover Events
+- Add an `onclick` event to every highlighted `<mark>` tag.
+- When clicked:
+  1. Show the Floating Metadata Panel and populate it with the chunk's `chunk_name`, `chunk_type`, `device_family`, and `concepts`.
+  2. Add a `2px solid red` border to the clicked `<mark>` tag (and remove it from previously clicked tags).
+  3. Scroll the specific chunk into view (`scrollIntoView({behavior: "smooth", block: "center"})`).
+- Left-to-Right Sync: When a user clicks a specific chunk in the Left-Bottom "Ingested Chunks" list, it must trigger the exact same highlight, scroll, and metadata display in the Right Panel visualizer.
+
+Rules:
+- Ensure the HTML escaping is robust so C-code syntax (like `<stdio.h>`) doesn't break the DOM when injecting the `<mark>` tags.
+- Make the UI look modern, clean, and highly technical (dark mode preferred for EDA tools).
+
+Verification:
+Once completed, verify that clicking a massive `BSIM4load` function in the left panel smoothly scrolls the right panel to a massive orange block of code, while leaving the legacy header boilerplate above it uncolored.

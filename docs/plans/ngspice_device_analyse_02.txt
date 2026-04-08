@@ -1,0 +1,36 @@
+You are an elite EDA Architect and Technical Product Manager. We have successfully proven our `spice_context_t` thread-safe architecture on a subset of Ngspice files. We are now scaling this massive architectural refactor across ALL device models and ALL analysis algorithms in the legacy Ngspice C codebase.
+
+I need you to write a highly detailed 'Cursor Implementable Story' that I will paste into Cursor's Composer. 
+
+Target Directories:
+1. src/spicelib/analysis/ (ALL files: AC, DC, TRAN, NOISE, PZ, SENS, TF, etc.)
+2. src/spicelib/devices/ (ALL device subdirectories: BSIM*, HISIM*, BJT, DIO, JFET, MES, RES, CAP, IND, etc.)
+3. src/include/ngspice/ (Core headers like devdefs.h, ifsim.h, cktdefs.h)
+
+Because this involves hundreds of files, manual multi-file edits will fail. Please write the prompt for Cursor instructing it to execute the following steps systematically:
+
+Step 1: The Global Header Sweep (`src/include/ngspice/`)
+- Update `devdefs.h`, `ifsim.h`, and `cktdefs.h`. 
+- Modify every function pointer definition inside `SPICEdev` (e.g., `DEVsetup`, `DEVload`, `DEVtemp`, `DEVtrunc`, `DEVnoise`, `DEVpzLoad`, `DEVaccept`) so their signatures accept `spice_context_t* ctx` as the primary state pointer, replacing the legacy `sCKT* ckt` or `GENmodel*` where global state was previously inferred.
+
+Step 2: Automated Signature Rewriting (The Python/AST Script)
+- Instruct Cursor to write a robust Python script (e.g., `refactor_signatures.py`) that walks through `src/spicelib/devices/` and `src/spicelib/analysis/`.
+- The script must use regex or simple AST parsing to find all instances of legacy device functions (e.g., `int *load(GENmodel *inModel, CKTcircuit *ckt)`) and rewrite them to the new signature: `int *load(spice_context_t* ctx, GENmodel *inModel)`.
+- Execute the script from the Cursor terminal to apply the changes codebase-wide in seconds.
+
+Step 3: Global State Substitution via Composer
+- Now, using Cursor's Composer on the `analysis/` and `devices/` directories, find all internal logic within the modified functions that directly references the old global `CKT` pointers, global iteration counters, or global matrix pointers.
+- Replace these with `ctx->ckt`, `ctx->iteration`, and `ctx->matrix` equivalents.
+- Ensure the Newton-Raphson convergence variables and RHS matrix loading macros (which are notoriously heavily used in device `*load.c` files) are securely routed through `ctx`.
+
+Step 4: The Compilation & Fix Loop
+- Instruct Cursor to run `make clean && make -j16`.
+- This massive sweep will inevitably break hundreds of legacy macros (like `MAKE_MATRIX_PTR` or `LOAD_RHS`). 
+- Instruct Cursor to automatically read the `make` stderr output, identify the broken macros in the device model headers (e.g., `bsim4def.h`), and update those specific macros to accept and use `ctx`.
+- Iterate on the `make` command until the entire engine compiles cleanly.
+
+Step 5: Verification
+- Run the full internal Ngspice test suite (`make check` or run standard benchmark netlists for AC, DC, TRAN, and NOISE).
+- Ensure no segfaults occur, verifying that the `ctx` pointer is cleanly passed down the entire call stack from the main simulation loop to the deepest device evaluation node.
+
+If you understand, output the exact Cursor prompt I need to execute this seamlessly.

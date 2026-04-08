@@ -1,0 +1,34 @@
+You are an expert Python developer and EDA Architect. We need to perform a highly targeted enhancement to our `ingest.py` script. To build a flawless Domain RAG for the Ngspice simulator, the database must capture critical global constants (magic numbers), tag C chunks by their exact device family, and ingest the plain-English Ngspice user manuals.
+
+Target File: `ingest.py`
+
+Please execute the following 3 enhancements:
+
+Step 1: Core Constant Extraction (`cktdefs.h`, `devdefs.h`)
+- Ngspice algorithms rely on "magic numbers" (GMIN defaults, iteration limits, tolerances) defined via macros in core headers.
+- Locate the `_ts_extract_chunks` function.
+- Add logic inside the `walk` function: If `grammar == "c"` and `t == "preproc_def"` (macro definition), and the file path ends with `cktdefs.h` or `devdefs.h`, forcefully tag the metadata `chunk_type` as `"core_constant"`.
+- Ensure the extraction captures the actual *value* of the macro, not just the identifier, so the AI knows the default tolerance numbers.
+
+Step 2: Device Family Metadata Tagging
+- We must be able to filter the Vector DB by device type (BJT, VDMOS, VCVS, etc.) when querying.
+- In `_ts_extract_chunks`, add logic to inspect the file `path`. 
+- Check if `"devices"` is in `path.parts` (e.g., `src/spicelib/devices/bjt/bjtload.c`). 
+- If it is, extract the immediate subdirectory name (e.g., `"bjt"`, `"vdmos"`, `"vcvs"`) and convert it to uppercase.
+- Add a new metadata field to the chunk dictionary: `"device_family": "BJT"`. 
+- If the file is not in the `devices` directory, default the field to `"device_family": "CORE"`.
+- Ensure this new field is added to `METADATA_KEYS` at the top of `ingest.py` so ChromaDB saves it.
+
+Step 3: Ngspice Manual Ingestion Routing
+- The raw C code lacks plain-English explanations. We must ingest the Ngspice manual (specifically the DEVICES and ANALYSES sections).
+- Locate the `choose_strategy_for_path` function.
+- Add routing logic to detect if `path` contains `docs/` or `Spice64/docs/` (assuming markdown, txt, or generic text files).
+- If it is a documentation file, force the `source_type` to `"ngspice_manual"`.
+- Route it to `chunk_markdown_domain` (if it is `.md` or `.txt`) so we capture the natural language theory, equations, and algorithmic explanations.
+
+Rules:
+- Be robust with the path checking in Step 2, as cross-platform paths (`\` vs `/`) can break `.parts` matching if not handled cleanly using `pathlib`.
+- Ensure no existing AST logic is broken.
+
+Verification:
+Output a brief summary explaining how these 3 metadata and routing updates will allow the Agent to query the RAG for exact tolerance variables and plain-English algorithm summaries before touching the C code.

@@ -179,6 +179,9 @@ METADATA_KEYS = [
     "object_name",
     "context_window",
     "dependencies",
+    "llm_summary",
+    "llm_tags",
+    "llm_relations",
 ]
 
 CONTENT_TYPE_SIGNALS = {
@@ -2323,6 +2326,136 @@ def _ollama_embed_url() -> str:
     return f"http://{base}/api/embed"
 
 
+def _ollama_generate_url() -> str:
+    """Ollama /api/generate for LLM metadata enrichment."""
+    custom = os.environ.get("ENRICH_OLLAMA_URL", "").strip()
+    if custom:
+        c = custom.rstrip("/")
+        return c if c.endswith("/api/generate") else c + "/api/generate"
+    base = os.environ.get("OLLAMA_HOST", "127.0.0.1:11434").strip()
+    if base.startswith("http://") or base.startswith("https://"):
+        return base.rstrip("/") + "/api/generate"
+    return f"http://{base}/api/generate"
+
+
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
+
+
+def _parse_ollama_enrichment_json(inner: str) -> Optional[Dict[str, str]]:
+    """Parse model JSON into flat llm_* strings; return None on failure."""
+    inner = inner.strip()
+    m = _JSON_FENCE_RE.search(inner)
+    if m:
+        inner = m.group(1).strip()
+    try:
+        obj = json.loads(inner)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    summary = str(obj.get("summary") or "").strip()
+    tags_raw = obj.get("tags") or []
+    if isinstance(tags_raw, str):
+        tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+    elif isinstance(tags_raw, list):
+        tags = [str(t).strip() for t in tags_raw if str(t).strip()]
+    else:
+        tags = []
+    rel_raw = obj.get("related_functions") or obj.get("related_function") or []
+    if isinstance(rel_raw, str):
+        rel = [t.strip() for t in rel_raw.split(",") if t.strip()]
+    elif isinstance(rel_raw, list):
+        rel = [str(t).strip() for t in rel_raw if str(t).strip()]
+    else:
+        rel = []
+    tags = tags[:3]
+    return {
+        "llm_summary": summary,
+        "llm_tags": ",".join(tags),
+        "llm_relations": ",".join(rel),
+    }
+
+
+def _generate_llm_metadata(
+    chunk_text: str,
+    chunk_name: str,
+    model: str,
+    *,
+    timeout_sec: float = 60.0,
+) -> Dict[str, str]:
+    """
+    Call local Ollama /api/generate to produce llm_summary, llm_tags, llm_relations.
+    On HTTP/JSON failure after retries, returns empty strings for all three.
+    """
+    empty = {"llm_summary": "", "llm_tags": "", "llm_relations": ""}
+    snippet = chunk_text[:3000]
+    prompt = (
+        f"You are an expert EDA C-programmer. Analyze this Ngspice C function named '{chunk_name}'.\n"
+        f"Code:\n{snippet}\n\n"
+        "Task: Provide metadata about this function.\n"
+        "Output STRICTLY as a JSON object with NO markdown, NO markdown fences, and NO extra text:\n"
+        "{\n"
+        '  "summary": "One-line plain English summary of what this does",\n'
+        '  "tags": ["BJT", "matrix-assembly", "NR-iteration", etc... max 3 tags],\n'
+        '  "related_functions": ["names of functions it calls or is called by"]\n'
+        "}"
+    )
+    url = _ollama_generate_url()
+    payload_obj = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.1},
+    }
+    payload = json.dumps(payload_obj).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+                data = json.load(resp)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            logger.warning(
+                "enrich-metadata: Ollama HTTP %s (attempt %s): %s",
+                exc.code,
+                attempt + 1,
+                body[:500],
+            )
+            if attempt == 2:
+                return empty
+            continue
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            logger.warning("enrich-metadata: Ollama request failed (attempt %s): %s", attempt + 1, exc)
+            if attempt == 2:
+                return empty
+            continue
+        except Exception as exc:  # pragma: no cover
+            logger.warning("enrich-metadata: unexpected error (attempt %s): %s", attempt + 1, exc)
+            if attempt == 2:
+                return empty
+            continue
+
+        raw = data.get("response")
+        if raw is None or not isinstance(raw, str):
+            logger.warning("enrich-metadata: missing response field (attempt %s)", attempt + 1)
+            if attempt == 2:
+                return empty
+            continue
+        parsed = _parse_ollama_enrichment_json(raw)
+        if parsed is not None:
+            return parsed
+        logger.warning("enrich-metadata: JSON parse failed (attempt %s)", attempt + 1)
+        if attempt == 2:
+            return empty
+        continue
+    return empty
+
+
 def _nvidia_total_vram_mb() -> Optional[int]:
     try:
         proc = subprocess.run(
@@ -3457,6 +3590,18 @@ def ingest_run(args: argparse.Namespace) -> int:
             meta["concepts"] = concepts
             for c in iter_concept_ids(concepts):
                 concepts_found[c] += 1  # pragma: no cover
+            if (
+                getattr(args, "enrich_metadata", False)
+                and not args.dry_run
+                and meta.get("source_type") == "code"
+            ):
+                extra = _generate_llm_metadata(
+                    text,
+                    str(partial.get("chunk_name") or ""),
+                    args.enrich_model,
+                    timeout_sec=float(getattr(args, "enrich_timeout", 60.0)),
+                )
+                meta.update({k: v for k, v in extra.items() if v})
             meta = finalize_metadata(meta)
             try:
                 cidx = int(meta.get("chunk_index") or i)
@@ -3676,6 +3821,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "When tree-sitter is not installed for C/C++/Java, allow RecursiveCharacterTextSplitter "
             "fallback instead of skipping those files. Same effect as INGEST_ALLOW_LANGUAGE_SPLIT_FALLBACK=1."
         ),
+    )
+    p.add_argument(
+        "--enrich-metadata",
+        action="store_true",
+        help="Call local Ollama to add llm_summary, llm_tags, llm_relations per chunk (code source_type only).",
+    )
+    p.add_argument(
+        "--enrich-model",
+        default=os.environ.get("ENRICH_MODEL", "qwen2.5:0.5b"),
+        help="Ollama model for --enrich-metadata (default: ENRICH_MODEL or qwen2.5:0.5b).",
+    )
+    p.add_argument(
+        "--enrich-timeout",
+        type=float,
+        default=float(os.environ.get("ENRICH_OLLAMA_TIMEOUT", "60")),
+        help="Seconds to wait per Ollama /api/generate call during enrichment (default: ENRICH_OLLAMA_TIMEOUT or 60).",
     )
     return p
 

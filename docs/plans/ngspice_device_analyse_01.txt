@@ -1,0 +1,40 @@
+You are an elite EDA Architect and Technical Product Manager. We are continuing our massive architectural refactor of the legacy Ngspice C codebase to make it a thread-safe, AI-ready, and high-performance simulation engine. 
+
+I need you to write a highly detailed 'Cursor Implementable Story' that I will paste into Cursor's Composer. 
+
+This specific task targets the core analysis loops and a diverse set of device evaluation models. We must thread our new `spice_context_t` state through these files, eliminate their global variable dependencies, and update their data structures in `devdefs.h` to prepare for Structure of Arrays (SoA) vectorization.
+
+Target Files:
+1. src/include/devdefs.h
+2. src/spicelib/analysis/cktsetup.c
+3. src/spicelib/analysis/cktop.c
+4. src/spicelib/analysis/dctran.c
+5. src/spicelib/devices/ind/mutload.c
+6. src/spicelib/devices/vcvs/vcvsload.c
+7. src/spicelib/devices/bjt/bjtload.c
+8. src/spicelib/devices/vdmos/vdmostemp.c
+9. src/spicelib/devices/vdmos/vdmosload.c
+
+Please write the prompt for Cursor. Instruct Cursor to execute the following steps systematically:
+
+Step 1: Structural Header Updates (`devdefs.h`)
+- Analyze `devdefs.h`. Update the core device function pointers (e.g., `DEVload`, `DEVsetup`, `DEVtemp`) so their signatures accept `spice_context_t* ctx` instead of relying on global `CKT` pointers.
+- Ensure the base device instance and model structs are annotated or prepared for flattening/SoA memory layouts.
+
+Step 2: Core Analysis Threading (`cktsetup.c`, `cktop.c`, `dctran.c`)
+- Refactor `cktsetup.c` (Circuit Setup) and `cktop.c` (Operating Point) to instantiate and utilize the `spice_context_t` struct. 
+- In `dctran.c`, refactor the main DC/Transient integration loop. Replace any direct global state mutations (e.g., global iteration counters, time-step states) with updates to `ctx->`.
+- Ensure the Newton-Raphson convergence loop passes the `ctx` pointer cleanly down into the device load functions.
+
+Step 3: Device Model Refactoring (`mutload.c`, `vcvsload.c`, `bjtload.c`, `vdmosload.c`, `vdmostemp.c`)
+- Update the function signatures for `MUTload`, `VCVSload`, `BJTload`, `VDMOSload`, and `VDMOStemp` to match the new definitions in `devdefs.h`.
+- Inside these massive evaluation functions, convert the Array-of-Structures (AoS) linked-list traversals into flat, cache-friendly loops where possible.
+- Extract matrix pointer lookups (RHS and Jacobian loading) so they reference the matrix exposed inside `ctx`.
+- CRITICAL RULE: Do NOT alter the mathematical formulas, derivatives, or physical equations for the Inductors, VCVS, BJT, or VDMOS devices. Only change the memory access patterns and function signatures.
+
+Step 4: Compilation and Validation
+- Instruct Cursor to run `make clean && make -j8` after these changes.
+- Automatically fix any compiler warnings regarding missing `ctx` pointers in macro expansions.
+- Instruct Cursor to run a baseline `.tran` SPICE simulation from the terminal using a standard BJT or VDMOS netlist to verify that the Newton-Raphson solver still converges correctly.
+
+If you understand, output the exact Cursor prompt I need to execute this seamlessly.

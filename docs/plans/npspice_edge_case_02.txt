@@ -1,0 +1,34 @@
+You are an expert Python developer and EDA Architect. We are executing the final, absolute hardening of `ingest.py` for the Ngspice legacy C codebase. We must fix the "Syntax Fallback Butcher", capture "Floating Header" comments, and route legacy SPICE extensions correctly.
+
+Target File: `ingest.py`
+
+Please execute the following 3 enhancements:
+
+Step 1: Fix the Syntax Fallback Butcher (Dynamic Language Split)
+- Locate the `language_split` function.
+- It currently hardcodes `chunk_size=2000, chunk_overlap=200`.
+- Change the function signature to accept a `size` parameter: `def language_split(path: Path, content: str, lang: Language, size: int = 2000) -> List[Tuple[str, Dict[str, str]]]:`
+- Pass this `size` to the `RecursiveCharacterTextSplitter.from_language` call.
+- Now, locate `choose_strategy_for_path`. Wherever `language_split` is used as a fallback for C or C++ (e.g., `or language_split(p, c, Language.C)`), update it to pass a massive chunk size to prevent butchering large functions when tree-sitter fails: `language_split(p, c, Language.C, size=50000)`.
+
+Step 2: Rescue the "Floating Header" File Preamble
+- Locate `_ts_extract_chunks`. 
+- Before the `walk(tree.root_node)` call, we need to extract the top-of-file block comment if it exists, as it often contains the core physics/math theory for the file.
+- Add logic: Use regex to extract the very first block comment `/* ... */` at the top of the file (only if it occurs within the first ~20 lines). 
+- If found, append it to `out` as its own chunk:
+  `out.append((preamble_text[:12000], {"chunk_strategy": f"ast_{grammar}", "chunk_type": "file_preamble", "chunk_name": path.stem, "chunk_index": "0"}))`
+- This guarantees the AI reads the overarching theory of the `.c` file.
+
+Step 3: Route Legacy Ngspice Extensions
+- Locate the `choose_strategy_for_path` function.
+- Ngspice uses `.inc`, `.def`, and `.mac` files for massive C-macro and array definitions.
+- Add these extensions to the C parser routing list.
+- Update the condition from `if ext in (".c", ".h"):` to `if ext in (".c", ".h", ".inc", ".def", ".mac"):`
+- This ensures tree-sitter processes these as C-code, capturing their macro definitions structurally instead of treating them as generic markdown/text.
+
+Rules:
+- Be extremely careful with the regex for the block comment in Step 2 so it doesn't greedily capture the whole file (use `.*?` non-greedy matching).
+- Ensure all updated function signatures match where they are called throughout the file.
+
+Verification:
+Output a brief summary of how these 3 changes will ensure the Autonomous Agent survives parsing legacy 1990s C architecture without losing critical context.

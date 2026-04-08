@@ -1,0 +1,32 @@
+You are an expert Python developer and EDA Architect. We are making our final, critical optimizations to `ingest.py` for the Ngspice C codebase. We need to fix three hidden edge cases involving legacy C typedefs, artificial chunk truncation limits, and AST node naming for macros.
+
+Target File: `ingest.py`
+
+Please execute the following 3 enhancements:
+
+Step 1: Fix Typedef Struct Blindness
+- Locate the `targets` dictionary inside the `_ts_extract_chunks` function.
+- In the `"c"` grammar targets, add `"type_definition"` to the set. 
+- Legacy C code heavily uses `typedef struct { ... } name;`. Without `"type_definition"`, we will miss the core circuit and matrix struct definitions entirely.
+- The set should now include: `{"function_definition", "struct_specifier", "enum_specifier", "declaration", "preproc_def", "preproc_function_def", "type_definition"}`
+
+Step 2: Remove the "BSIM4 Monster" Truncation 
+- Locate where the AST text is appended to the `out` array inside `_ts_extract_chunks`. 
+- Currently, it slices the text with a hardcoded limit: `txt[:12000]`.
+- Device evaluation functions in SPICE (like BSIM4) are massive and easily exceed 12,000 characters. Since we use a 128k context window model, this hard limit destroys the math.
+- Change `txt[:12000]` to `txt[:100000]` to safely capture massive C functions without arbitrarily chopping off the bottom half. (Also update this limit for the scheme parser if present, for consistency).
+
+Step 3: Fix Macro and Global Identifier Masking
+- Inside the `walk` function in `_ts_extract_chunks`, there is logic that attempts to find the `chunk_name`. If it fails, it defaults to the file name.
+- Add specific naming logic for C macros and declarations so they don't all default to the filename.
+- Add logic: If `grammar == "c"` and `t in ("preproc_def", "preproc_function_def")`, loop through `node.children` to find the `identifier` node and set `chunk_name` to its text.
+- Add logic: If `grammar == "c"` and `t == "declaration"`, loop through `node.children` to find the `init_declarator` or `identifier` node and set `chunk_name` to its text.
+- Add logic: If `grammar == "c"` and `t == "type_definition"`, find the `type_identifier` node and set the `chunk_name` to its text.
+- This ensures the vector database metadata explicitly knows the name of the struct, global, or macro.
+
+Rules:
+- Make sure to gracefully handle cases where the identifier node might not be found (fallback to `path.stem`).
+- Do not break the existing naming logic for C++ or Java classes.
+
+Verification:
+Output a brief summary confirming that legacy SPICE structs, massive math functions, and global variable identifiers will now be accurately mapped into the Vector DB.

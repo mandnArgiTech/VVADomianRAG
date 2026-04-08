@@ -1,0 +1,50 @@
+You are an elite EDA Architect and Python Developer. We are upgrading our `ingest.py` pipeline to perform "Two-Stage Semantic Ingestion". 
+Step 1 (already implemented) uses Tree-sitter to extract structurally perfect C-AST chunks. 
+Step 2 (this task) will pass each AST chunk to a local Qwen 0.5B model to generate a one-line summary, technical tags, and relational mapping before saving to ChromaDB.
+
+Target File: `ingest.py`
+
+Please execute the following 4 enhancements systematically:
+
+Step 1: Add CLI Arguments for Semantic Enrichment
+- In `build_arg_parser`, add a new boolean flag: `--enrich-metadata` (action="store_true").
+- Add a new string argument: `--enrich-model` defaulting to `os.environ.get("ENRICH_MODEL", "qwen2.5:0.5b")`.
+
+Step 2: Create the Local LLM Enrichment Function
+- Create a new function: `def _generate_llm_metadata(chunk_text: str, chunk_name: str, model: str) -> Dict[str, str]:`
+- Inside, construct an HTTP POST request to the local Ollama instance (`http://localhost:11434/api/generate`).
+- Use this exact prompt optimized for small models (0.5B):
+  "You are an expert EDA C-programmer. Analyze this Ngspice C function named '{chunk_name}'.
+  Code:
+  {chunk_text[:3000]}
+  
+  Task: Provide metadata about this function.
+  Output STRICTLY as a JSON object with NO markdown, NO markdown fences, and NO extra text:
+  {
+    \"summary\": \"One-line plain English summary of what this does\",
+    \"tags\": [\"BJT\", \"matrix-assembly\", \"NR-iteration\", etc... max 3 tags],
+    \"related_functions\": [\"names of functions it calls or is called by\"]
+  }"
+- Use a low temperature (e.g., `0.1`).
+- Parse the JSON response defensively. If JSON parsing fails after 2 retries, return fallback empty strings.
+- Format the output into a flat dictionary suitable for ChromaDB metadata:
+  `{"llm_summary": summary, "llm_tags": ",".join(tags), "llm_relations": ",".join(related_functions)}`
+
+Step 3: Integrate Enrichment into the Ingestion Loop
+- Locate the main chunk processing loop in `ingest_run` (specifically, `for i, (text, partial) in enumerate(pieces):`).
+- Right after `ctype = partial.get("content_type") ...` and before `meta = finalize_metadata(...)`, add the enrichment hook.
+- If `args.enrich_metadata` is True AND the `source_type` is `"code"`:
+  - Call `_generate_llm_metadata(text, partial.get("chunk_name", ""), args.enrich_model)`.
+  - Update the `meta` dictionary with the returned enriched fields.
+
+Step 4: Update METADATA_KEYS
+- At the top of `ingest.py`, locate the `METADATA_KEYS` list.
+- Append the three new fields so ChromaDB does not drop them:
+  `"llm_summary"`, `"llm_tags"`, `"llm_relations"`
+
+Rules:
+- Write defensive error handling around the HTTP request to Ollama. If the model times out, log a warning and continue without crashing the ingestion script.
+- Ensure the JSON extraction uses regex to strip accidental markdown fences (e.g., ```json ... ```) because 0.5B models often ignore formatting instructions.
+
+Verification:
+Output a brief summary of how this two-stage approach creates a highly queryable metadata layer that will allow the RAG to filter by exact device types (BJT, VDMOS) and trace function call graphs during retrieval.

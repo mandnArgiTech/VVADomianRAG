@@ -1,0 +1,32 @@
+You are an expert Python developer and EDA Architect. We need to further bulletproof our `ingest.py` script for the Ngspice C codebase by handling three critical edge cases: deep comment extraction, C-header parsing, and SPICE netlist semantic chunking.
+
+Target File: `ingest.py`
+
+Please execute the following 3 enhancements:
+
+Step 1: Fix the "Math Blindspot" (Deep Comment Extraction)
+- Locate the `_ts_comment_prefix` function.
+- Change the default parameter from `max_lines: int = 2` to `max_lines: int = 20`. 
+- In legacy C code, complex mathematical formulas are often stored in massive block comments right above the function. Expanding this ensures the LLM receives the theoretical math context alongside the C code.
+
+Step 2: Correct the C-Header Misrouting
+- Locate the `choose_strategy_for_path` function.
+- Currently, `.h` files are grouped with C++ extensions (`if ext in (".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx"):`) and sent to the `"cpp"` tree-sitter parser.
+- Move `.h` out of that list and add it to the pure C list. 
+- It should look like: `if ext in (".c", ".h"):` -> route to `_ts_extract_chunks(p, c, "c")`. 
+- Keep the remaining C++ extensions routed to the `"cpp"` parser.
+
+Step 3: Add SPICE Netlist Semantic Chunking
+- We need to properly chunk SPICE simulation files so `.subckt` and `.model` blocks aren't cut in half by generic chunkers.
+- Create a new function `regex_spice_split(content: str, path: Path) -> List[Tuple[str, Dict[str, str]]]:` near the other regex splitters.
+- In this function, use `re.split` to split the document based on SPICE top-level boundaries. A good regex boundary for SPICE is: `(?mi)(?=^\s*\.(subckt|model|macro|control)\b)`
+- Iterate through these parts, similar to `regex_code_split`, assigning them `{"chunk_strategy": "regex_spice", "chunk_type": "spice_block", "chunk_name": path.stem, "chunk_index": str(i)}`. Ensure chunks are kept under a reasonable size (e.g., 8000 chars), merging small ones if necessary.
+- Update `choose_strategy_for_path` to handle SPICE extensions:
+  `if ext in (".cir", ".net", ".sp", ".mod", ".lib"):` -> route to `regex_spice_split(c, p)`.
+
+Rules:
+- Ensure no existing Python or Markdown logic is broken.
+- Ensure the regex for SPICE is case-insensitive (SPICE is case-insensitive) and uses multiline mode so `^` matches the start of lines.
+
+Verification:
+Print out a brief summary of how these 3 changes will improve the Contextual Integrity of the RAG system for an EDA AI Agent.
