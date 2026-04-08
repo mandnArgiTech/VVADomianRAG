@@ -71,6 +71,10 @@ except ImportError:  # pragma: no cover
 _TS_LANG: Dict[str, Any] = {}
 
 
+class TreeSitterFallbackDisallowedError(RuntimeError):
+    """Tree-sitter is unavailable and RecursiveCharacterTextSplitter fallback was not opted in."""
+
+
 def _load_ts_language(name: str, mod_name: str) -> Any:
     if name in _TS_LANG:
         return _TS_LANG[name]
@@ -175,6 +179,7 @@ METADATA_KEYS = [
     "object_name",
     "context_window",
     "dependencies",
+    "device_family",
 ]
 
 CONTENT_TYPE_SIGNALS = {
@@ -470,7 +475,7 @@ def extract_concepts(text: str, domain: str, registry: Dict[str, Dict[str, str]]
     tl = text.lower()
     found = set()
     for keyword in sorted(table.keys(), key=len, reverse=True):
-        if keyword.lower() in tl:
+        if re.search(rf"\b{re.escape(keyword.lower())}\b", tl):
             found.add(table[keyword])
     return format_concepts_field(found) if found else ""
 
@@ -694,7 +699,7 @@ def _extract_release_date_near_version(body: str) -> str:
     return m.group(1).strip() if m else ""
 
 
-def _ts_comment_prefix(content: str, start_byte: int, max_lines: int = 2) -> str:
+def _ts_comment_prefix(content: str, start_byte: int, max_lines: int = 20) -> str:
     """Prepend up to `max_lines` of // or /* */ comments immediately above node."""
     if start_byte <= 0:
         return ""
@@ -725,6 +730,22 @@ def _ts_comment_prefix(content: str, start_byte: int, max_lines: int = 2) -> str
     if not buf:
         return ""
     return "\n".join(reversed(buf)) + "\n"
+
+
+def _file_preamble_block_comment(content: str, *, max_lines: int = 20) -> Optional[str]:
+    """First /* ... */ in the first *max_lines* lines only, anchored to file start (whitespace/BOM ok).
+
+    Regex runs on a bounded prefix so it cannot scan or greedily consume the whole file.
+    """
+    text = content[1:] if content.startswith("\ufeff") else content
+    lines = text.splitlines(keepends=True)
+    prefix = "".join(lines[:max_lines])
+    m = re.search(r"/\*.*?\*/", prefix, re.DOTALL)
+    if not m:
+        return None
+    if prefix[: m.start()].strip():
+        return None
+    return m.group(0)
 
 
 # === IMPLEMENTATION PART 1 ===
@@ -1437,9 +1458,11 @@ def chunk_wiki_page(
     return out
 
 
-def language_split(path: Path, content: str, lang: Language) -> List[Tuple[str, Dict[str, str]]]:
+def language_split(
+    path: Path, content: str, lang: Language, size: int = 2000
+) -> List[Tuple[str, Dict[str, str]]]:
     splitter = RecursiveCharacterTextSplitter.from_language(
-        language=lang, chunk_size=2000, chunk_overlap=200
+        language=lang, chunk_size=size, chunk_overlap=200
     )
     docs = splitter.create_documents([content], metadatas=[{"path": str(path)}])
     return [
@@ -1546,6 +1569,39 @@ def regex_code_split(content: str, path: Path, ext: str) -> List[Tuple[str, Dict
             {
                 "chunk_strategy": "regex_code",
                 "chunk_type": "fragment",
+                "chunk_name": path.stem,
+                "chunk_index": str(i),
+            },
+        )
+        for i, seg in enumerate(raw_parts)
+    ]
+
+
+_SPICE_BLOCK_RE = re.compile(
+    r"(?=^\s*\.(?:subckt|model|macro|control)\b)",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def regex_spice_split(content: str, path: Path) -> List[Tuple[str, Dict[str, str]]]:
+    """Split a SPICE netlist on top-level block boundaries.
+
+    Splits before .subckt, .model, .macro, and .control directives so these
+    blocks are never cut in half by a generic chunker. The leading preamble
+    (title, .global, .param, etc.) is preserved as its own chunk.
+    """
+    raw_parts = [p.strip() for p in _SPICE_BLOCK_RE.split(content) if p.strip()]
+    if not raw_parts:
+        return generic_split(content, path, 2000)
+    # min_chars=0: never merge across split boundaries — each part is a semantic block.
+    # (min_chars=200 would merge multiple .subckt/.model sections when each is tiny.)
+    raw_parts = _merge_small_regex_chunks(raw_parts, min_chars=0, max_chars=8000)
+    return [
+        (
+            seg[:8000],
+            {
+                "chunk_strategy": "regex_spice",
+                "chunk_type": "spice_block",
                 "chunk_name": path.stem,
                 "chunk_index": str(i),
             },
@@ -1693,28 +1749,44 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
     tree = parser.parse(data)
 
     targets = {
-        "c": {"function_definition", "struct_specifier", "enum_specifier"},
+        "c": {
+            "function_definition",
+            "struct_specifier",
+            "enum_specifier",
+            "declaration",
+            "preproc_def",
+            "preproc_function_def",
+            "type_definition",
+        },
         "cpp": {"function_definition", "class_specifier", "struct_specifier", "enum_specifier"},
         "java": {"method_declaration", "class_declaration", "interface_declaration"},
     }[grammar]
 
     out: List[Tuple[str, Dict[str, str]]] = []
+    device_family_val = _device_family_for_path(path)
 
     def node_text(node) -> str:
         return content[node.start_byte : node.end_byte]
 
-    def walk(node, classname: str = ""):
+    def walk(node, classname: str = "", in_function: bool = False):
         t = node.type
+        # Skip `declaration` nodes inside function bodies — they are local variable
+        # declarations and would flood the index with useless chunks.
+        if t == "declaration" and in_function:
+            return
+        # Skip function-local typedefs (unusual in Ngspice; avoids noisy inner chunks).
+        if t == "type_definition" and in_function:
+            return
         if t in targets:
             txt = node_text(node).strip()
             if not txt:
                 return  # pragma: no cover
-            cmt = _ts_comment_prefix(content, node.start_byte, 2)
+            cmt = _ts_comment_prefix(content, node.start_byte)
             if cmt:
                 txt = cmt + txt  # pragma: no cover
             name = path.stem
             chunk_name = name
-            if grammar == "cpp" and t == "function_definition":
+            if grammar in ("c", "cpp") and t == "function_definition":
                 for ch in node.children:
                     if ch.type == "function_declarator":
                         for g in ch.children:
@@ -1725,19 +1797,81 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
                     if ch.type == "identifier":
                         chunk_name = content[ch.start_byte : ch.end_byte]
                         break
+            if grammar == "c" and t in ("preproc_def", "preproc_function_def"):
+                for ch in node.children:
+                    if ch.type == "identifier":
+                        chunk_name = content[ch.start_byte : ch.end_byte]
+                        break
+            if grammar == "c" and t == "declaration":
+                decl_named = False
+                for ch in node.children:
+                    if decl_named:
+                        break
+                    if ch.type == "identifier":
+                        chunk_name = content[ch.start_byte : ch.end_byte]
+                        decl_named = True
+                        break
+                    if ch.type == "init_declarator":
+                        for g in ch.children:
+                            if g.type not in ("identifier", "pointer_declarator", "declarator"):
+                                continue
+                            inner = g
+                            while inner.type in ("pointer_declarator", "declarator"):
+                                nxt = next(
+                                    (
+                                        x
+                                        for x in inner.children
+                                        if x.type in ("identifier", "pointer_declarator", "declarator")
+                                    ),
+                                    None,
+                                )
+                                if nxt is None:
+                                    break
+                                inner = nxt
+                            if inner.type == "identifier":
+                                chunk_name = content[inner.start_byte : inner.end_byte]
+                                decl_named = True
+                                break
+            if grammar == "c" and t == "type_definition":
+                last_tid = None
+                for ch in node.children:
+                    if ch.type == "type_identifier":
+                        last_tid = ch
+                if last_tid is not None:
+                    chunk_name = content[last_tid.start_byte : last_tid.end_byte]
             if classname and grammar in ("cpp", "java"):
                 chunk_name = f"{classname}::{chunk_name}"
+            # Semantic chunk typing for C function definitions.
+            chunk_type = t
+            if grammar == "c" and t == "function_definition":
+                cn_lower = chunk_name.lower()
+                txt_lower = txt.lower()
+                if "load" in cn_lower:
+                    chunk_type = "device_load_function"
+                elif "setup" in cn_lower:
+                    chunk_type = "device_setup_function"
+                elif "mna" in txt_lower or "smp" in txt_lower:
+                    chunk_type = "matrix_solver_function"
+            if grammar == "c" and t == "preproc_def" and path.name.casefold() in (
+                "cktdefs.h",
+                "devdefs.h",
+            ):
+                chunk_type = "core_constant"
             out.append(
                 (
-                    txt[:12000],
+                    txt[:100000],
                     {
                         "chunk_strategy": f"ast_{grammar}",
-                        "chunk_type": t,
+                        "chunk_type": chunk_type,
                         "chunk_name": chunk_name[:200],
                         "chunk_index": str(len(out)),
+                        "device_family": device_family_val,
                     },
                 )
             )
+        # Recurse into children, propagating the in_function flag for C.
+        enters_function = grammar == "c" and t == "function_definition"
+        enters_type_def = grammar == "c" and t == "type_definition"
         if grammar == "cpp" and t == "class_specifier":
             cname = classname  # pragma: no cover
             for ch in node.children:  # pragma: no cover
@@ -1754,12 +1888,100 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
                     break
             for ch in node.children:
                 walk(ch, cname or classname)
+        elif enters_type_def:
+            pass  # typedef text already emitted; skip inner struct_specifier duplicate chunk
         else:
             for ch in node.children:
-                walk(ch, classname)
+                walk(ch, classname, in_function or enters_function)
+
+    if grammar in ("c", "cpp"):
+        preamble = _file_preamble_block_comment(content)
+        if preamble:
+            out.append(
+                (
+                    preamble.strip()[:12000],
+                    {
+                        "chunk_strategy": f"ast_{grammar}",
+                        "chunk_type": "file_preamble",
+                        "chunk_name": path.stem,
+                        "chunk_index": "0",
+                        "device_family": device_family_val,
+                    },
+                )
+            )
 
     walk(tree.root_node)
     return out if out else None
+
+
+def _ts_extract_chunks_or_language_split_c_cpp(
+    path: Path,
+    content: str,
+    grammar: str,
+    *,
+    allow_language_split_fallback: bool,
+) -> List[Tuple[str, Dict[str, str]]]:
+    """AST chunks via tree-sitter, or language_split fallback with optional top file preamble.
+
+    If the tree-sitter parser cannot be loaded, fallback runs only when
+    *allow_language_split_fallback* is true (CLI ``--allow-language-split-fallback`` or env).
+    If the parser loads but produces no AST chunks (e.g. empty file), fallback still runs so
+    small or odd files are not dropped entirely.
+    """
+    if grammar not in ("c", "cpp"):
+        raise ValueError("grammar must be 'c' or 'cpp'")  # pragma: no cover
+    mod_map = {"c": "tree_sitter_c", "cpp": "tree_sitter_cpp"}
+    ts = _ts_extract_chunks(path, content, grammar)
+    if ts is not None:
+        return ts
+    parser = _ts_parser_for(grammar, mod_map[grammar])
+    if parser is None and not allow_language_split_fallback:
+        raise TreeSitterFallbackDisallowedError(
+            "tree-sitter is not available for "
+            f"{grammar.upper()} (install e.g. pip install tree-sitter tree-sitter-c). "
+            "Re-run with --allow-language-split-fallback (or set "
+            "INGEST_ALLOW_LANGUAGE_SPLIT_FALLBACK=1) to use text splitting instead."
+        )
+    lang = Language.C if grammar == "c" else Language.CPP
+    parts = language_split(path, content, lang, size=50000)
+    pre = _file_preamble_block_comment(content)
+    if not pre:
+        return parts
+    preamble_chunk: Tuple[str, Dict[str, str]] = (
+        pre.strip()[:12000],
+        {
+            "chunk_strategy": f"ast_{grammar}",
+            "chunk_type": "file_preamble",
+            "chunk_name": path.stem,
+            "chunk_index": "0",
+            "device_family": _device_family_for_path(path),
+        },
+    )
+    out_ls: List[Tuple[str, Dict[str, str]]] = [preamble_chunk]
+    for i, (text, meta) in enumerate(parts):
+        m = dict(meta)
+        m["chunk_index"] = str(i + 1)
+        out_ls.append((text, m))
+    return out_ls
+
+
+def _ts_extract_chunks_or_language_split_java(
+    path: Path,
+    content: str,
+    *,
+    allow_language_split_fallback: bool,
+) -> List[Tuple[str, Dict[str, str]]]:
+    ts = _ts_extract_chunks(path, content, "java")
+    if ts is not None:
+        return ts
+    parser = _ts_parser_for("java", "tree_sitter_java")
+    if parser is None and not allow_language_split_fallback:
+        raise TreeSitterFallbackDisallowedError(
+            "tree-sitter is not available for Java (install e.g. pip install tree-sitter "
+            "tree-sitter-java). Re-run with --allow-language-split-fallback (or set "
+            "INGEST_ALLOW_LANGUAGE_SPLIT_FALLBACK=1) to use text splitting instead."
+        )
+    return language_split(path, content, Language.JAVA, size=2000)
 
 
 def chunk_scheme(content: str, path: Path) -> List[Tuple[str, Dict[str, str]]]:
@@ -1785,7 +2007,7 @@ def chunk_scheme(content: str, path: Path) -> List[Tuple[str, Dict[str, str]]]:
                         body = (cmt + raw) if cmt else raw  # pragma: no cover
                         out_ts.append(  # pragma: no cover
                             (
-                                body[:12000],
+                                body[:100000],
                                 {
                                     "chunk_strategy": "scheme",
                                     "chunk_type": "define",
@@ -1812,7 +2034,7 @@ def chunk_scheme(content: str, path: Path) -> List[Tuple[str, Dict[str, str]]]:
         name = m.group(1).strip("()") if m else path.stem
         out.append(
             (
-                f[:12000],
+                f[:100000],
                 {
                     "chunk_strategy": "scheme",
                     "chunk_type": "define",
@@ -1867,65 +2089,129 @@ def _js_ts_lang(ext: str) -> Language:
     return getattr(Language, "JS", getattr(Language, "JAVASCRIPT", Language.HTML))
 
 
+def _device_family_for_path(path: Path) -> str:
+    """Ngspice device subdir under .../devices/<family>/... or CORE."""
+    for i, part in enumerate(path.parts):
+        if part.casefold() == "devices" and i + 1 < len(path.parts):
+            return path.parts[i + 1].upper()
+    return "CORE"
+
+
+def _is_ngspice_manual_doc_path(path: Path) -> bool:
+    """True for .md/.txt/.rst under a path segment named docs (e.g. .../docs/ or .../Spice64/docs/)."""
+    if path.suffix.lower() not in (".md", ".txt", ".rst"):
+        return False
+    return any(p.casefold() == "docs" for p in path.parts)
+
+
 def choose_strategy_for_path(
     path: Path,
     source_type: str,
     mib_keep_deprecated: bool = False,
     embed_model: Optional[str] = None,
-) -> Tuple[str, Callable[..., List[Tuple[str, Dict[str, str]]]], int]:
+    allow_language_split_fallback: bool = False,
+) -> Tuple[str, Callable[..., List[Tuple[str, Dict[str, str]]]], int, Optional[str]]:
     ext = path.suffix.lower()
     em = (embed_model or os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")).strip()
     code_limit = STRATEGY_SIZE_LIMIT_MB["config"] if ext in CONFIG_EXTS else STRATEGY_SIZE_LIMIT_MB["code"]
+    doc_lim = STRATEGY_SIZE_LIMIT_MB["domain_doc"]
     if source_type == "code":
-        if ext == ".py":
-            return "code", lambda p, c: ast_chunk_python(p, c), code_limit
-        if ext == ".c":
+        if _is_ngspice_manual_doc_path(path):
             return (
                 "code",
-                lambda p, c: _ts_extract_chunks(p, c, "c") or language_split(p, c, Language.C),
-                code_limit,
+                lambda p, c, _em=em: chunk_markdown_domain(c, str(p), embed_model=_em),
+                doc_lim,
+                "ngspice_manual",
             )
-        if ext in (".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx"):
+        if ext == ".py":
+            return "code", lambda p, c: ast_chunk_python(p, c), code_limit, None
+        if ext in (".c", ".h", ".inc", ".def", ".mac"):
+            _af = allow_language_split_fallback
             return (
                 "code",
-                lambda p, c: _ts_extract_chunks(p, c, "cpp") or language_split(p, c, Language.CPP),
+                lambda p, c, _af=_af: _ts_extract_chunks_or_language_split_c_cpp(
+                    p, c, "c", allow_language_split_fallback=_af
+                ),
                 code_limit,
+                None,
+            )
+        if ext in (".cpp", ".cxx", ".cc", ".hpp", ".hxx"):
+            _af = allow_language_split_fallback
+            return (
+                "code",
+                lambda p, c, _af=_af: _ts_extract_chunks_or_language_split_c_cpp(
+                    p, c, "cpp", allow_language_split_fallback=_af
+                ),
+                code_limit,
+                None,
             )
         if ext == ".java":
+            _af = allow_language_split_fallback
             return (
                 "code",
-                lambda p, c: _ts_extract_chunks(p, c, "java") or language_split(p, c, Language.JAVA),
+                lambda p, c, _af=_af: _ts_extract_chunks_or_language_split_java(
+                    p, c, allow_language_split_fallback=_af
+                ),
                 code_limit,
+                None,
             )
         if ext == ".scm":
-            return "code", lambda p, c: chunk_scheme(c, p), code_limit
+            return "code", lambda p, c: chunk_scheme(c, p), code_limit, None
         if ext in (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"):
             lg = _js_ts_lang(ext)
-            return "code", lambda p, c, lg=lg: language_split(p, c, lg), code_limit
+            return "code", lambda p, c, lg=lg: language_split(p, c, lg), code_limit, None
         if ext in (".md", ".txt"):
-            return "code", lambda p, c: sentence_window(c, p), code_limit  # pragma: no cover
-        return "code", lambda p, c: regex_code_split(c, p, ext), code_limit
+            return "code", lambda p, c: sentence_window(c, p), code_limit, None  # pragma: no cover
+        if ext in (".cir", ".net", ".sp", ".mod", ".lib"):
+            return "code", lambda p, c: regex_spice_split(c, p), code_limit, None
+        return "code", lambda p, c: regex_code_split(c, p, ext), code_limit, None
     if source_type in ("domain_doc", "theory"):
         lim = STRATEGY_SIZE_LIMIT_MB["theory" if source_type == "theory" else "domain_doc"]
         if ext in (".md", ".txt", ".rst"):
-            return source_type, lambda p, c, _em=em: chunk_markdown_domain(c, str(p), embed_model=_em), lim
-        return source_type, lambda p, c: generic_split(c, p, 2000), lim  # pragma: no cover
+            return (
+                source_type,
+                lambda p, c, _em=em: chunk_markdown_domain(c, str(p), embed_model=_em),
+                lim,
+                None,
+            )
+        return source_type, lambda p, c: generic_split(c, p, 2000), lim, None  # pragma: no cover
     if source_type == "rfc":
         return (
             "rfc",
             lambda p, c, _em=em: chunk_rfc(c, str(p), embed_model=_em),
             STRATEGY_SIZE_LIMIT_MB["rfc"],
+            None,
         )
     if source_type == "mib":
         sk = not mib_keep_deprecated
-        return "mib", lambda p, c, _sk=sk: chunk_mib(c, p, skip_deprecated=_sk), STRATEGY_SIZE_LIMIT_MB["mib"]
+        return (
+            "mib",
+            lambda p, c, _sk=sk: chunk_mib(c, p, skip_deprecated=_sk),
+            STRATEGY_SIZE_LIMIT_MB["mib"],
+            None,
+        )
     if source_type == "release_notes":
-        return "release_notes", lambda p, c: chunk_release_notes(c, str(p)), STRATEGY_SIZE_LIMIT_MB["release_notes"]
+        return (
+            "release_notes",
+            lambda p, c: chunk_release_notes(c, str(p)),
+            STRATEGY_SIZE_LIMIT_MB["release_notes"],
+            None,
+        )
     if source_type == "community":
-        return "community", lambda p, c: chunk_community(c, str(p), {}), STRATEGY_SIZE_LIMIT_MB["community"]
+        return (
+            "community",
+            lambda p, c: chunk_community(c, str(p), {}),
+            STRATEGY_SIZE_LIMIT_MB["community"],
+            None,
+        )
     if source_type == "wiki":
-        return "wiki", lambda p, c: chunk_wiki_page(c, str(p), {}), STRATEGY_SIZE_LIMIT_MB["wiki"]
-    return "default", lambda p, c: generic_split(c, p, 2000), STRATEGY_SIZE_LIMIT_MB["default"]
+        return (
+            "wiki",
+            lambda p, c: chunk_wiki_page(c, str(p), {}),
+            STRATEGY_SIZE_LIMIT_MB["wiki"],
+            None,
+        )
+    return "default", lambda p, c: generic_split(c, p, 2000), STRATEGY_SIZE_LIMIT_MB["default"], None
 
 
 RALLY_BASE = "https://rally1.rallydev.com/slm/webservice/v2.0"
@@ -3052,6 +3338,7 @@ def ingest_run(args: argparse.Namespace) -> int:
 
     for path, extra in tqdm(files_to_process, desc="Scanning", unit="file"):
         file_deps_str = ""
+        effective_source_type = source_type
         if shutdown_event.is_set():
             break  # pragma: no cover
         if extra.get("virtual"):
@@ -3103,12 +3390,18 @@ def ingest_run(args: argparse.Namespace) -> int:
             if not path.is_file():
                 continue  # pragma: no cover
             abs_src = str(path.resolve())
-            _sk, chunk_fn, limit_mb = choose_strategy_for_path(
+            allow_ls_fb = bool(getattr(args, "allow_language_split_fallback", False)) or (
+                os.environ.get("INGEST_ALLOW_LANGUAGE_SPLIT_FALLBACK", "").strip().lower()
+                in ("1", "true", "yes")
+            )
+            _sk, chunk_fn, limit_mb, per_file_src_override = choose_strategy_for_path(
                 path,
                 source_type,
                 mib_keep_deprecated=getattr(args, "mib_keep_deprecated", False),
                 embed_model=embed_model,
+                allow_language_split_fallback=allow_ls_fb,
             )
+            effective_source_type = per_file_src_override or source_type
             max_bytes = limit_mb * 1024 * 1024
             st = path.stat()
             if st.st_size > max_bytes:
@@ -3175,12 +3468,17 @@ def ingest_run(args: argparse.Namespace) -> int:
             elif args.mode == "rfc":
                 pieces = chunk_rfc(content, abs_src, embed_model=embed_model)
             else:
-                pieces = chunk_fn(path, content)
+                try:
+                    pieces = chunk_fn(path, content)
+                except TreeSitterFallbackDisallowedError as exc:
+                    logger.error("%s: %s", abs_src, exc)
+                    results_holder["errors"].append(f"{abs_src}: {exc}")
+                    continue
             ext = path.suffix.lower()
             repo, rel = rel_repo_for(path)
             mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             size_kb = round(st.st_size / 1024.0, 3)
-            file_deps_str = extract_dependencies(content, ext) if source_type == "code" else ""
+            file_deps_str = extract_dependencies(content, ext) if effective_source_type == "code" else ""
 
         if not pieces:
             continue  # pragma: no cover
@@ -3195,7 +3493,7 @@ def ingest_run(args: argparse.Namespace) -> int:
         base.update(
             {
                 "source": abs_src,
-                "source_type": source_type,
+                "source_type": effective_source_type,
                 "domain": domain,
                 "repository": repo,
                 "relative_path": rel,
@@ -3205,6 +3503,7 @@ def ingest_run(args: argparse.Namespace) -> int:
                 "ingestion_date": ingestion_ts,
                 "ingestion_version": INGESTION_VERSION,
                 "dependencies": file_deps_str,
+                "device_family": _device_family_for_path(path),
             }
         )
 
@@ -3427,6 +3726,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Git ref to diff against (default: last stored ingest ref or HEAD~1)",
     )
     p.add_argument("--verbose", action="store_true")
+    p.add_argument(
+        "--write-ngspice-gitignore",
+        action="store_true",
+        help=(
+            "Write (or update) a .gitignore in the --source directory that excludes "
+            "Ngspice legacy boilerplate directories before ingestion begins."
+        ),
+    )
+    p.add_argument(
+        "--allow-language-split-fallback",
+        action="store_true",
+        help=(
+            "When tree-sitter is not installed for C/C++/Java, allow RecursiveCharacterTextSplitter "
+            "fallback instead of skipping those files. Same effect as INGEST_ALLOW_LANGUAGE_SPLIT_FALLBACK=1."
+        ),
+    )
     return p
 
 
@@ -3580,11 +3895,52 @@ def feed_domain_document(
     }
 
 
+_NGSPICE_GITIGNORE_ENTRIES = [
+    "src/frontend/",
+    "src/x11/",
+    "src/misc/",
+    "src/compat/",
+    "src/spicelib/devices/hisim*",
+    "src/spicelib/devices/soi*",
+]
+
+
+def write_ngspice_gitignore(source_dir: Path) -> None:
+    """Create or update the .gitignore in *source_dir* with Ngspice boilerplate exclusions.
+
+    Appends only entries not already present in the file so the operation is idempotent.
+    """
+    gi_path = source_dir / ".gitignore"
+    existing: set = set()
+    if gi_path.exists():
+        existing = {ln.strip() for ln in gi_path.read_text(encoding="utf-8").splitlines()}
+    to_add = [e for e in _NGSPICE_GITIGNORE_ENTRIES if e not in existing]
+    if not to_add:
+        logger.info("Ngspice .gitignore already up to date: %s", gi_path)
+        return
+    with gi_path.open("a", encoding="utf-8") as fh:
+        fh.write("\n# Ngspice legacy boilerplate (auto-added by ingest.py --write-ngspice-gitignore)\n")
+        for entry in to_add:
+            fh.write(entry + "\n")
+    logger.info("Wrote %d Ngspice .gitignore entries to %s", len(to_add), gi_path)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     signal.signal(signal.SIGINT, _handle_sig)
     signal.signal(signal.SIGTERM, _handle_sig)
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    if getattr(args, "write_ngspice_gitignore", False):
+        raw_src = args.source or os.environ.get("SOURCE_FOLDER", "").strip()
+        if not raw_src:
+            parser.error("--source is required when using --write-ngspice-gitignore")
+        src = Path(raw_src).resolve()
+        if not src.is_dir():
+            parser.error(f"--source path does not exist or is not a directory: {src}")
+        write_ngspice_gitignore(src)
+        if not args.mode:
+            # User only wanted to write the .gitignore; don't proceed to ingestion.
+            return 0
     if not args.mode:
         if args.source or os.environ.get("SOURCE_FOLDER"):
             args.mode = "code"

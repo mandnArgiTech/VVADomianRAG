@@ -279,7 +279,8 @@ def test_git_diff_file_sets_with_mock_git(tmp_path: Path, monkeypatch):
 def test_choose_strategy_uses_regex_for_unknown_code(tmp_path: Path):
     p = tmp_path / "x.go"
     p.write_text("package p\nfunc F() {}\n", encoding="utf-8")
-    _label, fn, _lim = ing.choose_strategy_for_path(p, "code")
+    _label, fn, _lim, _ov = ing.choose_strategy_for_path(p, "code")
+    assert _ov is None
     chunks = fn(p, p.read_text(encoding="utf-8"))
     assert chunks
 

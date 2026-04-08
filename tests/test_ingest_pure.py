@@ -280,8 +280,9 @@ def test_ts_extract_chunks_mocked(tmp_path):
     p.write_text("int main(){return 0;}", encoding="utf-8")
     fake = [("chunk", {"chunk_strategy": "ast_c", "chunk_type": "x", "chunk_name": "m", "chunk_index": "0"})]
     with patch.object(ing, "_ts_extract_chunks", return_value=fake):
-        st, fn, lim = ing.choose_strategy_for_path(p, "code")
+        st, fn, lim, _ov = ing.choose_strategy_for_path(p, "code")
         assert st == "code"
+        assert _ov is None
         out = fn(p, p.read_text())
         assert out == fake
 
@@ -289,16 +290,55 @@ def test_ts_extract_chunks_mocked(tmp_path):
 def test_choose_strategy_matrix(tmp_path):
     py = tmp_path / "a.py"
     py.write_text("x=1", encoding="utf-8")
-    st, fn, _ = ing.choose_strategy_for_path(py, "code")
+    st, fn, _, _ov = ing.choose_strategy_for_path(py, "code")
     assert st == "code"
+    assert _ov is None
     md = tmp_path / "b.md"
     md.write_text("# T\n\nx", encoding="utf-8")
-    st2, fn2, _ = ing.choose_strategy_for_path(md, "domain_doc")
+    st2, fn2, _, _ov2 = ing.choose_strategy_for_path(md, "domain_doc")
     assert st2 == "domain_doc"
+    assert _ov2 is None
     rfc = tmp_path / "rfc1.txt"
     rfc.write_text("1. X\n\ny", encoding="utf-8")
-    st3, fn3, _ = ing.choose_strategy_for_path(rfc, "rfc", embed_model="nomic-embed-text")
+    st3, fn3, _, _ov3 = ing.choose_strategy_for_path(rfc, "rfc", embed_model="nomic-embed-text")
     assert st3 == "rfc"
+    assert _ov3 is None
+
+
+def test_device_family_for_path():
+    assert ing._device_family_for_path(Path("a/b/devices/bjt/load.c")) == "BJT"
+    assert ing._device_family_for_path(Path("devices/bsim4/x.c")) == "BSIM4"
+    assert ing._device_family_for_path(Path("src/foo.c")) == "CORE"
+
+
+def test_is_ngspice_manual_doc_path(tmp_path):
+    p = tmp_path / "docs" / "a.rst"
+    p.parent.mkdir(parents=True)
+    p.write_text("x", encoding="utf-8")
+    assert ing._is_ngspice_manual_doc_path(p)
+    assert not ing._is_ngspice_manual_doc_path(tmp_path / "docs" / "b.c")
+    plain = tmp_path / "readme.md"
+    plain.write_text("x", encoding="utf-8")
+    assert not ing._is_ngspice_manual_doc_path(plain)
+
+
+def test_ngspice_manual_choose_strategy(tmp_path):
+    p = tmp_path / "Spice64" / "docs" / "chap.md"
+    p.parent.mkdir(parents=True)
+    p.write_text("# Ch\n", encoding="utf-8")
+    st, _fn, lim, ov = ing.choose_strategy_for_path(p, "code")
+    assert st == "code" and ov == "ngspice_manual"
+    assert lim == ing.STRATEGY_SIZE_LIMIT_MB["domain_doc"]
+
+
+def test_core_constant_preproc_in_cktdefs(tmp_path):
+    pytest.importorskip("tree_sitter")
+    p = tmp_path / "cktdefs.h"
+    p.write_text("#define CKT_TYPE 1\n", encoding="utf-8")
+    out = ing._ts_extract_chunks(p, p.read_text(encoding="utf-8"), "c")
+    if out is None:
+        pytest.skip("tree-sitter C parser unavailable")
+    assert any(m.get("chunk_type") == "core_constant" for _, m in out)
 
 
 def test_chunk_scheme_regex(tmp_path):
@@ -377,25 +417,31 @@ def test_build_arg_parser():
 def test_choose_strategy_mib_wiki_community_release(tmp_path):
     mib = tmp_path / "m.mib"
     mib.write_text("X DEFINITIONS ::= BEGIN END\n", encoding="utf-8")
-    st, fn, _ = ing.choose_strategy_for_path(mib, "mib")
+    st, fn, _, _ov = ing.choose_strategy_for_path(mib, "mib")
     assert st == "mib"
+    assert _ov is None
     assert fn(mib, mib.read_text(encoding="utf-8"))
 
     md = tmp_path / "w.md"
     md.write_text("# W\n", encoding="utf-8")
-    st_w, fn_w, _ = ing.choose_strategy_for_path(md, "wiki")
+    st_w, fn_w, _, _ovw = ing.choose_strategy_for_path(md, "wiki")
     assert st_w == "wiki"
+    assert _ovw is None
 
-    st_c, fn_c, _ = ing.choose_strategy_for_path(md, "community")
+    st_c, fn_c, _, _ovc = ing.choose_strategy_for_path(md, "community")
     assert st_c == "community"
+    assert _ovc is None
 
-    st_r, fn_r, _ = ing.choose_strategy_for_path(md, "release_notes")
+    st_r, fn_r, _, _ovr = ing.choose_strategy_for_path(md, "release_notes")
     assert st_r == "release_notes"
+    assert _ovr is None
 
     binf = tmp_path / "u.unknownext"
     binf.write_text("z" * 100, encoding="utf-8")
-    st_d, _, _ = ing.choose_strategy_for_path(binf, "nosuch")
+    st_d, _, _, _ovd = ing.choose_strategy_for_path(binf, "nosuch")
     assert st_d == "default"
+    assert _ovd is None
 
-    st_th, _, _ = ing.choose_strategy_for_path(md, "theory")
+    st_th, _, _, _ovth = ing.choose_strategy_for_path(md, "theory")
     assert st_th == "theory"
+    assert _ovth is None
