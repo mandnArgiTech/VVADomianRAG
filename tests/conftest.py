@@ -14,6 +14,18 @@ def _disable_tqdm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TQDM_DISABLE", "1")
 
 
+@pytest.fixture(autouse=True)
+def _ingest_embed_test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep ingest tests offline and deterministic.
+
+    - EMBED_ASYNC=0: async HTTP embed ignores patched OllamaEmbeddings (would hang or flake on real Ollama).
+    - EMBED_HTTP=0: sync workers use LangChain embed_documents so patch_ollama_embeddings applies.
+      (tests/test_ingest_embed_worker.py deletes EMBED_HTTP so worker tests still exercise the HTTP branch with mocks.)
+    """
+    monkeypatch.setenv("EMBED_ASYNC", "0")
+    monkeypatch.setenv("EMBED_HTTP", "0")
+
+
 @pytest.fixture
 def tmp_vector_db(tmp_path: Path) -> Path:
     d = tmp_path / "vectordb"

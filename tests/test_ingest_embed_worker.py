@@ -12,6 +12,12 @@ import pytest
 import ingest as ing
 
 
+@pytest.fixture(autouse=True)
+def _clear_embed_http_env(monkeypatch):
+    """embedding_worker defaults to HTTP path unless EMBED_HTTP=0; shell env must not leak."""
+    monkeypatch.delenv("EMBED_HTTP", raising=False)
+
+
 @pytest.fixture
 def no_embed_sleep(monkeypatch):
     monkeypatch.setattr(ing.time, "sleep", lambda *_a, **_k: None)

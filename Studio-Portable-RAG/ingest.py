@@ -29,7 +29,7 @@ import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
@@ -179,6 +179,9 @@ METADATA_KEYS = [
     "object_name",
     "context_window",
     "dependencies",
+    "device_family",
+    "structural_importance",
+    "calls",
     "llm_summary",
     "llm_tags",
     "llm_relations",
@@ -1620,8 +1623,20 @@ def _format_dependencies_field(modules: Iterable[str]) -> str:
     return ", ".join(unique)
 
 
-def extract_dependencies(content: str, ext: str) -> str:
-    """Extract import-like symbols for metadata (comma-separated)."""
+# Pre-pass scans only a prefix of each file for import/include lines (performance).
+_STRUCTURAL_REFSCAN_BYTES = 8192
+
+
+def _normalize_refcount_stem(raw: str) -> str:
+    """Map dependency token to a filename stem for structural_importance keys."""
+    s = (raw or "").strip().replace("\\", "/")
+    if not s:
+        return ""
+    return Path(s).stem
+
+
+def _extract_dependency_stems(content: str, ext: str) -> List[str]:
+    """Return raw dependency tokens (includes, modules) found in *content* (same logic as extract_dependencies)."""
     ext_l = ext.lower()
     mods: List[str] = []
 
@@ -1692,7 +1707,192 @@ def extract_dependencies(content: str, ext: str) -> str:
         for m in re.finditer(r"(?m)^\s*(?:pub\s+)?mod\s+(\w+)\s*;", content):
             mods.append(m.group(1))
 
-    return _format_dependencies_field(mods)
+    return mods
+
+
+def extract_dependencies(content: str, ext: str) -> str:
+    """Extract import-like symbols for metadata (comma-separated)."""
+    return _format_dependencies_field(_extract_dependency_stems(content, ext))
+
+
+def build_file_ref_counts_for_code_ingest(files_to_process: List[Tuple[Path, Dict[str, Any]]]) -> Dict[str, int]:
+    """Count how many distinct source files reference each normalized stem (Story A pre-pass)."""
+    file_ref_counts: Dict[str, int] = {}
+    for path, extra in files_to_process:
+        if extra.get("virtual") or not path.is_file():
+            continue
+        try:
+            raw = path.read_bytes()[:_STRUCTURAL_REFSCAN_BYTES]
+            text_pre = raw.decode("utf-8", errors="replace")
+        except OSError:
+            continue
+        stems_raw = _extract_dependency_stems(text_pre, path.suffix.lower())
+        seen_in_file: set = set()
+        for stem in stems_raw:
+            clean = _normalize_refcount_stem(stem)
+            if clean:
+                seen_in_file.add(clean)
+        for clean in seen_in_file:
+            file_ref_counts[clean] = file_ref_counts.get(clean, 0) + 1
+    return file_ref_counts
+
+
+# Callee extraction (Story B) — C/C++
+_C_STDLIB_CALLS: FrozenSet[str] = frozenset(
+    {
+        "malloc",
+        "free",
+        "calloc",
+        "realloc",
+        "printf",
+        "fprintf",
+        "sprintf",
+        "snprintf",
+        "vprintf",
+        "vfprintf",
+        "memcpy",
+        "memset",
+        "memmove",
+        "memcmp",
+        "strlen",
+        "strcmp",
+        "strncmp",
+        "strcpy",
+        "strncpy",
+        "strcat",
+        "strncat",
+        "sizeof",
+        "abs",
+        "fabs",
+        "sqrt",
+        "log",
+        "exp",
+        "pow",
+        "ceil",
+        "floor",
+        "assert",
+        "exit",
+        "abort",
+        "perror",
+        "strerror",
+        "fopen",
+        "fclose",
+        "fread",
+        "fwrite",
+        "fseek",
+        "ftell",
+        "atoi",
+        "atof",
+        "strtol",
+        "strtod",
+    }
+)
+
+CALLS_METADATA_MAX = 50
+
+
+def _format_calls_metadata(names: List[str]) -> str:
+    """Pipe-delimited callee names; cap size and append __truncated__ when needed."""
+    u = sorted({x.strip() for x in names if x and str(x).strip()})
+    if not u:
+        return ""
+    if len(u) > CALLS_METADATA_MAX:
+        u = u[:CALLS_METADATA_MAX] + ["__truncated__"]
+    return format_concepts_field(u)
+
+
+def _extract_c_calls_from_node(node, content: str) -> List[str]:
+    """Extract function call identifiers from a tree-sitter C/C++ function_definition node."""
+    calls: Set[str] = set()
+
+    def _walk_calls(n) -> None:
+        if n.type == "call_expression":
+            func_node = n.children[0] if n.children else None
+            if func_node is not None:
+                if func_node.type == "identifier":
+                    name = content[func_node.start_byte : func_node.end_byte]
+                    if name not in _C_STDLIB_CALLS and not name.startswith("__"):
+                        calls.add(name)
+                elif func_node.type == "field_expression":
+                    for ch in reversed(func_node.children):
+                        if ch.type == "field_identifier":
+                            name = content[ch.start_byte : ch.end_byte]
+                            if name not in _C_STDLIB_CALLS and not name.startswith("__"):
+                                calls.add(name)
+                            break
+        for ch in n.children:
+            _walk_calls(ch)
+
+    for child in node.children:
+        if child.type == "compound_statement":
+            _walk_calls(child)
+            break
+
+    return sorted(calls)
+
+
+_PY_BUILTIN_CALLS: FrozenSet[str] = frozenset(
+    {
+        "print",
+        "len",
+        "range",
+        "int",
+        "float",
+        "str",
+        "bool",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "type",
+        "isinstance",
+        "issubclass",
+        "getattr",
+        "setattr",
+        "hasattr",
+        "super",
+        "enumerate",
+        "zip",
+        "map",
+        "filter",
+        "sorted",
+        "reversed",
+        "min",
+        "max",
+        "sum",
+        "any",
+        "all",
+        "abs",
+        "round",
+        "open",
+        "iter",
+        "next",
+        "hash",
+        "id",
+        "repr",
+        "format",
+        "vars",
+        "dir",
+        "property",
+        "staticmethod",
+        "classmethod",
+    }
+)
+
+
+def _extract_py_calls(func_node: ast.AST) -> List[str]:
+    """Extract called function/method names from a Python function or async function body."""
+    calls: Set[str] = set()
+    for node in ast.walk(func_node):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                name = node.func.id
+                if name not in _PY_BUILTIN_CALLS:
+                    calls.add(name)
+            elif isinstance(node.func, ast.Attribute):
+                calls.add(node.func.attr)
+    calls -= _PY_BUILTIN_CALLS
+    return sorted(calls)
 
 
 def ast_chunk_python(path: Path, content: str) -> List[Tuple[str, Dict[str, str]]]:
@@ -1719,6 +1919,9 @@ def ast_chunk_python(path: Path, content: str) -> List[Tuple[str, Dict[str, str]
                 continue  # pragma: no cover
             nm = node.name
             ctype = "class" if isinstance(node, ast.ClassDef) else "function"
+            calls_field = ""
+            if ctype == "function":
+                calls_field = _format_calls_metadata(_extract_py_calls(node))
             chunks.append(
                 (
                     src,
@@ -1727,6 +1930,7 @@ def ast_chunk_python(path: Path, content: str) -> List[Tuple[str, Dict[str, str]
                         "chunk_type": ctype,
                         "chunk_name": nm,
                         "chunk_index": str(idx),
+                        "calls": calls_field,
                     },
                 )
             )
@@ -1765,6 +1969,7 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
     }[grammar]
 
     out: List[Tuple[str, Dict[str, str]]] = []
+    device_family_val = _device_family_for_path(path)
 
     def node_text(node) -> str:
         return content[node.start_byte : node.end_byte]
@@ -1853,6 +2058,15 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
                     chunk_type = "device_setup_function"
                 elif "mna" in txt_lower or "smp" in txt_lower:
                     chunk_type = "matrix_solver_function"
+            if grammar == "c" and t == "preproc_def" and path.name.casefold() in (
+                "cktdefs.h",
+                "devdefs.h",
+            ):
+                chunk_type = "core_constant"
+            calls_list: List[str] = []
+            if grammar in ("c", "cpp") and t == "function_definition":
+                calls_list = _extract_c_calls_from_node(node, content)
+            calls_field = _format_calls_metadata(calls_list)
             out.append(
                 (
                     txt[:100000],
@@ -1861,6 +2075,8 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
                         "chunk_type": chunk_type,
                         "chunk_name": chunk_name[:200],
                         "chunk_index": str(len(out)),
+                        "device_family": device_family_val,
+                        "calls": calls_field,
                     },
                 )
             )
@@ -1900,6 +2116,8 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
                         "chunk_type": "file_preamble",
                         "chunk_name": path.stem,
                         "chunk_index": "0",
+                        "device_family": device_family_val,
+                        "calls": "",
                     },
                 )
             )
@@ -1948,6 +2166,8 @@ def _ts_extract_chunks_or_language_split_c_cpp(
             "chunk_type": "file_preamble",
             "chunk_name": path.stem,
             "chunk_index": "0",
+            "device_family": _device_family_for_path(path),
+            "calls": "",
         },
     )
     out_ls: List[Tuple[str, Dict[str, str]]] = [preamble_chunk]
@@ -2082,19 +2302,42 @@ def _js_ts_lang(ext: str) -> Language:
     return getattr(Language, "JS", getattr(Language, "JAVASCRIPT", Language.HTML))
 
 
+def _device_family_for_path(path: Path) -> str:
+    """Ngspice device subdir under .../devices/<family>/... or CORE."""
+    for i, part in enumerate(path.parts):
+        if part.casefold() == "devices" and i + 1 < len(path.parts):
+            return path.parts[i + 1].upper()
+    return "CORE"
+
+
+def _is_ngspice_manual_doc_path(path: Path) -> bool:
+    """True for .md/.txt/.rst under a path segment named docs (e.g. .../docs/ or .../Spice64/docs/)."""
+    if path.suffix.lower() not in (".md", ".txt", ".rst"):
+        return False
+    return any(p.casefold() == "docs" for p in path.parts)
+
+
 def choose_strategy_for_path(
     path: Path,
     source_type: str,
     mib_keep_deprecated: bool = False,
     embed_model: Optional[str] = None,
     allow_language_split_fallback: bool = False,
-) -> Tuple[str, Callable[..., List[Tuple[str, Dict[str, str]]]], int]:
+) -> Tuple[str, Callable[..., List[Tuple[str, Dict[str, str]]]], int, Optional[str]]:
     ext = path.suffix.lower()
     em = (embed_model or os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")).strip()
     code_limit = STRATEGY_SIZE_LIMIT_MB["config"] if ext in CONFIG_EXTS else STRATEGY_SIZE_LIMIT_MB["code"]
+    doc_lim = STRATEGY_SIZE_LIMIT_MB["domain_doc"]
     if source_type == "code":
+        if _is_ngspice_manual_doc_path(path):
+            return (
+                "code",
+                lambda p, c, _em=em: chunk_markdown_domain(c, str(p), embed_model=_em),
+                doc_lim,
+                "ngspice_manual",
+            )
         if ext == ".py":
-            return "code", lambda p, c: ast_chunk_python(p, c), code_limit
+            return "code", lambda p, c: ast_chunk_python(p, c), code_limit, None
         if ext in (".c", ".h", ".inc", ".def", ".mac"):
             _af = allow_language_split_fallback
             return (
@@ -2103,6 +2346,7 @@ def choose_strategy_for_path(
                     p, c, "c", allow_language_split_fallback=_af
                 ),
                 code_limit,
+                None,
             )
         if ext in (".cpp", ".cxx", ".cc", ".hpp", ".hxx"):
             _af = allow_language_split_fallback
@@ -2112,6 +2356,7 @@ def choose_strategy_for_path(
                     p, c, "cpp", allow_language_split_fallback=_af
                 ),
                 code_limit,
+                None,
             )
         if ext == ".java":
             _af = allow_language_split_fallback
@@ -2121,38 +2366,65 @@ def choose_strategy_for_path(
                     p, c, allow_language_split_fallback=_af
                 ),
                 code_limit,
+                None,
             )
         if ext == ".scm":
-            return "code", lambda p, c: chunk_scheme(c, p), code_limit
+            return "code", lambda p, c: chunk_scheme(c, p), code_limit, None
         if ext in (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"):
             lg = _js_ts_lang(ext)
-            return "code", lambda p, c, lg=lg: language_split(p, c, lg), code_limit
+            return "code", lambda p, c, lg=lg: language_split(p, c, lg), code_limit, None
         if ext in (".md", ".txt"):
-            return "code", lambda p, c: sentence_window(c, p), code_limit  # pragma: no cover
+            return "code", lambda p, c: sentence_window(c, p), code_limit, None  # pragma: no cover
         if ext in (".cir", ".net", ".sp", ".mod", ".lib"):
-            return "code", lambda p, c: regex_spice_split(c, p), code_limit
-        return "code", lambda p, c: regex_code_split(c, p, ext), code_limit
+            return "code", lambda p, c: regex_spice_split(c, p), code_limit, None
+        return "code", lambda p, c: regex_code_split(c, p, ext), code_limit, None
     if source_type in ("domain_doc", "theory"):
         lim = STRATEGY_SIZE_LIMIT_MB["theory" if source_type == "theory" else "domain_doc"]
         if ext in (".md", ".txt", ".rst"):
-            return source_type, lambda p, c, _em=em: chunk_markdown_domain(c, str(p), embed_model=_em), lim
-        return source_type, lambda p, c: generic_split(c, p, 2000), lim  # pragma: no cover
+            return (
+                source_type,
+                lambda p, c, _em=em: chunk_markdown_domain(c, str(p), embed_model=_em),
+                lim,
+                None,
+            )
+        return source_type, lambda p, c: generic_split(c, p, 2000), lim, None  # pragma: no cover
     if source_type == "rfc":
         return (
             "rfc",
             lambda p, c, _em=em: chunk_rfc(c, str(p), embed_model=_em),
             STRATEGY_SIZE_LIMIT_MB["rfc"],
+            None,
         )
     if source_type == "mib":
         sk = not mib_keep_deprecated
-        return "mib", lambda p, c, _sk=sk: chunk_mib(c, p, skip_deprecated=_sk), STRATEGY_SIZE_LIMIT_MB["mib"]
+        return (
+            "mib",
+            lambda p, c, _sk=sk: chunk_mib(c, p, skip_deprecated=_sk),
+            STRATEGY_SIZE_LIMIT_MB["mib"],
+            None,
+        )
     if source_type == "release_notes":
-        return "release_notes", lambda p, c: chunk_release_notes(c, str(p)), STRATEGY_SIZE_LIMIT_MB["release_notes"]
+        return (
+            "release_notes",
+            lambda p, c: chunk_release_notes(c, str(p)),
+            STRATEGY_SIZE_LIMIT_MB["release_notes"],
+            None,
+        )
     if source_type == "community":
-        return "community", lambda p, c: chunk_community(c, str(p), {}), STRATEGY_SIZE_LIMIT_MB["community"]
+        return (
+            "community",
+            lambda p, c: chunk_community(c, str(p), {}),
+            STRATEGY_SIZE_LIMIT_MB["community"],
+            None,
+        )
     if source_type == "wiki":
-        return "wiki", lambda p, c: chunk_wiki_page(c, str(p), {}), STRATEGY_SIZE_LIMIT_MB["wiki"]
-    return "default", lambda p, c: generic_split(c, p, 2000), STRATEGY_SIZE_LIMIT_MB["default"]
+        return (
+            "wiki",
+            lambda p, c: chunk_wiki_page(c, str(p), {}),
+            STRATEGY_SIZE_LIMIT_MB["wiki"],
+            None,
+        )
+    return "default", lambda p, c: generic_split(c, p, 2000), STRATEGY_SIZE_LIMIT_MB["default"], None
 
 
 RALLY_BASE = "https://rally1.rallydev.com/slm/webservice/v2.0"
@@ -3407,8 +3679,14 @@ def ingest_run(args: argparse.Namespace) -> int:
 
     ingestion_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Structural importance: count incoming references per file stem (code mode only).
+    file_ref_counts: Dict[str, int] = {}
+    if args.mode == "code":
+        file_ref_counts = build_file_ref_counts_for_code_ingest(files_to_process)
+
     for path, extra in tqdm(files_to_process, desc="Scanning", unit="file"):
         file_deps_str = ""
+        effective_source_type = source_type
         if shutdown_event.is_set():
             break  # pragma: no cover
         if extra.get("virtual"):
@@ -3464,13 +3742,14 @@ def ingest_run(args: argparse.Namespace) -> int:
                 os.environ.get("INGEST_ALLOW_LANGUAGE_SPLIT_FALLBACK", "").strip().lower()
                 in ("1", "true", "yes")
             )
-            _sk, chunk_fn, limit_mb = choose_strategy_for_path(
+            _sk, chunk_fn, limit_mb, per_file_src_override = choose_strategy_for_path(
                 path,
                 source_type,
                 mib_keep_deprecated=getattr(args, "mib_keep_deprecated", False),
                 embed_model=embed_model,
                 allow_language_split_fallback=allow_ls_fb,
             )
+            effective_source_type = per_file_src_override or source_type
             max_bytes = limit_mb * 1024 * 1024
             st = path.stat()
             if st.st_size > max_bytes:
@@ -3547,7 +3826,7 @@ def ingest_run(args: argparse.Namespace) -> int:
             repo, rel = rel_repo_for(path)
             mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             size_kb = round(st.st_size / 1024.0, 3)
-            file_deps_str = extract_dependencies(content, ext) if source_type == "code" else ""
+            file_deps_str = extract_dependencies(content, ext) if effective_source_type == "code" else ""
 
         if not pieces:
             continue  # pragma: no cover
@@ -3559,10 +3838,13 @@ def ingest_run(args: argparse.Namespace) -> int:
                 pass  # pragma: no cover
 
         base = empty_metadata()
+        imp_val = "0"
+        if effective_source_type == "code" and not extra.get("virtual") and path.is_file():
+            imp_val = str(file_ref_counts.get(path.stem, 0))
         base.update(
             {
                 "source": abs_src,
-                "source_type": source_type,
+                "source_type": effective_source_type,
                 "domain": domain,
                 "repository": repo,
                 "relative_path": rel,
@@ -3572,6 +3854,8 @@ def ingest_run(args: argparse.Namespace) -> int:
                 "ingestion_date": ingestion_ts,
                 "ingestion_version": INGESTION_VERSION,
                 "dependencies": file_deps_str,
+                "device_family": _device_family_for_path(path),
+                "structural_importance": imp_val,
             }
         )
 

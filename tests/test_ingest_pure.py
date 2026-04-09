@@ -65,6 +65,44 @@ def test_extract_concepts_and_iter():
     assert ing.format_concepts_field(["a", "b"]) == "|a|b|"
 
 
+def test_extract_concepts_word_boundaries_spice():
+    """Ngspice plan: avoid substring false positives (e.g. token inside another word)."""
+    reg = {
+        "spice": {
+            "CKT": "circuit_struct",
+            "cap": "capacitor_device",
+            "Newton-Raphson": "newton_raphson_solver",
+        }
+    }
+    assert ing.extract_concepts("myescape variable", "spice", reg) == ""
+    assert "circuit_struct" in ing.extract_concepts("the CKT struct field", "spice", reg)
+    assert "capacitor_device" not in ing.extract_concepts("escape hatch", "spice", reg)
+    assert "newton_raphson_solver" in ing.extract_concepts(
+        "using Newton-Raphson iteration", "spice", reg
+    )
+
+
+def test_write_ngspice_gitignore_unreadable_existing_still_appends(tmp_path, monkeypatch):
+    src = tmp_path / "ng"
+    src.mkdir()
+    gi = src / ".gitignore"
+    gi.write_text("keep-me\n", encoding="utf-8")
+    real_read = Path.read_text
+
+    def fake_read(self, *args, **kwargs):
+        if self.resolve() == gi.resolve():
+            raise OSError("denied")
+        return real_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read)
+    ing.write_ngspice_gitignore(src)
+    with open(gi, encoding="utf-8") as fh:
+        text = fh.read()
+    assert "keep-me" in text
+    assert "Ngspice legacy boilerplate" in text
+    assert "src/frontend/" in text
+
+
 def test_read_file_bytes_and_md5(tmp_path):
     p = tmp_path / "f.bin"
     p.write_bytes(b"\xff\xfeabc")

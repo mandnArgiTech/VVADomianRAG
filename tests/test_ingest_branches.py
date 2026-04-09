@@ -1,6 +1,7 @@
 """Extra branch coverage for ingest_run helpers and tree-sitter shim."""
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,6 +10,24 @@ import chromadb
 import pytest
 
 import ingest as ing
+
+
+def _have_tree_sitter_cpp() -> bool:
+    return all(importlib.util.find_spec(x) is not None for x in ("tree_sitter", "tree_sitter_cpp"))
+
+
+def _have_tree_sitter_java() -> bool:
+    return all(importlib.util.find_spec(x) is not None for x in ("tree_sitter", "tree_sitter_java"))
+
+
+skip_without_ts_cpp = pytest.mark.skipif(
+    not _have_tree_sitter_cpp(),
+    reason="tree-sitter C++ not installed",
+)
+skip_without_ts_java = pytest.mark.skipif(
+    not _have_tree_sitter_java(),
+    reason="tree-sitter Java not installed",
+)
 
 
 def test_print_status_with_collection(tmp_vector_db):
@@ -236,6 +255,7 @@ def test_ingest_code_json_config(tmp_path, monkeypatch, patch_ollama_embeddings,
     assert ing.ingest_run(args) == 0
 
 
+@skip_without_ts_cpp
 def test_ingest_code_cpp_fallback(tmp_path, monkeypatch, patch_ollama_embeddings, concept_registry_path):
     monkeypatch.setenv("EMBEDDING_MODEL", "nomic-embed-text")
     monkeypatch.setenv("EMBED_WORKERS", "1")
@@ -263,6 +283,7 @@ def test_ingest_code_cpp_fallback(tmp_path, monkeypatch, patch_ollama_embeddings
     assert ing.ingest_run(args) == 0
 
 
+@skip_without_ts_java
 def test_ingest_code_java(tmp_path, monkeypatch, patch_ollama_embeddings, concept_registry_path):
     monkeypatch.setenv("EMBEDDING_MODEL", "nomic-embed-text")
     monkeypatch.setenv("EMBED_WORKERS", "1")

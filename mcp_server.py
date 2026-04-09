@@ -363,6 +363,21 @@ def _signal_handler(signum: int, frame: Any) -> None:
 atexit.register(shutdown)
 
 
+def _structural_importance_int(meta: Optional[Dict[str, Any]]) -> int:
+    try:
+        return int((meta or {}).get("structural_importance") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _doc_dedup_key(doc: Any) -> str:
+    m = getattr(doc, "metadata", None) or {}
+    return "|".join(
+        str(m.get(k) or "")
+        for k in ("repository", "source", "relative_path", "chunk_name", "chunk_index")
+    )
+
+
 def _infer_source_type(meta: Dict[str, Any]) -> str:
     st = (meta.get("source_type") or "").strip().lower()
     if st:
@@ -409,12 +424,28 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
     content = _truncate_chunk(doc.page_content.strip())
     ext = (meta.get("extension") or "").lower()
 
+    if source_type == "callee":
+        if repo:
+            header.append(f"**Repo:** {repo}")
+        header.append(f"**File:** {repo + '/' + src if repo else src}")
+        if cname:
+            header.append(f"**Component:** {cname} ({ctype})")
+        si = _structural_importance_int(meta)
+        if si > 0:
+            header.append(f"**importance:** {si}")
+        lang = LANG_TAG.get(ext, "")
+        fence = _fence_for(content)
+        return "### Callee (auto-expanded)\n" + "\n".join(header) + f"\n\n{fence}{lang}\n{content}\n{fence}"
+
     if source_type == "code":
         if repo:
             header.append(f"**Repo:** {repo}")
         header.append(f"**File:** {repo + '/' + src if repo else src}")
         if cname:
             header.append(f"**Component:** {cname} ({ctype})")
+        si = _structural_importance_int(meta)
+        if si > 0:
+            header.append(f"**importance:** {si}")
         dep = (meta.get("dependencies") or "").strip()
         if dep:
             dshow = dep if len(dep) <= 500 else dep[:500] + "…"
@@ -538,7 +569,12 @@ def _sync_multi_search(
                     if ct not in ("edge_case", "workaround", "bug_report"):
                         continue
                 merged.append((doc, score, st, name))
-        merged.sort(key=lambda x: x[1] if x[1] is not None else 1e9)
+        merged.sort(
+            key=lambda x: (
+                round(x[1] if x[1] is not None else 1e9, 3),
+                -_structural_importance_int(getattr(x[0], "metadata", None)),
+            )
+        )
         out: List[Tuple[Any, Optional[float], str]] = []
         for doc, score, st, _cname in merged[:k]:
             out.append((doc, score, st))
@@ -604,7 +640,12 @@ def _sync_multi_search(
                     continue
             fused.append((doc, None, st, rrf_scores[sid]))
 
-    fused.sort(key=lambda x: x[3], reverse=True)
+    fused.sort(
+        key=lambda x: (
+            -round(x[3], 9),
+            -_structural_importance_int(getattr(x[0], "metadata", None)),
+        )
+    )
     return [(doc, score, st) for doc, score, st, _ in fused[:k]]
 
 
@@ -695,6 +736,75 @@ def _sync_fetch_dependents(
     return out
 
 
+def _callee_expand_enabled() -> bool:
+    v = os.environ.get("RAG_CALLEE_EXPAND", "1").strip().lower()
+    return v not in ("0", "false", "no")
+
+
+def _sync_fetch_callees(
+    primary: List[Tuple[Any, Optional[float], str]],
+    cmap: Dict[str, Chroma],
+    search_type: str,
+    domain: str,
+    repo_filter: str,
+    max_callees: int,
+) -> List[Tuple[Any, Optional[float], str]]:
+    """Fetch chunks whose chunk_name matches callees listed in primary results' ``calls`` metadata."""
+    if not _callee_expand_enabled() or not primary:
+        return []
+    callee_names: List[str] = []
+    seen: set = set()
+    for doc, _, _ in primary:
+        seen.add(_doc_dedup_key(doc))
+        meta = getattr(doc, "metadata", None) or {}
+        for name in iter_concept_ids(str(meta.get("calls") or "")):
+            if name and name != "__truncated__":
+                callee_names.append(name)
+    unique_callees = sorted(set(callee_names))
+    if not unique_callees:
+        return []
+    targets = _select_collection_names(cmap, search_type, domain)
+    rf = repo_filter.strip()
+    out: List[Tuple[Any, Optional[float], str]] = []
+    for callee in unique_callees:
+        if len(out) >= max_callees:
+            break
+        for coll_name in targets:
+            if len(out) >= max_callees:
+                break
+            vs = cmap[coll_name]
+            col = getattr(vs, "_collection", None)
+            if col is None:
+                continue
+            try:
+                res = col.get(
+                    where={"chunk_name": {"$eq": callee}},
+                    limit=8,
+                    include=["documents", "metadatas", "ids"],
+                )
+            except Exception as exc:
+                logger.warning("callee get failed on %s: %s", coll_name, exc)
+                continue
+            ids_list = res.get("ids") or []
+            docs = res.get("documents") or []
+            metas = res.get("metadatas") or []
+            for i, did in enumerate(ids_list):
+                if len(out) >= max_callees:
+                    break
+                meta = metas[i] if i < len(metas) else {}
+                if rf and str((meta or {}).get("repository", "")).strip() != rf:
+                    continue
+                text = docs[i] if i < len(docs) else ""
+                doc = Document(page_content=text or "", metadata=dict(meta or {}))
+                key = _doc_dedup_key(doc)
+                if key in seen:
+                    continue
+                seen.add(key)
+                seen.add(did)
+                out.append((doc, None, "callee"))
+    return out
+
+
 async def _run_search(
     query: str,
     k: int,
@@ -740,6 +850,25 @@ async def _run_search(
         if dep:
             text += "\n\n## Dependent files (import metadata)\n\n"
             text += "\n\n---\n\n".join(format_result(d, s, st) for d, s, st in dep)
+
+    def _cal() -> List[Tuple[Any, Optional[float], str]]:
+        mc = max(1, int(os.environ.get("RAG_CALLEE_EXPAND_MAX", "10")))
+        return _sync_fetch_callees(
+            results,
+            cmap,
+            search_type,
+            domain,
+            repo,
+            mc,
+        )
+
+    cal = await asyncio.wait_for(
+        loop.run_in_executor(ex, _cal),
+        timeout=QUERY_TIMEOUT,
+    )
+    if cal:
+        text += "\n\n## Called functions (auto-expanded)\n\n"
+        text += "\n\n---\n\n".join(format_result(d, s, st) for d, s, st in cal)
     return text
 
 

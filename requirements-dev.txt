@@ -1,4 +1,5 @@
 # Dev / CI — tests and coverage for ingest.py
+# Install pulls requirements.txt (aiohttp, pathspec, beautifulsoup4, …) so ingest tests match production imports.
 # Run from repo root (uses pyproject.toml):
 #   pip install -r requirements-dev.txt
 #   pytest tests/
