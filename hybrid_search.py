@@ -7,6 +7,7 @@ Requires: pip install rank-bm25
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import logging
 import os
@@ -26,7 +27,9 @@ except ImportError:
     HYBRID_AVAILABLE = False
 
 STABLE_SEP = "\x1f"
-_CHROMA_GET_BATCH = 512
+_CHROMA_GET_BATCH = max(256, int(os.environ.get("HYBRID_CHROMA_GET_BATCH", "512")))
+# Bump this string whenever the BM25 token corpus changes to force cache rebuild.
+BM25_INDEX_VERSION = "v2_chunk_name_boost"
 
 
 def tokenize(text: str) -> List[str]:
@@ -114,7 +117,11 @@ class CachedBM25Index:
                 try:
                     with open(meta_path, encoding="utf-8") as fh:
                         meta = json.load(fh)
-                    if int(meta.get("count", -1)) == count and meta.get("name") == self.collection_name:
+                    if (
+                        int(meta.get("count", -1)) == count
+                        and meta.get("name") == self.collection_name
+                        and meta.get("version") == BM25_INDEX_VERSION
+                    ):
                         with open(pkl_path, "rb") as fh:
                             data = pickle.load(fh)
                         self.bm25 = data["bm25"]
@@ -155,7 +162,12 @@ class CachedBM25Index:
             for text, meta in zip(documents, metadatas):
                 m = dict(meta or {})
                 sid = stable_doc_id(self.collection_name, m, text or "")
-                tokenized_corpus.append(tokenize(text or ""))
+                # Duplicate chunk_name to boost TF for exact function-name queries.
+                search_blob = (
+                    f"{m.get('chunk_name', '')} {m.get('chunk_name', '')} "
+                    f"{m.get('relative_path', '')} {text or ''}"
+                )
+                tokenized_corpus.append(tokenize(search_blob))
                 ordered_ids.append(sid)
                 if sid not in id_to_doc:
                     id_to_doc[sid] = (text or "", m)
@@ -187,7 +199,11 @@ class CachedBM25Index:
                     pickle.dump(payload, fh, protocol=pickle.HIGHEST_PROTOCOL)
                 with open(meta_path, "w", encoding="utf-8") as fh:
                     json.dump(
-                        {"count": self._loaded_count, "name": self.collection_name},
+                        {
+                            "count": self._loaded_count,
+                            "name": self.collection_name,
+                            "version": BM25_INDEX_VERSION,
+                        },
                         fh,
                     )
             except Exception as exc:
@@ -216,15 +232,21 @@ def search_bm25_ranked_ids(
         return []
     scores = index.bm25.get_scores(q_tokens)
     rf = repo_filter.strip()
+    n = len(scores)
+    if n == 0:
+        return []
     if rf:
         candidates: List[int] = []
         for i, sid in enumerate(index.ordered_ids):
             _text, meta = index.id_to_doc.get(sid, ("", {}))
             if str(meta.get("repository") or "") == rf:
                 candidates.append(i)
-        order = sorted(candidates, key=lambda i: scores[i], reverse=True)
+        if not candidates:
+            return []
+        # Top-N only — avoid sorting the full candidate list (large corpora).
+        order = heapq.nlargest(min(top_n, len(candidates)), candidates, key=lambda i: scores[i])
     else:
-        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        order = heapq.nlargest(min(top_n, n), range(n), key=lambda i: scores[i])
     out: List[str] = []
     for i in order:
         out.append(index.ordered_ids[i])

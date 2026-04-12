@@ -1,0 +1,30 @@
+{
+  "nms": {
+    "vlan": "vlan",
+    "snmp": "snmp_polling"
+  },
+  "occt": {
+    "fillet": "fillet"
+  },
+  "kicad": {
+    "footprint": "footprint"
+  },
+  "geda": {
+    "netlist": "netlist"
+  },
+  "general": {},
+  "spice": {
+    "transient": "transient_analysis",
+    "CKT": "circuit_struct",
+    "CKTload": "matrix_assembly",
+    "SMP": "sparse_matrix_pointer",
+    "RHS": "right_hand_side_vector",
+    "BSIM4": "bsim4_device_model",
+    "DEVload": "device_evaluation",
+    "DEVpzLoad": "pole_zero_analysis",
+    "NIintegrate": "numerical_integration",
+    "sGENinstance": "device_instance_list",
+    "sGENmodel": "device_model_struct",
+    "Newton-Raphson": "newton_raphson_solver"
+  }
+}

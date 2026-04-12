@@ -36,6 +36,11 @@ from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from tqdm import tqdm
 
 try:
+    from tqdm.asyncio import tqdm as tqdm_asyncio
+except ImportError:  # pragma: no cover
+    tqdm_asyncio = None
+
+try:
     import chromadb
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("chromadb is required") from exc
@@ -185,6 +190,7 @@ METADATA_KEYS = [
     "llm_summary",
     "llm_tags",
     "llm_relations",
+    "llm_physics_model",
 ]
 
 CONTENT_TYPE_SIGNALS = {
@@ -400,6 +406,24 @@ def setup_logging(verbose: bool) -> None:
         level=level,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+    # asyncio logs "Using selector: EpollSelector" at DEBUG when --verbose; it looks like a hang
+    # in GUI/SSE logs and is almost never useful for ingest operators.
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    if not verbose:
+        for noisy in ("aiohttp", "aiohttp.client", "aiohttp.connector", "chromadb", "httpx"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def _tqdm_ingest(iterable: Iterable[Any], *, desc: str, unit: str, **kwargs: Any) -> tqdm:
+    """tqdm tuned for piped stdout (GUI SSE): frequent enough that idle watchdogs see progress."""
+    opts: Dict[str, Any] = {"desc": desc, "unit": unit}
+    if not sys.stdout.isatty():
+        # Default 0.5s: long per-file steps (e.g. LLM enrich per chunk) otherwise produce no lines for
+        # tens of seconds and the GUI repeats "still running". Override with INGEST_TQDM_MININTERVAL.
+        opts["mininterval"] = float(os.environ.get("INGEST_TQDM_MININTERVAL", "0.5"))
+        opts["maxinterval"] = 15.0
+    opts.update(kwargs)
+    return tqdm(iterable, **opts)
 
 
 # ---------------------------------------------------------------------------
@@ -1523,6 +1547,23 @@ _REGEX_CODE_PATTERNS: Dict[str, List[str]] = {
     ".swift": [r"^\s*func\s+", r"^\s*class\s+", r"^\s*struct\s+", r"^\s*enum\s+", r"^\s*protocol\s+"],
     ".scala": [r"^\s*def\s+", r"^\s*class\s+", r"^\s*object\s+", r"^\s*trait\s+"],
     ".php": [r"^\s*function\s+", r"^\s*class\s+"],
+    ".c": [
+        r"^\w[\w\s\*]+\s+\w+\s*\([^;]*\)\s*\{",  # standard function definition
+        r"^\s*struct\s+\w+\s*\{",
+        r"^\s*typedef\s+",
+        r"^\s*#\s*define\s+\w+",
+    ],
+    ".h": [
+        r"^\w[\w\s\*]+\s+\w+\s*\([^;]*\);",
+        r"^\s*struct\s+\w+\s*\{",
+        r"^\s*typedef\s+",
+        r"^\s*#\s*define\s+\w+",
+    ],
+    ".cpp": [
+        r"^\w[\w\s\*:<>]+\s+[\w:]+\s*\([^;]*\)\s*(?:const\s*)?\{",
+        r"^\s*class\s+\w+",
+        r"^\s*struct\s+\w+\s*\{",
+    ],
 }
 
 
@@ -1601,9 +1642,37 @@ def regex_spice_split(content: str, path: Path) -> List[Tuple[str, Dict[str, str
     # min_chars=0: never merge across split boundaries — each part is a semantic block.
     # (min_chars=200 would merge multiple .subckt/.model sections when each is tiny.)
     raw_parts = _merge_small_regex_chunks(raw_parts, min_chars=0, max_chars=8000)
+    SPICE_MAX_SEGMENT_CHARS = 50_000
+    safe_parts: List[str] = []
+    for seg in raw_parts:
+        if len(seg) > SPICE_MAX_SEGMENT_CHARS:
+            logger.warning(
+                "regex_spice_split: segment for %s exceeds %d chars (%d) — "
+                "sub-splitting with RecursiveCharacterTextSplitter.",
+                path.name,
+                SPICE_MAX_SEGMENT_CHARS,
+                len(seg),
+            )
+            sub_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=SPICE_MAX_SEGMENT_CHARS,
+                chunk_overlap=0,
+                separators=["\n\n", "\n", " ", ""],
+            )
+            sub_docs = sub_splitter.create_documents([seg])
+            for d in sub_docs:
+                piece = d.page_content
+                # Defense in depth: some splitter versions can exceed chunk_size on edge cases.
+                if len(piece) <= SPICE_MAX_SEGMENT_CHARS:
+                    safe_parts.append(piece)
+                else:
+                    for i in range(0, len(piece), SPICE_MAX_SEGMENT_CHARS):
+                        safe_parts.append(piece[i : i + SPICE_MAX_SEGMENT_CHARS])
+        else:
+            safe_parts.append(seg)
+    raw_parts = safe_parts
     return [
         (
-            seg[:8000],
+            seg,
             {
                 "chunk_strategy": "regex_spice",
                 "chunk_type": "spice_block",
@@ -1940,6 +2009,105 @@ def ast_chunk_python(path: Path, content: str) -> List[Tuple[str, Dict[str, str]
     return chunks
 
 
+def _mask_c_macros_for_ast(content: str) -> str:
+    """
+    Replaces known disruptive C macros with spaces of the exact same length.
+    This allows Tree-Sitter to parse the syntax tree without breaking the
+    start_byte/end_byte character offsets mapping to the original content.
+    """
+    masked = content
+
+    # 1. Mask __attribute__((...))
+    masked = re.sub(
+        r"__attribute__\s*\(\(.*?\)\)",
+        lambda m: " " * len(m.group(0)),
+        masked,
+        flags=re.DOTALL,
+    )
+
+    # __declspec(...) — MSVC/Clang extension
+    masked = re.sub(
+        r"__declspec\s*\([\s\S]*?\)",
+        lambda m: " " * len(m.group(0)),
+        masked,
+        flags=re.DOTALL,
+    )
+
+    # Ngspice-specific function-wrapping macros
+    masked = re.sub(
+        r"\b(?:COMPILER_PRAGMA|SPICE_IGNORE_WARNING|NG_IGNORE)\b\s*\([\s\S]*?\)",
+        lambda m: " " * len(m.group(0)),
+        masked,
+        flags=re.DOTALL,
+    )
+
+    # Preprocessor conditional directives that fragment function bodies
+    masked = re.sub(
+        r"^[ \t]*#[ \t]*(?:if|ifdef|ifndef|else|elif|endif)[^\n]*$",
+        lambda m: " " * len(m.group(0)),
+        masked,
+        flags=re.MULTILINE,
+    )
+
+    # 2. Mask common Ngspice return wrappers or fast-aliasing macros
+    # Example: SPICEdev struct instantiations or complex macro headers
+    # Add any specific Ngspice macros here that break function definitions.
+    # masked = re.sub(r'YOUR_MACRO_REGEX', lambda m: " " * len(m.group(0)), masked)
+
+    return masked
+
+
+# Common English / generic identifiers ending in ``set`` that are not Ngspice ``*set`` helpers.
+_SETUP_ENDSET_DENY = frozenset(
+    {
+        "offset",
+        "closet",
+        "onset",
+        "preset",
+        "roset",
+        "asset",
+        "beset",
+        "coset",
+        "dataset",
+    }
+)
+
+
+def _ngspice_setup_like_context(function_name: str, stem: str) -> bool:
+    """Ngspice-style setup/init context for chunk typing and declaration preservation.
+
+    The plan's ``\"set\" in name`` intent maps to ``*set`` suffix (e.g. ``MOS1set``,
+    ``DIOset``) while avoiding false positives such as ``offset`` (also ``*set``).
+    """
+    fl = (function_name or "").lower()
+    sl = (stem or "").lower()
+    if "setup" in fl or "init" in fl or "alloc" in fl:
+        return True
+    if fl.endswith("set") and fl not in _SETUP_ENDSET_DENY:
+        return True
+    if "setup" in sl or "init" in sl:
+        return True
+    if sl.endswith("set") and sl not in _SETUP_ENDSET_DENY:
+        return True
+    return False
+
+
+def _ts_find_function_identifier(node, content: str) -> Optional[str]:
+    """Recursively traverse a function_declarator to find the function name identifier."""
+    skip_types = frozenset({"parameter_list", "argument_list"})
+    target_types = {"pointer_declarator", "parenthesized_declarator", "function_declarator"}
+    for ch in node.children:
+        if ch.type in skip_types:
+            continue
+        if ch.type == "identifier":
+            return content[ch.start_byte : ch.end_byte]
+        if ch.type in target_types:
+            result = _ts_find_function_identifier(ch, content)
+            if result:
+                return result
+    return None
+
+
 def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[Tuple[str, Dict[str, str]]]]:
     mod_map = {
         "c": "tree_sitter_c",
@@ -1951,7 +2119,14 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
     parser = _ts_parser_for(grammar, mod_map[grammar])
     if parser is None:
         return None  # pragma: no cover
-    data = content.encode("utf-8", errors="replace")
+
+    # Mask the content for the parser (C/C++ only); byte lengths preserved so offsets map to `content`.
+    if grammar in ("c", "cpp"):
+        ast_safe_content = _mask_c_macros_for_ast(content)
+    else:
+        ast_safe_content = content
+
+    data = ast_safe_content.encode("utf-8", errors="replace")
     tree = parser.parse(data)
 
     targets = {
@@ -1972,13 +2147,17 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
     device_family_val = _device_family_for_path(path)
 
     def node_text(node) -> str:
+        # Always slice from the ORIGINAL content (parser ran on ast_safe_content).
         return content[node.start_byte : node.end_byte]
 
-    def walk(node, classname: str = "", in_function: bool = False):
+    def walk(node, classname: str = "", in_function: bool = False, current_func: str = ""):
         t = node.type
+        chunk_name = ""  # set in ``if t in targets``; avoids UnboundLocalError on recurse paths
+        is_setup_func = _ngspice_setup_like_context(current_func, path.stem)
         # Skip `declaration` nodes inside function bodies — they are local variable
-        # declarations and would flood the index with useless chunks.
-        if t == "declaration" and in_function:
+        # declarations and would flood the index with useless chunks — except in
+        # setup/init/alloc-style functions where locals matter for device modeling.
+        if t == "declaration" and in_function and not is_setup_func:
             return
         # Skip function-local typedefs (unusual in Ngspice; avoids noisy inner chunks).
         if t == "type_definition" and in_function:
@@ -1994,10 +2173,11 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
             chunk_name = name
             if grammar in ("c", "cpp") and t == "function_definition":
                 for ch in node.children:
-                    if ch.type == "function_declarator":
-                        for g in ch.children:
-                            if g.type == "identifier":
-                                chunk_name = content[g.start_byte : g.end_byte]
+                    if ch.type in ("function_declarator", "pointer_declarator"):
+                        found = _ts_find_function_identifier(ch, content)
+                        if found:
+                            chunk_name = found
+                            break
             if grammar == "java" and t == "method_declaration":
                 for ch in node.children:
                     if ch.type == "identifier":
@@ -2052,9 +2232,10 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
             if grammar == "c" and t == "function_definition":
                 cn_lower = chunk_name.lower()
                 txt_lower = txt.lower()
+                setup_like = _ngspice_setup_like_context(chunk_name, path.stem)
                 if "load" in cn_lower:
                     chunk_type = "device_load_function"
-                elif "setup" in cn_lower:
+                elif setup_like:
                     chunk_type = "device_setup_function"
                 elif "mna" in txt_lower or "smp" in txt_lower:
                     chunk_type = "matrix_solver_function"
@@ -2090,7 +2271,7 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
                     cname = content[ch.start_byte : ch.end_byte]  # pragma: no cover
                     break  # pragma: no cover
             for ch in node.children:  # pragma: no cover
-                walk(ch, cname or classname)  # pragma: no cover
+                walk(ch, cname or classname, False, current_func)  # pragma: no cover
         elif grammar == "java" and t in ("class_declaration", "interface_declaration"):
             cname = classname
             for ch in node.children:
@@ -2098,12 +2279,13 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
                     cname = content[ch.start_byte : ch.end_byte]
                     break
             for ch in node.children:
-                walk(ch, cname or classname)
+                walk(ch, cname or classname, False, current_func)
         elif enters_type_def:
             pass  # typedef text already emitted; skip inner struct_specifier duplicate chunk
         else:
+            next_current = chunk_name if enters_function else current_func
             for ch in node.children:
-                walk(ch, classname, in_function or enters_function)
+                walk(ch, classname, in_function or enters_function, next_current)
 
     if grammar in ("c", "cpp"):
         preamble = _file_preamble_block_comment(content)
@@ -2137,15 +2319,34 @@ def _ts_extract_chunks_or_language_split_c_cpp(
 
     If the tree-sitter parser cannot be loaded, fallback runs only when
     *allow_language_split_fallback* is true (CLI ``--allow-language-split-fallback`` or env).
-    If the parser loads but produces no AST chunks (e.g. empty file), fallback still runs so
-    small or odd files are not dropped entirely.
+    If the parser loads but ``_ts_extract_chunks`` returns an empty list (e.g. unparseable
+    file after masking), a warning is logged and the same fallback runs so files are not
+    dropped entirely. ``None`` from ``_ts_extract_chunks`` (parser unavailable) skips the
+    empty-list warning but still uses the fallback path below.
     """
     if grammar not in ("c", "cpp"):
         raise ValueError("grammar must be 'c' or 'cpp'")  # pragma: no cover
     mod_map = {"c": "tree_sitter_c", "cpp": "tree_sitter_cpp"}
     ts = _ts_extract_chunks(path, content, grammar)
     if ts is not None:
-        return ts
+        if len(ts) == 0:
+            logger.warning(
+                "AST yielded 0 chunks for %s (%s), falling back to regex/text splitter.",
+                path.name,
+                grammar,
+            )
+            ext = path.suffix.lower()
+            if ext in _REGEX_CODE_PATTERNS:
+                regex_parts = regex_code_split(content, path, ext)
+                if regex_parts:
+                    logger.debug(
+                        "Routed %s through regex_code_split (%d chunks).",
+                        path.name,
+                        len(regex_parts),
+                    )
+                    return regex_parts
+        else:
+            return ts
     parser = _ts_parser_for(grammar, mod_map[grammar])
     if parser is None and not allow_language_split_fallback:
         raise TreeSitterFallbackDisallowedError(
@@ -2613,15 +2814,41 @@ def _ollama_generate_url() -> str:
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 
 
+def _extract_balanced_json_object(text: str) -> Optional[str]:
+    """If the model wraps JSON in prose, take the first top-level {...} substring."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    for i in range(start, len(text)):
+        c = text[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
 def _parse_ollama_enrichment_json(inner: str) -> Optional[Dict[str, str]]:
     """Parse model JSON into flat llm_* strings; return None on failure."""
     inner = inner.strip()
     m = _JSON_FENCE_RE.search(inner)
     if m:
         inner = m.group(1).strip()
-    try:
-        obj = json.loads(inner)
-    except json.JSONDecodeError:
+    candidates = [inner]
+    blob = _extract_balanced_json_object(inner)
+    if blob and blob not in candidates:
+        candidates.append(blob)
+    obj = None
+    for cand in candidates:
+        try:
+            obj = json.loads(cand)
+            break
+        except json.JSONDecodeError:
+            continue
+    if obj is None:
         return None
     if not isinstance(obj, dict):
         return None
@@ -2641,10 +2868,20 @@ def _parse_ollama_enrichment_json(inner: str) -> Optional[Dict[str, str]]:
     else:
         rel = []
     tags = tags[:3]
+    physics_raw = obj.get("physics_model")
+    if physics_raw is None:
+        physics = ""
+    elif isinstance(physics_raw, str):
+        physics = physics_raw.strip()
+    elif isinstance(physics_raw, (int, float, bool)):
+        physics = str(physics_raw).strip()
+    else:
+        physics = ""  # lists/objects from malformed JSON — do not stringify into metadata
     return {
         "llm_summary": summary,
         "llm_tags": ",".join(tags),
         "llm_relations": ",".join(rel),
+        "llm_physics_model": physics,
     }
 
 
@@ -2653,32 +2890,38 @@ def _generate_llm_metadata(
     chunk_name: str,
     model: str,
     *,
-    timeout_sec: float = 60.0,
+    timeout_sec: float = 120.0,
 ) -> Dict[str, str]:
     """
-    Call local Ollama /api/generate to produce llm_summary, llm_tags, llm_relations.
-    On HTTP/JSON failure after retries, returns empty strings for all three.
+    Call local Ollama /api/generate to produce llm_summary, llm_tags, llm_relations, llm_physics_model.
+    On HTTP/JSON failure after retries, returns empty strings for all four.
     """
-    empty = {"llm_summary": "", "llm_tags": "", "llm_relations": ""}
+    empty = {"llm_summary": "", "llm_tags": "", "llm_relations": "", "llm_physics_model": ""}
     snippet = chunk_text[:3000]
+    safe_chunk_label = json.dumps((chunk_name or "")[:500], ensure_ascii=True)
     prompt = (
-        f"You are an expert EDA C-programmer. Analyze this Ngspice C function named '{chunk_name}'.\n"
+        f"You are an expert in Semiconductor Physics and EDA C-programming. "
+        f"Analyze this C code chunk named {safe_chunk_label} from the Ngspice circuit simulator.\n"
         f"Code:\n{snippet}\n\n"
-        "Task: Provide metadata about this function.\n"
-        "Output STRICTLY as a JSON object with NO markdown, NO markdown fences, and NO extra text:\n"
-        "{\n"
-        '  "summary": "One-line plain English summary of what this does",\n'
-        '  "tags": ["BJT", "matrix-assembly", "NR-iteration", etc... max 3 tags],\n'
-        '  "related_functions": ["names of functions it calls or is called by"]\n'
-        "}"
+        "Respond with a JSON object only, with these keys:\n"
+        "  summary: one-line plain-English description of what this chunk computes or models.\n"
+        "  tags: array of up to 3 short strings. Prefer physics/math terms "
+        "(e.g. 'ebers-moll', 'channel-charge', 'MNA-stamp', 'Newton-Raphson', 'BSIM4') "
+        "over generic software terms.\n"
+        "  related_functions: array of C function or symbol names called or referenced.\n"
+        "  physics_model: (string or null) the semiconductor model or physical equation "
+        "being implemented, if identifiable (e.g. 'Shockley diode equation', "
+        "'BSIM3 surface potential', 'Ebers-Moll BJT', 'Fowler-Nordheim tunneling')."
     )
     url = _ollama_generate_url()
-    payload_obj = {
+    payload_obj: Dict[str, Any] = {
         "model": model,
         "prompt": prompt,
         "stream": False,
         "options": {"temperature": 0.1},
     }
+    if os.environ.get("ENRICH_JSON_FORMAT", "1").strip().lower() not in ("0", "false", "no"):
+        payload_obj["format"] = "json"
     payload = json.dumps(payload_obj).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -2692,7 +2935,8 @@ def _generate_llm_metadata(
                 data = json.load(resp)
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-            logger.warning(
+            log_fn = logger.warning if attempt >= 2 else logger.debug
+            log_fn(
                 "enrich-metadata: Ollama HTTP %s (attempt %s): %s",
                 exc.code,
                 attempt + 1,
@@ -2702,26 +2946,32 @@ def _generate_llm_metadata(
                 return empty
             continue
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            logger.warning("enrich-metadata: Ollama request failed (attempt %s): %s", attempt + 1, exc)
+            log_fn = logger.warning if attempt >= 2 else logger.debug
+            log_fn("enrich-metadata: Ollama request failed (attempt %s): %s", attempt + 1, exc)
             if attempt == 2:
                 return empty
             continue
         except Exception as exc:  # pragma: no cover
-            logger.warning("enrich-metadata: unexpected error (attempt %s): %s", attempt + 1, exc)
+            log_fn = logger.warning if attempt >= 2 else logger.debug
+            log_fn("enrich-metadata: unexpected error (attempt %s): %s", attempt + 1, exc)
             if attempt == 2:
                 return empty
             continue
 
         raw = data.get("response")
         if raw is None or not isinstance(raw, str):
-            logger.warning("enrich-metadata: missing response field (attempt %s)", attempt + 1)
+            log_fn = logger.warning if attempt >= 2 else logger.debug
+            log_fn("enrich-metadata: missing response field (attempt %s)", attempt + 1)
             if attempt == 2:
                 return empty
             continue
         parsed = _parse_ollama_enrichment_json(raw)
         if parsed is not None:
             return parsed
-        logger.warning("enrich-metadata: JSON parse failed (attempt %s)", attempt + 1)
+        if attempt >= 2:
+            logger.warning("enrich-metadata: JSON parse failed after %s attempts", attempt + 1)
+        else:
+            logger.debug("enrich-metadata: JSON parse failed (attempt %s)", attempt + 1)
         if attempt == 2:
             return empty
         continue
@@ -2972,7 +3222,13 @@ async def run_async_embedding_batches(
                     return None
                 return (ids, texts, metas, vecs)
 
-        return list(await asyncio.gather(*[one(b) for b in batches]))
+        coros = [one(b) for b in batches]
+        if tqdm_asyncio is not None:
+            g_kw: Dict[str, Any] = {"desc": "Embedding", "unit": "batch"}
+            if not sys.stdout.isatty():
+                g_kw["mininterval"] = float(os.environ.get("INGEST_TQDM_MININTERVAL", "2.0"))
+            return list(await tqdm_asyncio.gather(*coros, **g_kw))
+        return list(await asyncio.gather(*coros))
 
 
 def embedding_worker(
@@ -3602,6 +3858,35 @@ def ingest_run(args: argparse.Namespace) -> int:
                 paths = iter_files(root, None, skip_dirs=IGNORED_DIRS)
         else:
             paths = []
+        # GUI / first-time ingest: --git-diff with an empty change set still leaves git_used True and
+        # paths=[], so nothing is scanned. If the tree actually has files, fall back to a full walk
+        # unless GIT_DIFF_FALLBACK_FULL=0 (strict incremental-only).
+        _git_diff_fb = os.environ.get("GIT_DIFF_FALLBACK_FULL", "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+        )
+        if (
+            _git_diff_fb
+            and getattr(args, "git_diff", False)
+            and git_used
+            and not files_to_process
+            and root is not None
+            and root.is_dir()
+        ):
+            if args.mode == "mib":
+                probe = iter_files(root, {".mib", ".my"}, skip_dirs=IGNORED_DIRS)
+            elif args.mode == "code":
+                probe = iter_files(root, None, skip_dirs=IGNORED_DIRS, skip_exts=IGNORED_EXTS)
+            else:
+                probe = iter_files(root, None, skip_dirs=IGNORED_DIRS)
+            if probe:
+                logger.warning(
+                    "git-diff matched no files, but %d path(s) exist under --source; "
+                    "running full directory scan (set GIT_DIFF_FALLBACK_FULL=0 to disable).",
+                    len(probe),
+                )
+                paths = probe
         for p in paths:
             if args.mode == "rally" and p.suffix.lower() == ".csv":
                 try:
@@ -3666,6 +3951,7 @@ def ingest_run(args: argparse.Namespace) -> int:
         return "root", parts[0] if parts else str(path)
 
     work_items: List[Tuple[str, str, Dict[str, str]]] = []
+    vocab_tokens: set[str] = set()
     concepts_found: Counter[str] = Counter()
     ctype_dist: Counter[str] = Counter()
     results_holder: Dict[str, Any] = {
@@ -3676,15 +3962,35 @@ def ingest_run(args: argparse.Namespace) -> int:
         "chunks_updated": 0,
     }
     files_processed = 0
+    # Progress lines while --enrich-metadata runs (many Ollama calls per file; tqdm only advances per file).
+    _enrich_hb_sec = float(os.environ.get("INGEST_ENRICH_HEARTBEAT_SEC", "20"))
+    _enrich_hb_next = 0.0
 
     ingestion_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if (
+        not files_to_process
+        and root is not None
+        and root.is_dir()
+        and args.mode not in ("status", "rally", "wiki")
+    ):
+        logger.error(
+            "No ingestible files under --source %s for mode=%s. "
+            "Is the directory empty or a placeholder? Clone sources into this path, or point "
+            "--source at a checkout that contains files. If --git-diff is on, try turning it off. "
+            "If files exist but are skipped, try RESPECT_GITIGNORE=0.",
+            root,
+            args.mode,
+        )
 
     # Structural importance: count incoming references per file stem (code mode only).
     file_ref_counts: Dict[str, int] = {}
     if args.mode == "code":
         file_ref_counts = build_file_ref_counts_for_code_ingest(files_to_process)
 
-    for path, extra in tqdm(files_to_process, desc="Scanning", unit="file"):
+    for path, extra in _tqdm_ingest(
+        files_to_process, desc="Scanning", unit="file", total=len(files_to_process)
+    ):
         file_deps_str = ""
         effective_source_type = source_type
         if shutdown_event.is_set():
@@ -3883,10 +4189,31 @@ def ingest_run(args: argparse.Namespace) -> int:
                     text,
                     str(partial.get("chunk_name") or ""),
                     args.enrich_model,
-                    timeout_sec=float(getattr(args, "enrich_timeout", 60.0)),
+                    timeout_sec=float(getattr(args, "enrich_timeout", 120.0)),
                 )
                 meta.update({k: v for k, v in extra.items() if v})
+                now = time.monotonic()
+                if now >= _enrich_hb_next:
+                    tail = abs_src if len(abs_src) <= 72 else "…" + abs_src[-70:]
+                    print(
+                        f"[ingest] LLM enrich progress: file {files_processed + 1}/{len(files_to_process)} "
+                        f"chunk {i + 1}/{len(pieces)} — {tail}",
+                        flush=True,
+                    )
+                    _enrich_hb_next = now + _enrich_hb_sec
             meta = finalize_metadata(meta)
+            cn = str(meta.get("chunk_name") or "").strip()
+            if cn:
+                vocab_tokens.add(cn)
+            df = str(meta.get("device_family") or "").strip()
+            if df:
+                vocab_tokens.add(df)
+            rp = str(meta.get("relative_path") or "").strip()
+            if rp:
+                prp = Path(rp.replace("\\", "/"))
+                vocab_tokens.add(prp.name)
+                if prp.suffix:
+                    vocab_tokens.add(prp.stem)
             try:
                 cidx = int(meta.get("chunk_index") or i)
             except ValueError:  # pragma: no cover
@@ -3902,6 +4229,25 @@ def ingest_run(args: argparse.Namespace) -> int:
                 file_hashes[src_key] = h
             else:
                 file_hashes[abs_src] = h
+
+    vocab_tokens.update(concepts_found.keys())
+    vocab_path = db_path / "symbols_vocabulary.json"
+    try:
+        existing: List[Any] = []
+        if vocab_path.is_file():
+            try:
+                existing = json.loads(vocab_path.read_text(encoding="utf-8", errors="replace"))
+            except Exception:
+                existing = []
+        if not isinstance(existing, list):
+            existing = []
+        merged = sorted(
+            {str(x).strip() for x in existing if str(x).strip()} | vocab_tokens
+        )
+        vocab_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        logger.info("symbols_vocabulary written: %d tokens -> %s", len(merged), vocab_path)
+    except Exception as exc:
+        logger.warning("symbols_vocabulary write failed: %s", exc)
 
     if args.dry_run:
         logger.info("dry-run: %d files, %d chunks (planned)", files_processed, len(work_items))
@@ -3951,6 +4297,14 @@ def ingest_run(args: argparse.Namespace) -> int:
 
     if use_async_embed:
         try:
+            logger.info(
+                "Starting async embedding: %d chunks in %d batch(es), concurrency=%d, model=%s "
+                "(progress updates may be slow in the dashboard — this step is network-bound to Ollama)",
+                len(work_items),
+                len(batches),
+                embed_concurrency,
+                embed_model,
+            )
             outs = asyncio.run(
                 run_async_embedding_batches(batches, embed_model, embed_concurrency)
             )
@@ -3975,7 +4329,7 @@ def ingest_run(args: argparse.Namespace) -> int:
             t.start()
             threads.append(t)
         try:
-            for batch in tqdm(batches, desc="Embedding", unit="batch"):
+            for batch in _tqdm_ingest(batches, desc="Embedding", unit="batch", total=len(batches)):
                 if shutdown_event.is_set():
                     break  # pragma: no cover
                 chunk_q.put(batch)
@@ -3986,6 +4340,10 @@ def ingest_run(args: argparse.Namespace) -> int:
             t.join(timeout=600)
 
     result_q.put(WRITER_STOP)
+    print(
+        "[ingest] Waiting for Chroma writer / checkpoint (no tqdm here — safe after Embedding 100%)…",
+        flush=True,
+    )
     wthread.join(timeout=600)
 
     checkpoint[cp_key] = json.dumps(file_hashes)
@@ -4109,7 +4467,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--enrich-metadata",
         action="store_true",
-        help="Call local Ollama to add llm_summary, llm_tags, llm_relations per chunk (code source_type only).",
+        help=(
+            "Call local Ollama to add llm_summary, llm_tags, llm_relations, llm_physics_model per chunk "
+            "(code source_type only)."
+        ),
     )
     p.add_argument(
         "--enrich-model",
@@ -4119,8 +4480,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--enrich-timeout",
         type=float,
-        default=float(os.environ.get("ENRICH_OLLAMA_TIMEOUT", "60")),
-        help="Seconds to wait per Ollama /api/generate call during enrichment (default: ENRICH_OLLAMA_TIMEOUT or 60).",
+        default=float(os.environ.get("ENRICH_OLLAMA_TIMEOUT", "180")),
+        help=(
+            "Seconds to wait per Ollama /api/generate call during enrichment "
+            "(default: ENRICH_OLLAMA_TIMEOUT or 180). Raise if the model is slow or the GPU is busy with embeds."
+        ),
     )
     return p
 

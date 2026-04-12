@@ -1,7 +1,7 @@
 # User guide: `query.sh` and `query.py`
 
 Standalone **query** tools for **Universal Domain RAG**: semantic search, concept search, and database status **without** running the MCP server. They use the same Chroma collections and Ollama embedding model as ingestion ([`run.sh`](RUN_SH_USER_GUIDE.md)).
-
+RAG_GUI_PORT=8501 ./gui.sh
 ---
 
 ## Prerequisites

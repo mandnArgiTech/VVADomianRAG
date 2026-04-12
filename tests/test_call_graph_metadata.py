@@ -93,6 +93,116 @@ def test_cg01_c_simple_calls(tmp_path: Path):
 
 
 @skip_without_ts_c
+def test_cg01b_c_attribute_mask_parse_preserves_source(tmp_path: Path):
+    """Masked buffer is parsed; chunk slices must still come from original source."""
+    src = (
+        'static void __attribute__((unused)) foo(void) {\n'
+        "    bar();\n"
+        "}\n"
+    )
+    path = tmp_path / "attr.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    assert chunks
+    fn_chunk = next(c for c in chunks if c[1].get("chunk_type") == "function_definition")
+    body = fn_chunk[0]
+    assert "__attribute__" in body
+    assert "bar()" in body
+
+
+@skip_without_ts_c
+def test_cg01c_c_declspec_mask_parse_preserves_source(tmp_path: Path):
+    """__declspec(...) is masked for AST; emitted chunk text must still use original source."""
+    src = (
+        "static void __declspec(dllexport) foo(void) {\n"
+        "    bar();\n"
+        "}\n"
+    )
+    path = tmp_path / "declspec.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    assert chunks
+    fn_chunk = next(c for c in chunks if c[1].get("chunk_type") == "function_definition")
+    body = fn_chunk[0]
+    assert "__declspec" in body
+    assert "bar()" in body
+
+
+@skip_without_ts_c
+def test_cg01d_setup_file_preserves_inner_declarations(tmp_path: Path):
+    """Local declarations inside setup-style paths are kept as declaration chunks."""
+    src = (
+        "void MOS1setup(void) {\n"
+        "    int model_flags;\n"
+        "    model_flags = 0;\n"
+        "}\n"
+    )
+    path = tmp_path / "mos1setup.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    decl_chunks = [c for c in chunks if c[1].get("chunk_type") == "declaration"]
+    assert decl_chunks, "expected at least one declaration chunk inside setup function"
+    assert any("model_flags" in c[0] for c in decl_chunks)
+
+
+@skip_without_ts_c
+def test_cg01e_non_setup_skips_inner_declarations(tmp_path: Path):
+    src = (
+        "void MOS1load(void) {\n"
+        "    int local_only;\n"
+        "    (void)local_only;\n"
+        "}\n"
+    )
+    path = tmp_path / "mos1load.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    decl_inside = [c for c in chunks if c[1].get("chunk_type") == "declaration"]
+    assert not decl_inside
+
+
+@skip_without_ts_c
+def test_cg01f_dioset_suffix_preserves_inner_declarations(tmp_path: Path):
+    """*set suffix (Ngspice naming) enables setup-like locals without ``set`` substring false positives."""
+    src = (
+        "void DIOset(void) {\n"
+        "    int dtemp;\n"
+        "    (void)dtemp;\n"
+        "}\n"
+    )
+    path = tmp_path / "plain.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    decl_inside = [c for c in chunks if c[1].get("chunk_type") == "declaration"]
+    assert decl_inside and any("dtemp" in c[0] for c in decl_inside)
+
+
+@skip_without_ts_c
+def test_cg01g_offset_name_does_not_trigger_setup_context(tmp_path: Path):
+    """Middle ``set`` in ``offset`` must not preserve inner declarations."""
+    src = (
+        "void offset(void) {\n"
+        "    int local_only;\n"
+        "}\n"
+    )
+    path = tmp_path / "plain2.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    decl_inside = [c for c in chunks if c[1].get("chunk_type") == "declaration"]
+    assert not decl_inside
+
+
+@skip_without_ts_c
+def test_cg01h_function_name_not_parameter_identifier(tmp_path: Path):
+    """Declarator walk must skip parameter_list so chunk_name is the function, not a parameter."""
+    src = "void foo(int x) { (void)x; }\n"
+    path = tmp_path / "params.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    fn_chunk = next(c for c in chunks if c[1].get("chunk_type") == "function_definition")
+    assert fn_chunk[1].get("chunk_name") == "foo"
+
+
+@skip_without_ts_c
 def test_cg02_c_skips_stdlib(tmp_path: Path):
     src = "void foo() { malloc(10); CKTload(ckt); free(p); }\n"
     path = tmp_path / "t.c"

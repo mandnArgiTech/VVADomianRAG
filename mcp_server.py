@@ -92,6 +92,10 @@ MCP_POOL_WORKERS = max(1, int(os.environ.get("MCP_POOL_WORKERS", "4")))
 MCP_MAX_CONCURRENT_FEEDS = max(1, int(os.environ.get("MCP_MAX_CONCURRENT_FEEDS", "2")))
 MAX_K_RESULTS = max(1, int(os.environ.get("MCP_MAX_K", "25")))
 RESULT_CHUNK_MAX_CHARS = max(512, int(os.environ.get("MCP_RESULT_CHUNK_MAX_CHARS", "4096")))
+RESULT_CONTEXT_WINDOW_MAX_CHARS = max(
+    RESULT_CHUNK_MAX_CHARS,
+    int(os.environ.get("MCP_RESULT_CONTEXT_WINDOW_MAX_CHARS", "16000")),
+)
 EMBED_BATCH_TIMEOUT = float(os.environ.get("MCP_EMBED_BATCH_TIMEOUT", "120"))
 OLLAMA_HEARTBEAT_SEC = max(5, int(os.environ.get("MCP_OLLAMA_HEARTBEAT_SEC", "30")))
 MCP_OLLAMA_HEARTBEAT_TIMEOUT = max(1, int(os.environ.get("MCP_OLLAMA_HEARTBEAT_TIMEOUT", "15")))
@@ -235,18 +239,31 @@ def discover_collections(
     embeddings: OllamaEmbeddings,
     chroma_client: Optional[chromadb.PersistentClient] = None,
 ) -> Dict[str, Chroma]:
+    """Single Chroma client + get_collection binding (see query.discover_collections)."""
     out: Dict[str, Chroma] = {}
     try:
         client = chroma_client or chromadb.PersistentClient(path=db_path)
-        for info in client.list_collections():
-            name = info.name
-            out[name] = Chroma(
-                collection_name=name,
-                persist_directory=db_path,
-                embedding_function=embeddings,
-            )
+        infos = client.list_collections()
     except Exception as exc:
-        logger.error("discover_collections: %s", exc)
+        logger.error("discover_collections: list_collections failed for %s: %s", db_path, exc)
+        return out
+    if not infos:
+        logger.warning(
+            "discover_collections: no collections listed for %s (empty DB or locked).",
+            db_path,
+        )
+        return out
+    for info in infos:
+        name = info.name
+        try:
+            out[name] = Chroma(
+                client=client,
+                collection_name=name,
+                embedding_function=embeddings,
+                create_collection_if_not_exists=False,
+            )
+        except Exception as exc:
+            logger.error("discover_collections: failed to open collection %r: %s", name, exc)
     return out
 
 
@@ -404,14 +421,34 @@ def _fence_for(content: str) -> str:
     return "~~~" if "```" in content else "```"
 
 
-def _truncate_chunk(text: str) -> str:
-    mx = RESULT_CHUNK_MAX_CHARS
+def _truncate_chunk(text: str, max_chars: Optional[int] = None) -> str:
+    """Truncate with newline / `}`-aware cut; close dangling ``` fences if needed."""
+    mx = max_chars if max_chars is not None and max_chars > 0 else RESULT_CHUNK_MAX_CHARS
     if len(text) <= mx:
         return text
-    return text[: mx - 50] + "\n\n... (truncated for MCP response size) ..."
+    suffix = "\n\n... (truncated for MCP response size) ..."
+    floor = min(mx, max(512, mx // 2))
+    target_cut = mx - len(suffix)
+    cut = max(floor, min(target_cut, len(text)))
+    cut = min(cut, len(text))
+    boundary = text.rfind("\n\n", 0, cut)
+    if boundary < floor:
+        boundary = text.rfind("\n", 0, cut)
+    if boundary >= floor:
+        cut = boundary
+    else:
+        brace = text.rfind("}", 0, cut)
+        if brace >= floor:
+            cut = brace + 1
+    prefix = text[:cut]
+    fence = "```"
+    if prefix.count(fence) % 2 == 1:
+        prefix = prefix + "\n" + fence
+    return prefix + suffix
 
 
 def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
+    """Prefer ``context_window`` over page_content; larger cap + syntax-aware ``_truncate_chunk``."""
     meta = doc.metadata or {}
     header: List[str] = []
     repo = meta.get("repository", "") or ""
@@ -421,7 +458,14 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
     if score is not None:
         header.append(f"**Distance:** {score:.4f}")
     header.append(f"**source_type:** {source_type}")
-    content = _truncate_chunk(doc.page_content.strip())
+    cw = (meta.get("context_window") or "").strip()
+    if cw:
+        raw_body = cw
+        trunc_limit = RESULT_CONTEXT_WINDOW_MAX_CHARS
+    else:
+        raw_body = (doc.page_content or "").strip()
+        trunc_limit = RESULT_CHUNK_MAX_CHARS
+    content = _truncate_chunk(raw_body, trunc_limit)
     ext = (meta.get("extension") or "").lower()
 
     if source_type == "callee":
@@ -523,6 +567,58 @@ def _select_collection_names(cmap: Dict[str, Chroma], search_type: str, domain: 
     return names
 
 
+def _exact_chunk_name_results(
+    query_raw: str,
+    targets: List[str],
+    cmap: Dict[str, Chroma],
+    repo_filter: str,
+) -> List[Tuple[Any, Optional[float], str]]:
+    """Exact chunk_name pre-fetch for mcp_server._sync_multi_search.
+
+    Only activates for single-token queries (no spaces) so natural-language
+    queries do not hit per-collection metadata lookups on every search.
+    """
+    q = query_raw.strip()
+    if not q or " " in q:
+        return []
+    out: List[Tuple[Any, Optional[float], str]] = []
+    seen: set = set()
+    rf = repo_filter.strip()
+    for name in targets:
+        vs = cmap.get(name)
+        if vs is None:
+            continue
+        col = getattr(vs, "_collection", None)
+        if col is None:
+            continue
+        try:
+            res = col.get(
+                where={"chunk_name": {"$eq": q}},
+                limit=8,
+                include=["documents", "metadatas"],
+            )
+        except Exception as exc:
+            logger.debug("exact chunk_name lookup failed on %s: %s", name, exc)
+            continue
+        docs = res.get("documents") or []
+        metas = res.get("metadatas") or []
+        for i in range(len(docs)):
+            text = docs[i] if i < len(docs) else ""
+            meta = dict(metas[i] if i < len(metas) else {})
+            key = _doc_dedup_key(type("D", (), {"metadata": meta, "page_content": text})())
+            if key in seen:
+                continue
+            if rf and str(meta.get("repository", "")).strip() != rf:
+                continue
+            seen.add(key)
+            st = _infer_source_type(meta)
+            meta["_exact_match"] = "chunk_name"
+            out.append(
+                (type("D", (), {"page_content": text, "metadata": meta, "metadata_": meta})(), 0.0, st)
+            )
+    return out
+
+
 def _sync_multi_search(
     query: str,
     k: int,
@@ -534,6 +630,9 @@ def _sync_multi_search(
     if not cmap:
         raise RuntimeError("ChromaDB has no collections.")
     targets = _select_collection_names(cmap, search_type, domain)
+    # --- God Mode: exact chunk_name pre-fetch (bypasses all scoring) ---
+    exact = _exact_chunk_name_results(query, targets, cmap, repo_filter)
+    exact_keys = {_doc_dedup_key(d) for d, _, _ in exact}
     per = max(1, k // max(1, len(targets)) if targets else k)
     use_hybrid = HYBRID_SEARCH and HYBRID_AVAILABLE
     if HYBRID_SEARCH and not HYBRID_AVAILABLE:
@@ -575,10 +674,12 @@ def _sync_multi_search(
                 -_structural_importance_int(getattr(x[0], "metadata", None)),
             )
         )
-        out: List[Tuple[Any, Optional[float], str]] = []
-        for doc, score, st, _cname in merged[:k]:
-            out.append((doc, score, st))
-        return out
+        regular: List[Tuple[Any, Optional[float], str]] = [
+            (doc, score, st)
+            for doc, score, st, _cname in merged[:k]
+            if _doc_dedup_key(doc) not in exact_keys
+        ]
+        return exact + regular
 
     fused: List[Tuple[Any, Optional[float], str, float]] = []
     for name in targets:
@@ -646,7 +747,12 @@ def _sync_multi_search(
             -_structural_importance_int(getattr(x[0], "metadata", None)),
         )
     )
-    return [(doc, score, st) for doc, score, st, _ in fused[:k]]
+    regular = [
+        (doc, score, st)
+        for doc, score, st, _ in fused[:k]
+        if _doc_dedup_key(doc) not in exact_keys
+    ]
+    return exact + regular
 
 
 def _depend_stems_from_results(
@@ -712,7 +818,7 @@ def _sync_fetch_dependents(
                 res = col.get(
                     where=where_dep,
                     limit=40,
-                    include=["documents", "metadatas", "ids"],
+                    include=["documents", "metadatas"],
                 )
             except Exception as exc:
                 logger.warning("dependents get failed on %s: %s", name, exc)
@@ -780,7 +886,7 @@ def _sync_fetch_callees(
                 res = col.get(
                     where={"chunk_name": {"$eq": callee}},
                     limit=8,
-                    include=["documents", "metadatas", "ids"],
+                    include=["documents", "metadatas"],
                 )
             except Exception as exc:
                 logger.warning("callee get failed on %s: %s", coll_name, exc)
@@ -966,13 +1072,13 @@ async def search_concepts(concept: str, domain: str = "") -> str:
                 res = col.get(
                     where={"concepts": {"$contains": needle}},
                     limit=80,
-                    include=["documents", "metadatas", "ids"],
+                    include=["documents", "metadatas"],
                 )
                 if not (res.get("ids") or []):
                     res = col.get(
                         where={"concepts": {"$contains": safe_concept}},
                         limit=80,
-                        include=["documents", "metadatas", "ids"],
+                        include=["documents", "metadatas"],
                     )
                 ids_list = res.get("ids") or []
                 docs = res.get("documents") or []

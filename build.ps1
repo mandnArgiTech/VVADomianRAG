@@ -132,8 +132,8 @@ if ($gitAvailable) {
     Write-Host "      git not found — skipping tree-sitter-scheme (Scheme chunking will use regex fallback)" -ForegroundColor DarkYellow
 }
 
-# 6. Download Embedding Models
-Write-Host "[6/9] Downloading Embedding Models..." -ForegroundColor Yellow
+# 6. Download Ollama models (embeddings + small Qwen LLMs)
+Write-Host "[6/9] Downloading Ollama models..." -ForegroundColor Yellow
 $env:OLLAMA_MODELS = "$BaseDir\Models"
 $env:CUDA_VISIBLE_DEVICES = "0"
 $env:OLLAMA_KEEP_ALIVE = "-1"
@@ -159,6 +159,12 @@ Write-Host "    Pulling nomic-embed-text (274 MB, fast / long-context)..." -Fore
 Write-Host "    Pulling mxbai-embed-large (670 MB, higher accuracy)..." -ForegroundColor Gray
 & "$BaseDir\Ollama\ollama.exe" pull mxbai-embed-large
 
+Write-Host "    Pulling qwen2.5:0.5b (ingest enrich-metadata default / tiny LLM)..." -ForegroundColor Gray
+& "$BaseDir\Ollama\ollama.exe" pull qwen2.5:0.5b
+
+Write-Host "    Pulling qwen2.5:3b (small general LLM)..." -ForegroundColor Gray
+& "$BaseDir\Ollama\ollama.exe" pull qwen2.5:3b
+
 Stop-Process -Id $ollamaProc.Id -Force -ErrorAction SilentlyContinue
 
 # 7. Copy Python scripts + support files
@@ -166,17 +172,47 @@ Write-Host "[7/9] Copying scripts and domain RAG support files..." -ForegroundCo
 Copy-Item -Path "$ScriptDir\ingest.py" -Destination "$BaseDir\ingest.py" -Force
 Copy-Item -Path "$ScriptDir\mcp_server.py" -Destination "$BaseDir\mcp_server.py" -Force
 Copy-Item -Path "$ScriptDir\domain_feeder.py" -Destination "$BaseDir\domain_feeder.py" -Force
+Copy-Item -Path "$ScriptDir\hybrid_search.py" -Destination "$BaseDir\hybrid_search.py" -Force
+Copy-Item -Path "$ScriptDir\query.py" -Destination "$BaseDir\query.py" -Force
+Copy-Item -Path "$ScriptDir\gui_backend.py" -Destination "$BaseDir\gui_backend.py" -Force
+Copy-Item -Path "$ScriptDir\agent_tools.py" -Destination "$BaseDir\agent_tools.py" -Force
+Copy-Item -Path "$ScriptDir\index.html" -Destination "$BaseDir\index.html" -Force -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath (Join-Path $ScriptDir "static")) {
+    Copy-Item -Path (Join-Path $ScriptDir "static") -Destination (Join-Path $BaseDir "static") -Recurse -Force
+}
+if (Test-Path -LiteralPath (Join-Path $ScriptDir "util")) {
+    Copy-Item -Path (Join-Path $ScriptDir "util") -Destination (Join-Path $BaseDir "util") -Recurse -Force
+}
 Copy-Item -Path "$ScriptDir\sanitizer.py" -Destination "$BaseDir\sanitizer.py" -Force -ErrorAction SilentlyContinue
 Copy-Item -Path "$ScriptDir\concept_registry.json" -Destination "$BaseDir\concept_registry.json" -Force -ErrorAction SilentlyContinue
 
-# 8. Post-install validation (imports + optional tree-sitter)
+# 8. Post-install validation (imports + optional tree-sitter; cwd = portable root)
 Write-Host "[8/9] Post-install validation smoke test..." -ForegroundColor Yellow
 $py = "$BaseDir\Python\python.exe"
-& $py -c "import langchain_chroma, chromadb, tqdm; print('core deps: OK')"
-& $py -c "import tree_sitter; print('tree-sitter: OK')" 2>$null
-if ($LASTEXITCODE -ne 0) { Write-Host "      tree-sitter optional import failed (C/C++/Java AST will fall back)." -ForegroundColor DarkYellow }
-& $py -c "import tree_sitter_scheme; print('tree-sitter-scheme: OK')" 2>$null
-if ($LASTEXITCODE -ne 0) { Write-Host "      tree-sitter-scheme import failed (Scheme chunking will use regex fallback)." -ForegroundColor DarkYellow }
+Push-Location -LiteralPath $BaseDir
+try {
+    & $py -c "import langchain_chroma, chromadb, tqdm; print('core deps: OK')"
+    & $py -c "import hybrid_search; print('hybrid_search: OK')"
+    & $py -c "import gui_backend; print('gui_backend: OK')"
+    & $py -c "import tree_sitter; print('tree-sitter: OK')" 2>$null
+    if ($LASTEXITCODE -ne 0) { Write-Host "      tree-sitter optional import failed (C/C++/Java AST will fall back)." -ForegroundColor DarkYellow }
+    & $py -c "import tree_sitter_scheme; print('tree-sitter-scheme: OK')" 2>$null
+    if ($LASTEXITCODE -ne 0) { Write-Host "      tree-sitter-scheme import failed (Scheme chunking will use regex fallback)." -ForegroundColor DarkYellow }
+} finally {
+    Pop-Location
+}
+
+# 8b. Download frontend assets (Split.js)
+Write-Host "[8b/9] Downloading frontend assets (Split.js)..." -ForegroundColor Yellow
+$staticDir = Join-Path $ScriptDir "static"
+New-Item -ItemType Directory -Force -Path $staticDir | Out-Null
+try {
+    Invoke-WebRequest -Uri "https://cdnjs.cloudflare.com/ajax/libs/split.js/1.6.5/split.min.js" `
+        -OutFile (Join-Path $staticDir "split.min.js") -UseBasicParsing
+    Write-Host "      split.min.js downloaded." -ForegroundColor Green
+} catch {
+    Write-Host "      WARNING: could not download split.min.js (offline?). Using existing if present." -ForegroundColor DarkYellow
+}
 
 # 9. Merge .cursor/mcp.json (do not wipe other MCP servers)
 Write-Host "[9/9] Merging .cursor\mcp.json for Cursor MCP integration..." -ForegroundColor Yellow
@@ -232,6 +268,7 @@ Write-Host "* Code ingest:             .\run.ps1 -Mode code                *" -F
 Write-Host "* Domain docs:             .\run.ps1 -Mode domain -Domain nms *" -ForegroundColor Green
 Write-Host "* Status:                  .\run.ps1 -Mode status             *" -ForegroundColor Green
 Write-Host "* GPU model:               .\run.ps1 -Model mxbai-embed-large  *" -ForegroundColor Green
+Write-Host "* Web dashboard:           .\gui.ps1                           *" -ForegroundColor Green
 Write-Host "****************************************************************" -ForegroundColor Green
 Write-Host "* Query interactively:     .\query.ps1                         *" -ForegroundColor Green
 Write-Host "* Filter by repo:          .\query.ps1 -Repo auth-service       *" -ForegroundColor Green

@@ -6,9 +6,11 @@ stateful REPL, and rich terminal output. Standalone; does not import mcp_server.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import urllib.request
@@ -72,12 +74,126 @@ HISTORY_FILE = Path.home() / ".rag_query_history"
 HYBRID_SEARCH = os.environ.get("HYBRID_SEARCH", "1").strip().lower() not in ("0", "false", "no")
 RRF_K = float(os.environ.get("RRF_K", "60"))
 RAG_CONTEXT_MAX_CHARS = max(4096, int(os.environ.get("RAG_CONTEXT_MAX_CHARS", "32000")))
-
-DEFAULT_SYSTEM_PROMPT = (
-    "You are a Senior Engineering AI assistant. Answer the user's question using strictly "
-    "the provided context. If the context does not contain enough information, say so "
-    "clearly. Cite sources by file path or document name when possible. Be concise."
+# One Ollama embed_query for the whole multi-collection search (major latency win).
+RAG_QUERY_SHARED_EMBED = os.environ.get("RAG_QUERY_SHARED_EMBED", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
 )
+# Dependency second-pass (see _sync_multi_search_with_dependency_hop)
+QUERY_DEP_MAX_TOKENS = max(0, int(os.environ.get("QUERY_DEP_MAX_TOKENS", "16")))
+QUERY_DEP_MAX_HITS = max(0, int(os.environ.get("QUERY_DEP_MAX_HITS", "10")))
+QUERY_DEP_LOOKUP_K = max(1, int(os.environ.get("QUERY_DEP_LOOKUP_K", "2")))
+# Dynamic system prompt from top-hit source types
+QUERY_PROMPT_TOP_M = max(1, int(os.environ.get("QUERY_PROMPT_TOP_M", "5")))
+QUERY_PROMPT_DOC_THRESHOLD = float(os.environ.get("QUERY_PROMPT_DOC_THRESHOLD", "0.6"))
+
+# BM25 typo expansion: built at ingest time (see ingest.py symbols_vocabulary.json).
+_vocab_cache: Dict[str, frozenset] = {}
+_CAMEL_RE = re.compile(r"(?<=[a-z])(?=[A-Z])")
+
+
+def _is_technical_token(tok: str) -> bool:
+    return "." in tok or "_" in tok or bool(_CAMEL_RE.search(tok))
+
+
+def _load_symbols_vocab(db_path: str) -> frozenset:
+    root = (db_path or "").strip()
+    if not root:
+        return frozenset()
+    key = os.path.abspath(root)
+    if key in _vocab_cache:
+        return _vocab_cache[key]
+    p = Path(key) / "symbols_vocabulary.json"
+    if not p.is_file():
+        _vocab_cache[key] = frozenset()
+        return _vocab_cache[key]
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+        if isinstance(raw, list):
+            vocab = frozenset(str(x) for x in raw if str(x).strip())
+        elif isinstance(raw, dict) and "symbols" in raw:
+            vocab = frozenset(str(x) for x in raw["symbols"] if str(x).strip())
+        else:
+            vocab = frozenset()
+    except Exception:
+        vocab = frozenset()
+    _vocab_cache[key] = vocab
+    return vocab
+
+
+def _expand_query_typos(query: str, vocab: frozenset) -> str:
+    if not vocab or not (query or "").strip():
+        return query
+    tokens = query.split()
+    expansions: List[str] = []
+    for tok in tokens:
+        if _is_technical_token(tok) and tok not in vocab:
+            matches = difflib.get_close_matches(tok, vocab, n=1, cutoff=0.75)
+            if matches:
+                expansions.append(matches[0])
+    if expansions:
+        return query + " [Auto-expanded: " + " ".join(expansions) + "]"
+    return query
+
+
+def _persistent_chroma_client(path: str) -> chromadb.PersistentClient:
+    """Chroma client with telemetry off (faster init, production hygiene)."""
+    try:
+        from chromadb.config import Settings
+
+        return chromadb.PersistentClient(
+            path=path,
+            settings=Settings(anonymized_telemetry=False),
+        )
+    except Exception:
+        return chromadb.PersistentClient(path=path)
+
+# ---------------------------------------------------------------------------
+# System prompt presets
+# ---------------------------------------------------------------------------
+
+_NGSPICE_SYSTEM_PROMPT = (
+    "You are an expert ngspice / SPICE circuit simulator and C-codebase assistant "
+    "with deep knowledge of the ngspice source tree, device model implementations, "
+    "numerical methods (Newton-Raphson, GEAR integration), and the MNA matrix stamp API. "
+    "Answer using ONLY the provided source-code context. "
+    "When referencing code, quote the relevant lines and cite the exact file path. "
+    "Prefer C function signatures and call-graph relationships in your explanations. "
+    "State clearly when the context does not contain enough information to answer."
+)
+
+_GENERIC_SYSTEM_PROMPT = (
+    "You are a Senior Engineering AI assistant with expertise in software architecture "
+    "and code analysis. Answer the user's question using strictly the provided context. "
+    "If the context does not contain enough information, say so clearly. "
+    "Cite sources by file path or document name when possible. Be concise and precise."
+)
+
+_DEBUG_SYSTEM_PROMPT = (
+    "You are a debugging specialist AI assistant. "
+    "Analyse the provided code context for bugs, edge cases, and failure modes. "
+    "For each finding state: (1) the problem, (2) the exact location (file + line reference), "
+    "(3) a recommended fix. "
+    "Only use information present in the provided context. "
+    "Be systematic and complete — do not skip edge cases."
+)
+
+DEFAULT_SYSTEM_PROMPT = _NGSPICE_SYSTEM_PROMPT
+
+DEFAULT_SYSTEM_PROMPTS: Dict[str, str] = {
+    "ngspice": _NGSPICE_SYSTEM_PROMPT,
+    "generic": _GENERIC_SYSTEM_PROMPT,
+    "debug": _DEBUG_SYSTEM_PROMPT,
+}
+
+
+def estimate_tokens(text: str, provider: str = "ollama") -> int:
+    """Rough token count without a tokenizer: Claude averages ~4 chars/token, others ~3.5."""
+    if not text:
+        return 0
+    divisor = 4.0 if provider == "anthropic" else 3.5
+    return max(1, int(len(text) / divisor))
 
 LANG_TAG = {
     ".py": "python",
@@ -172,21 +288,23 @@ def _stream_chunk_text(chunk: Any) -> str:
     return str(getattr(msg, "content", None) or "")
 
 
-def detect_embedding_model(db_path: str) -> str:
-    env_val = os.environ.get("EMBEDDING_MODEL", "").strip()
-    if env_val:
-        return env_val
+def embedding_model_from_db_path(db_path: str) -> str:
+    """Resolve embedding model from on-disk DB config / Chroma dims only (no EMBEDDING_MODEL env).
+
+    Use for ingestion paths that must match an existing VectorDB; ``detect_embedding_model`` still
+    honors the env override first for query-time behavior.
+    """
     config_path = os.path.join(db_path, "ingestion_config.json")
     if os.path.exists(config_path):
         try:
             with open(config_path, encoding="utf-8") as fh:
                 model = json.load(fh).get("embedding_model", "")
             if model:
-                return model
+                return str(model).strip()
         except Exception:
             pass
     try:
-        client = chromadb.PersistentClient(path=db_path)
+        client = _persistent_chroma_client(db_path)
         cols = client.list_collections()
         if cols:
             col = client.get_collection(cols[0].name)
@@ -199,6 +317,13 @@ def detect_embedding_model(db_path: str) -> str:
     except Exception:
         pass
     return "nomic-embed-text"
+
+
+def detect_embedding_model(db_path: str) -> str:
+    env_val = os.environ.get("EMBEDDING_MODEL", "").strip()
+    if env_val:
+        return env_val
+    return embedding_model_from_db_path(db_path)
 
 
 def check_ollama(timeout: float = 3.0) -> bool:
@@ -214,18 +339,39 @@ def discover_collections(
     embeddings: OllamaEmbeddings,
     chroma_client: Optional[chromadb.PersistentClient] = None,
 ) -> Dict[str, Chroma]:
+    """Open one PersistentClient and attach LangChain Chroma stores per collection.
+
+    Reuses ``client`` for every ``Chroma`` wrapper (avoids a second sqlite open) and uses
+    ``create_collection_if_not_exists=False`` so we only bind to existing collections — the
+    default ``get_or_create`` path can misbehave across Chroma / LangChain versions when a DB
+    already contains data.
+    """
     out: Dict[str, Chroma] = {}
+    log = logging.getLogger("query")
     try:
-        client = chroma_client or chromadb.PersistentClient(path=db_path)
-        for info in client.list_collections():
-            name = info.name
-            out[name] = Chroma(
-                collection_name=name,
-                persist_directory=db_path,
-                embedding_function=embeddings,
-            )
+        client = chroma_client or _persistent_chroma_client(db_path)
+        infos = client.list_collections()
     except Exception as exc:
-        logging.getLogger("query").error("discover_collections: %s", exc)
+        log.error("discover_collections: list_collections failed for %s: %s", db_path, exc)
+        return out
+    if not infos:
+        log.warning(
+            "discover_collections: list_collections() returned no collections for %s "
+            "(folder may be empty or DB is locked by another process).",
+            db_path,
+        )
+        return out
+    for info in infos:
+        name = info.name
+        try:
+            out[name] = Chroma(
+                client=client,
+                collection_name=name,
+                embedding_function=embeddings,
+                create_collection_if_not_exists=False,
+            )
+        except Exception as exc:
+            log.error("discover_collections: failed to open collection %r: %s", name, exc)
     return out
 
 
@@ -239,7 +385,7 @@ def connect_chroma_with_retry(
     last_exc: Optional[Exception] = None
     for attempt in range(3):
         try:
-            client = chromadb.PersistentClient(path=db_path)
+            client = _persistent_chroma_client(db_path)
             client.list_collections()
             embedder = OllamaEmbeddings(model=model)
             cmap = discover_collections(db_path, embedder, client)
@@ -278,10 +424,26 @@ def _fence_for(content: str) -> str:
 
 
 def _truncate_chunk(text: str) -> str:
+    """Truncate with newline-aware cut; close dangling ``` fences if needed."""
     mx = RESULT_CHUNK_MAX_CHARS
     if len(text) <= mx:
         return text
-    return text[: mx - 50] + "\n\n... (truncated for response size) ..."
+    suffix = "\n\n... (truncated for response size) ..."
+    floor = min(mx, max(512, mx // 2))
+    target_cut = mx - len(suffix)
+    cut = max(floor, min(target_cut, len(text)))
+    cut = min(cut, len(text))
+    boundary = text.rfind("\n\n", 0, cut)
+    if boundary < floor:
+        boundary = text.rfind("\n", 0, cut)
+    if boundary >= floor:
+        cut = boundary
+    prefix = text[:cut]
+    fence = "```"
+    n_fences = prefix.count(fence)
+    if n_fences % 2 == 1:
+        prefix = prefix + "\n" + fence
+    return prefix + suffix
 
 
 def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
@@ -380,6 +542,107 @@ class SearchHit:
     source_type: str
     metadata: Dict[str, Any]
     collection: Optional[str] = None
+    retrieval_hop: Optional[str] = None
+
+
+def _shared_query_embedding(cmap: Dict[str, Chroma], targets: List[str], query: str) -> Optional[List[float]]:
+    """Single embed_query for all collections (same model / vector space)."""
+    if not RAG_QUERY_SHARED_EMBED or not targets or not (query or "").strip():
+        return None
+    vs0 = cmap.get(targets[0])
+    if vs0 is None:
+        return None
+    emb_fn = getattr(vs0, "_embedding_function", None)
+    if emb_fn is None:
+        return None
+    try:
+        vec = emb_fn.embed_query(query)
+        return list(vec) if vec is not None else None
+    except Exception as exc:
+        log.debug("shared embed_query failed, using per-query embedding: %s", exc)
+        return None
+
+
+def _similarity_search_with_score_efficient(
+    vs: Any,
+    query: str,
+    k: int,
+    flt: Optional[Dict[str, str]],
+    q_emb: Optional[List[float]],
+) -> List[Tuple[Any, Any]]:
+    """Dense search: reuse precomputed embedding when LangChain Chroma supports it."""
+    if q_emb is not None:
+        fn = getattr(vs, "similarity_search_by_vector_with_relevance_scores", None)
+        if callable(fn):
+            try:
+                return fn(q_emb, k=k, filter=flt)
+            except TypeError:
+                try:
+                    return fn(q_emb, k, flt)
+                except Exception:
+                    pass
+            except Exception as exc:
+                log.debug("similarity_search_by_vector_with_relevance_scores failed: %s", exc)
+    try:
+        if flt is not None:
+            return vs.similarity_search_with_score(query, k=k, filter=flt)
+        return vs.similarity_search_with_score(query, k=k)
+    except TypeError:
+        return vs.similarity_search_with_score(query, k=k)
+
+
+def _exact_chunk_name_hits(
+    query_raw: str,
+    targets: List[str],
+    cmap: Dict[str, Chroma],
+    repo_filter: str,
+) -> List[SearchHit]:
+    """Fast metadata pre-fetch: chunks whose chunk_name exactly equals the query string.
+
+    Only activates for single-token queries (no spaces) so natural-language sentences
+    do not trigger expensive per-collection metadata lookups on every search.
+    """
+    q = query_raw.strip()
+    if not q or " " in q:
+        return []
+    exact: List[SearchHit] = []
+    seen: set = set()
+    rf = repo_filter.strip()
+    for name in targets:
+        vs = cmap.get(name)
+        if vs is None:
+            continue
+        col = getattr(vs, "_collection", None)
+        if col is None:
+            continue
+        try:
+            res = col.get(
+                where={"chunk_name": {"$eq": q}},
+                limit=8,
+                include=["documents", "metadatas"],
+            )
+        except Exception as exc:
+            log.debug("exact chunk_name lookup failed on %s: %s", name, exc)
+            continue
+        docs = res.get("documents") or []
+        metas = res.get("metadatas") or []
+        ids_list = res.get("ids") or []
+        for i in range(len(docs)):
+            text = docs[i] if i < len(docs) else ""
+            meta = dict(metas[i] if i < len(metas) else {})
+            did = ids_list[i] if i < len(ids_list) else ""
+            key = did or stable_doc_id(name, meta, text)
+            if key in seen:
+                continue
+            if rf and str(meta.get("repository", "")).strip() != rf:
+                continue
+            seen.add(key)
+            st = _infer_source_type(meta)
+            meta["_exact_match"] = "chunk_name"
+            exact.append(
+                SearchHit(content=text, score=0.0, source_type=st, metadata=meta, collection=name)
+            )
+    return exact
 
 
 def _sync_multi_search(
@@ -390,11 +653,25 @@ def _sync_multi_search(
     repo_filter: str,
     cmap: Dict[str, Chroma],
     db_path: str = "",
+    min_score_threshold: float = 0.0,
 ) -> List[SearchHit]:
+    """Retrieve up to k chunks using dense or hybrid (RRF) search.
+
+    Args:
+        min_score_threshold: For dense-only mode, discard hits whose distance
+            score exceeds this value (higher distance = less similar in
+            cosine-distance space).  0.0 disables the filter.
+    """
+    db_abs_for_vocab = _resolve_db_abs(db_path, cmap)
+    query = _expand_query_typos(query, _load_symbols_vocab(db_abs_for_vocab))
     if not cmap:
         raise RuntimeError("ChromaDB has no collections.")
     targets = _select_collection_names(cmap, search_type, domain)
+    # --- God Mode: exact chunk_name pre-fetch (bypasses all scoring) ---
+    exact_hits = _exact_chunk_name_hits(query, targets, cmap, repo_filter)
+    exact_seen = {stable_doc_id(h.collection or "", h.metadata, h.content) for h in exact_hits}
     per = max(1, k // max(1, len(targets)) if targets else k)
+    q_emb = _shared_query_embedding(cmap, targets, query)
     use_hybrid = HYBRID_SEARCH and HYBRID_AVAILABLE and bool(_resolve_db_abs(db_path, cmap))
     if HYBRID_SEARCH and not HYBRID_AVAILABLE:
         log.warning(
@@ -418,10 +695,7 @@ def _sync_multi_search(
             if repo_filter.strip():
                 flt = {"repository": repo_filter.strip()}
             try:
-                try:
-                    pairs = vs.similarity_search_with_score(query, k=per, filter=flt)
-                except TypeError:
-                    pairs = vs.similarity_search_with_score(query, k=per)
+                pairs = _similarity_search_with_score_efficient(vs, query, per, flt, q_emb)
             except Exception as exc:
                 log.warning("Skipping collection %s: %s", name, exc)
                 continue
@@ -434,7 +708,14 @@ def _sync_multi_search(
                         continue
                 merged.append((doc, score, st, name))
         merged.sort(key=lambda x: x[1] if x[1] is not None else 1e9)
-        return [_hit(doc, score, st, cn) for doc, score, st, cn in merged[:k]]
+        # Optionally discard low-relevance hits (high distance = low similarity)
+        if min_score_threshold > 0:
+            merged = [(d, s, st, cn) for d, s, st, cn in merged if s is None or s <= min_score_threshold]
+        regular = [
+            _hit(doc, score, st, cn) for doc, score, st, cn in merged[:k]
+            if stable_doc_id(cn, doc.metadata or {}, doc.page_content) not in exact_seen
+        ]
+        return exact_hits + regular
 
     db_abs = _resolve_db_abs(db_path, cmap)
     dense_cap = _hybrid_candidate_cap(k, "HYBRID_DENSE_CANDIDATES")
@@ -447,10 +728,7 @@ def _sync_multi_search(
         if repo_filter.strip():
             flt = {"repository": repo_filter.strip()}
         try:
-            try:
-                pairs = vs.similarity_search_with_score(query, k=dense_cap, filter=flt)
-            except TypeError:
-                pairs = vs.similarity_search_with_score(query, k=dense_cap)
+            pairs = _similarity_search_with_score_efficient(vs, query, dense_cap, flt, q_emb)
         except Exception as exc:
             log.warning("Skipping collection %s: %s", name, exc)
             continue
@@ -501,7 +779,263 @@ def _sync_multi_search(
             fused.append((doc, None, st, name, rrf_scores[sid]))
 
     fused.sort(key=lambda x: x[4], reverse=True)
-    return [_hit(doc, score, st, cn) for doc, score, st, cn, _ in fused[:k]]
+    regular = [
+        _hit(doc, score, st, cn) for doc, score, st, cn, _ in fused[:k]
+        if stable_doc_id(cn, doc.metadata or {}, doc.page_content) not in exact_seen
+    ]
+    return exact_hits + regular
+
+
+def _parse_dependency_tokens(deps: str) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for part in (deps or "").split(","):
+        t = part.strip()
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
+
+
+def _fused_docs_for_query_text(
+    name: str,
+    vs: Any,
+    query_text: str,
+    db_abs: str,
+    repo_filter: str,
+    search_type: str,
+    cmap: Dict[str, Chroma],
+    k_out: int,
+    use_hybrid: bool,
+    *,
+    skip_troubleshoot_gate: bool = False,
+) -> List[Tuple[Any, Optional[float]]]:
+    """Dense or hybrid (RRF) retrieval for a single query string in one collection."""
+    if k_out <= 0:
+        return []
+    flt: Optional[Dict[str, str]] = None
+    if repo_filter.strip():
+        flt = {"repository": repo_filter.strip()}
+    q_emb = _shared_query_embedding(cmap, [name], query_text)
+
+    def _passes_tt(meta: Dict[str, Any]) -> bool:
+        if skip_troubleshoot_gate or search_type.lower() != "troubleshoot":
+            return True
+        ct = (meta.get("content_type") or "").lower()
+        return ct in ("edge_case", "workaround", "bug_report")
+
+    if not use_hybrid:
+        pairs = _similarity_search_with_score_efficient(
+            vs, query_text, max(k_out * 3, 8), flt, q_emb
+        )
+        out: List[Tuple[Any, Optional[float]]] = []
+        for doc, score in pairs:
+            if not _passes_tt(doc.metadata or {}):
+                continue
+            out.append((doc, float(score) if score is not None else None))
+            if len(out) >= k_out:
+                break
+        return out
+
+    dense_cap = _hybrid_candidate_cap(max(k_out, 4), "HYBRID_DENSE_CANDIDATES")
+    bm25_cap = _hybrid_candidate_cap(max(k_out, 4), "HYBRID_BM25_CANDIDATES")
+    pairs = _similarity_search_with_score_efficient(vs, query_text, dense_cap, flt, q_emb)
+    dense_ids: List[str] = []
+    dense_map: Dict[str, Tuple[Any, float]] = {}
+    for doc, score in pairs:
+        sid = stable_doc_id(name, doc.metadata or {}, doc.page_content)
+        dense_ids.append(sid)
+        dense_map[sid] = (doc, score)
+
+    bm25_ids: List[str] = []
+    col = getattr(vs, "_collection", None)
+    if col is not None and db_abs:
+        idx = get_bm25_index(db_abs, name)
+        if idx.ensure_loaded(col):
+            bm25_ids = search_bm25_ranked_ids(idx, query_text, bm25_cap, repo_filter)
+    rank_lists = [dense_ids, bm25_ids] if bm25_ids else [dense_ids]
+    rrf_scores = reciprocal_rank_fusion(rank_lists, k=RRF_K)
+    if not rrf_scores:
+        return []
+    sorted_sids = sorted(rrf_scores.keys(), key=lambda sid: -rrf_scores[sid])
+    idx_ref = get_bm25_index(db_abs, name) if col is not None else None
+    out2: List[Tuple[Any, Optional[float]]] = []
+    for sid in sorted_sids:
+        if sid in dense_map:
+            doc, sc = dense_map[sid]
+        elif idx_ref is not None and sid in idx_ref.id_to_doc:
+            text, meta = idx_ref.id_to_doc[sid]
+            doc = Document(page_content=text, metadata=meta)
+            sc = None
+        else:
+            continue
+        if not _passes_tt(doc.metadata or {}):
+            continue
+        out2.append((doc, float(sc) if sc is not None else None))
+        if len(out2) >= k_out:
+            break
+    return out2
+
+
+def _depend_stems_from_results(
+    results: List[Tuple[Any, Optional[float], str]],
+) -> List[str]:
+    stems: set = set()
+    for doc, _, _ in results:
+        meta = getattr(doc, "metadata", None) or {}
+        rel = str(meta.get("relative_path") or "").strip()
+        if rel:
+            stem = Path(rel).stem
+            if stem:
+                stems.add(stem)
+            stems.add(Path(rel.replace("\\", "/")).name)
+        cn = str(meta.get("chunk_name") or "").strip()
+        if cn:
+            stems.add(cn)
+    return sorted(stems)
+
+
+def _dependencies_where_comma_token(stem: str) -> Dict[str, Any]:
+    """Match *stem* as a whole entry in comma-separated ``dependencies`` metadata."""
+    s = (stem or "").strip()
+    if not s:
+        return {"dependencies": {"$eq": "__empty_dependency_stem__"}}
+    return {
+        "$or": [
+            {"dependencies": {"$eq": s}},
+            {"dependencies": {"$contains": f"{s}, "}},
+            {"dependencies": {"$contains": f", {s}, "}},
+            {"dependencies": {"$contains": f", {s}"}},
+        ]
+    }
+
+
+def _sync_fetch_dependents(
+    primary: List[Tuple[Any, Optional[float], str]],
+    search_type: str,
+    domain: str,
+    repo_filter: str,
+    cmap: Dict[str, Chroma],
+    max_hits: int,
+) -> List[Tuple[Any, Optional[float], str, str]]:
+    """Chunks whose *dependencies* metadata references symbols from primary hits.
+
+    Returns ``(doc, score, source_type, collection_name)`` for stable dedupe / SearchHit.
+    """
+    targets = _select_collection_names(cmap, search_type, domain)
+    lookups = _depend_stems_from_results(primary)
+    if not lookups or not targets:
+        return []
+    seen: set = set()
+    out: List[Tuple[Any, Optional[float], str, str]] = []
+    rf = repo_filter.strip()
+    for stem in lookups:
+        if not stem:
+            continue
+        where_dep = _dependencies_where_comma_token(stem)
+        for name in targets:
+            vs = cmap[name]
+            col = getattr(vs, "_collection", None)
+            if col is None:
+                continue
+            try:
+                res = col.get(
+                    where=where_dep,
+                    limit=40,
+                    include=["documents", "metadatas"],
+                )
+            except Exception as exc:
+                log.warning("dependents get failed on %s: %s", name, exc)
+                continue
+            ids_list = res.get("ids") or []
+            docs = res.get("documents") or []
+            metas = res.get("metadatas") or []
+            for i, did in enumerate(ids_list):
+                if did in seen:
+                    continue
+                meta = metas[i] if i < len(metas) else {}
+                if rf and str((meta or {}).get("repository", "")).strip() != rf:
+                    continue
+                seen.add(did)
+                text = docs[i] if i < len(docs) else ""
+                doc = Document(page_content=text or "", metadata=dict(meta or {}))
+                st = _infer_source_type(meta or {})
+                out.append((doc, None, st, name))
+                if len(out) >= max_hits:
+                    return out
+    return out
+
+
+def _sync_multi_search_with_dependency_hop(
+    query: str,
+    k: int,
+    search_type: str,
+    domain: str,
+    repo_filter: str,
+    cmap: Dict[str, Chroma],
+    db_path: str = "",
+    min_score_threshold: float = 0.0,
+) -> List[SearchHit]:
+    """Primary search plus Chroma ``dependencies`` metadata lookup (headers / related chunks)."""
+    primary = _sync_multi_search(
+        query, k, search_type, domain, repo_filter, cmap, db_path, min_score_threshold
+    )
+    if QUERY_DEP_MAX_HITS <= 0 or not primary:
+        return primary
+
+    primary_tuples: List[Tuple[Any, Optional[float], str]] = [
+        (Document(page_content=h.content, metadata=dict(h.metadata or {})), h.score, h.source_type)
+        for h in primary
+    ]
+    dep_tuples = _sync_fetch_dependents(
+        primary_tuples,
+        search_type,
+        domain,
+        repo_filter,
+        cmap,
+        max_hits=min(k * 2, max(1, QUERY_DEP_MAX_HITS * 2)),
+    )
+    seen = {stable_doc_id(h.collection or "", h.metadata, h.content) for h in primary}
+    extra: List[SearchHit] = []
+    for doc, _sc, st, cname in dep_tuples:
+        sid = stable_doc_id(cname, doc.metadata or {}, doc.page_content or "")
+        if sid in seen:
+            continue
+        seen.add(sid)
+        meta = dict(doc.metadata or {})
+        meta["retrieval_hop"] = "dependency"
+        extra.append(
+            SearchHit(
+                content=doc.page_content or "",
+                score=None,
+                source_type=st,
+                metadata=meta,
+                collection=cname,
+                retrieval_hop="dependency",
+            )
+        )
+    return primary + extra
+
+
+def _effective_system_prompt(
+    hits: List[SearchHit],
+    search_type: str,
+    override: Optional[str],
+) -> str:
+    """Pick ngspice vs generic vs debug persona from top-hit source types unless user overrode."""
+    if override is not None:
+        return override
+    if not hits:
+        return DEFAULT_SYSTEM_PROMPT
+    m = min(QUERY_PROMPT_TOP_M, len(hits))
+    docish = {"rally", "customer", "community"}
+    cnt = sum(1 for h in hits[:m] if h.source_type in docish)
+    if m > 0 and cnt / m >= QUERY_PROMPT_DOC_THRESHOLD:
+        if search_type.lower() == "troubleshoot":
+            return _DEBUG_SYSTEM_PROMPT
+        return _GENERIC_SYSTEM_PROMPT
+    return _NGSPICE_SYSTEM_PROMPT
 
 
 def _concept_parts(concepts_field: str) -> List[str]:
@@ -530,13 +1064,13 @@ def concept_search_hits(concept: str, domain: str, cmap: Dict[str, Chroma]) -> L
             res = col.get(
                 where={"concepts": {"$contains": needle}},
                 limit=80,
-                include=["documents", "metadatas", "ids"],
+                include=["documents", "metadatas"],
             )
             if not (res.get("ids") or []):
                 res = col.get(
                     where={"concepts": {"$contains": safe_concept}},
                     limit=80,
-                    include=["documents", "metadatas", "ids"],
+                    include=["documents", "metadatas"],
                 )
             ids_list = res.get("ids") or []
             docs = res.get("documents") or []
@@ -573,7 +1107,7 @@ def run_status(db_path: str) -> str:
     lines.append("=" * 64)
     lines.append("            DOMAIN RAG — KNOWLEDGE BASE STATUS")
     lines.append("=" * 64)
-    client = chromadb.PersistentClient(path=db_path)
+    client = _persistent_chroma_client(db_path)
     cols = client.list_collections()
     concept_counts: Counter[str] = Counter()
     rows = []
@@ -680,14 +1214,39 @@ def format_plain(hits: List[SearchHit]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def _build_context_blocks(hits: List[SearchHit]) -> str:
+def _build_context_blocks(hits: List[SearchHit], max_chars: Optional[int] = None) -> str:
+    """Build the RAG context string for the LLM prompt.
+
+    Phase-5: prefers ``context_window`` metadata over chunk body; ``_truncate_chunk`` is
+    syntax-aware (newlines / fences) so prompts stay well-formed.
+
+    Args:
+        hits: Retrieved chunks in ranked order.
+        max_chars: Character budget (defaults to RAG_CONTEXT_MAX_CHARS env default).
+                   Pass a provider-specific value for larger context windows.
+    """
+    budget = max_chars if max_chars and max_chars > 0 else RAG_CONTEXT_MAX_CHARS
     blocks: List[str] = []
     total = 0
     for i, h in enumerate(hits, 1):
-        src = h.metadata.get("relative_path") or h.metadata.get("source", "?")
-        block = f"[Source {i}: {src} ({h.source_type})]\n{h.content}"
-        if total + len(block) > RAG_CONTEXT_MAX_CHARS:
-            blocks.append(f"\n[... {len(hits) - i + 1} more chunks omitted due to context limit]")
+        meta = h.metadata or {}
+        # Prefer relative_path then absolute source; shorten very long paths
+        src_raw = meta.get("relative_path") or meta.get("source", "?")
+        src = src_raw if len(src_raw) <= 120 else "…/" + "/".join(str(src_raw).split("/")[-3:])
+        # Enrich label with chunk_name and chunk_type when available
+        cname = meta.get("chunk_name", "")
+        ctype = meta.get("chunk_type", "")
+        label_extras = ""
+        if cname:
+            label_extras += f" | {cname}"
+        if ctype:
+            label_extras += f" [{ctype}]"
+        raw_body = (meta.get("context_window") or "").strip() or h.content
+        body = _truncate_chunk(raw_body)
+        block = f"[Source {i}: {src} ({h.source_type}){label_extras}]\n{body}"
+        if total + len(block) > budget:
+            remaining = len(hits) - i + 1
+            blocks.append(f"\n[... {remaining} more chunk(s) omitted — context budget {budget:,} chars reached]")
             break
         blocks.append(block)
         total += len(block)
@@ -890,7 +1449,7 @@ class SessionState:
         env_llm = (os.environ.get("RAG_LLM_MODEL", "") or "").strip()
         self.llm_model = (getattr(ns, "llm_model", None) or env_llm or "llama3").strip()
         sp = (getattr(ns, "system_prompt", None) or "").strip()
-        self.system_prompt = sp if sp else DEFAULT_SYSTEM_PROMPT
+        self.system_prompt_override: Optional[str] = sp if sp else None
         self.history_depth = max(1, int(getattr(ns, "history_depth", 5)))
 
     def apply_set(self, key: str, value: str) -> str:
@@ -1054,7 +1613,7 @@ def repl_loop(
                 else:
                     hits = run_with_timeout(
                         st.timeout,
-                        _sync_multi_search,
+                        _sync_multi_search_with_dependency_hop,
                         search_query,
                         st.top_k,
                         effective_type,
@@ -1078,6 +1637,7 @@ def repl_loop(
             continue
 
         hist_msgs = memory.history_messages_for_llm() if st.chat else None
+        eff_sp = _effective_system_prompt(hits, effective_type, st.system_prompt_override)
 
         if st.chat:
             if st.mode == "concept":
@@ -1086,7 +1646,7 @@ def repl_loop(
                         raw_query,
                         hits,
                         st.llm_model,
-                        st.system_prompt,
+                        eff_sp,
                         hist_msgs,
                     )
                     print(format_json_output(raw_query, hits, "concept", answer=ans))
@@ -1095,7 +1655,7 @@ def repl_loop(
                         raw_query,
                         hits,
                         st.llm_model,
-                        st.system_prompt,
+                        eff_sp,
                         console,
                         hist_msgs,
                     )
@@ -1104,7 +1664,7 @@ def repl_loop(
                         raw_query,
                         hits,
                         st.llm_model,
-                        st.system_prompt,
+                        eff_sp,
                         None,
                         hist_msgs,
                     )
@@ -1116,7 +1676,7 @@ def repl_loop(
                     raw_query,
                     hits,
                     st.llm_model,
-                    st.system_prompt,
+                    eff_sp,
                     hist_msgs,
                 )
                 print(format_json_output(raw_query, hits, st.mode, answer=ans))
@@ -1125,7 +1685,7 @@ def repl_loop(
                     raw_query,
                     hits,
                     st.llm_model,
-                    st.system_prompt,
+                    eff_sp,
                     console,
                     hist_msgs,
                 )
@@ -1134,7 +1694,7 @@ def repl_loop(
                     raw_query,
                     hits,
                     st.llm_model,
-                    st.system_prompt,
+                    eff_sp,
                     None,
                     hist_msgs,
                 )
@@ -1213,7 +1773,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument(
         "--db-path",
         default=os.environ.get("DB_PATH", "").strip()
-        or str(Path(__file__).resolve().parent / "VectorDB"),
+        or str(Path(__file__).resolve().parent / "Studio-Portable-RAG" / "VectorDB"),
         help="Chroma persist directory",
     )
     p.add_argument("--model", default="", help="Embedding model (default: auto-detect)")
@@ -1308,7 +1868,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             else:
                 hits = run_with_timeout(
                     int(ns.timeout),
-                    _sync_multi_search,
+                    _sync_multi_search_with_dependency_hop,
                     q,
                     k,
                     effective_type,
@@ -1336,7 +1896,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return EXIT_NO_RESULTS
 
     llm_model = (ns.llm_model or "").strip() or "llama3"
-    system_prompt = (ns.system_prompt or "").strip() or DEFAULT_SYSTEM_PROMPT
+    sp_override = (ns.system_prompt or "").strip() or None
+    system_prompt = _effective_system_prompt(hits, effective_type, sp_override)
 
     if ns.chat:
         if ns.mode == "concept":

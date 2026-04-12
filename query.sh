@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Universal Domain RAG — query runner (Chroma + Ollama). Linux; mirrors run.sh layout.
+# Production-oriented: fast Ollama readiness poll, Python perf env, optional skip-copy.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +10,14 @@ DB_PATH=""
 MODEL=""
 NO_OLLAMA=0
 OLLAMA_TIMEOUT=30
+SKIP_COPY=0
 QUERY_ARGS=()
+# Optional RAG tuning (exported for query.py dependency hop + dynamic system prompt)
+QUERY_DEP_MAX_TOKENS=""
+QUERY_DEP_MAX_HITS=""
+QUERY_DEP_LOOKUP_K=""
+QUERY_PROMPT_TOP_M=""
+QUERY_PROMPT_DOC_THRESHOLD=""
 
 usage() {
   echo "Usage: $0 [query.sh options] [query.py options]"
@@ -19,13 +27,25 @@ usage() {
   echo "  --model NAME         Embedding model (exported as EMBEDDING_MODEL)"
   echo "  --no-ollama          Do not start Ollama; expect server on :11434"
   echo "  --ollama-timeout N   Seconds to wait for Ollama (default: 30)"
+  echo "  --skip-copy          Do not copy query.py/hybrid_search.py into BaseDir (use files already there)"
+  echo "  --dep-max-tokens N   Max distinct include tokens for 2nd-pass dependency retrieval (QUERY_DEP_MAX_TOKENS)"
+  echo "  --dep-max-hits N     Max extra chunks appended from dependency hop (QUERY_DEP_MAX_HITS)"
+  echo "  --dep-lookup-k N     Per-token dense/BM25 candidate cap (QUERY_DEP_LOOKUP_K)"
+  echo "  --prompt-top-m N     Top hits considered for auto system-prompt routing (QUERY_PROMPT_TOP_M)"
+  echo "  --prompt-doc-threshold F  Fraction of doc-like hits for generic/debug persona (QUERY_PROMPT_DOC_THRESHOLD)"
   echo "  -h, --help           This help"
+  echo ""
+  echo "Environment (optional, performance / ops):"
+  echo "  RAG_QUERY_SHARED_EMBED=0   Disable single shared embed across collections (default: 1)"
+  echo "  HYBRID_CHROMA_GET_BATCH=N  BM25 index build batch size (default: 512)"
+  echo "  OLLAMA_NUM_PARALLEL=N      Parallel embed requests to Ollama (if supported)"
   echo ""
   echo "All other arguments are passed to query.py. Examples:"
   echo "  $0 -q \"how does STP work\" -k 10"
   echo "  $0 -i"
   echo "  $0 --mode status"
   echo "  $0 --mode concept -q stp --domain nms"
+  echo "  $0 --dep-max-hits 15 -q \"BSIM4 setup\" --chat --search-type code"
   exit 0
 }
 
@@ -45,6 +65,30 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ollama-timeout)
       OLLAMA_TIMEOUT="${2:-30}"
+      shift 2
+      ;;
+    --skip-copy)
+      SKIP_COPY=1
+      shift
+      ;;
+    --dep-max-tokens)
+      QUERY_DEP_MAX_TOKENS="${2:-}"
+      shift 2
+      ;;
+    --dep-max-hits)
+      QUERY_DEP_MAX_HITS="${2:-}"
+      shift 2
+      ;;
+    --dep-lookup-k)
+      QUERY_DEP_LOOKUP_K="${2:-}"
+      shift 2
+      ;;
+    --prompt-top-m)
+      QUERY_PROMPT_TOP_M="${2:-}"
+      shift 2
+      ;;
+    --prompt-doc-threshold)
+      QUERY_PROMPT_DOC_THRESHOLD="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -75,6 +119,15 @@ echo " Universal Domain RAG - Query Runner"
 echo " BaseDir         : $BASE_DIR"
 echo "--------------------------------------------------------"
 
+# Python / runtime: line-buffered output, no .pyc spam, stable tokenizer threading
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
+export PYTHONDONTWRITEBYTECODE="${PYTHONDONTWRITEBYTECODE:-1}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+
+# Chroma: disable client telemetry (less noise, slightly faster init)
+export ANONYMIZED_TELEMETRY="${ANONYMIZED_TELEMETRY:-FALSE}"
+export CHROMA_TELEMETRY_IMPL="${CHROMA_TELEMETRY_IMPL:-none}"
+
 export OLLAMA_MODELS="$BASE_DIR/Models"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
@@ -93,6 +146,12 @@ else
   export DB_PATH="$(cd "$BASE_DIR/VectorDB" && pwd)"
   echo " VectorDB path   : $DB_PATH"
 fi
+
+[[ -n "$QUERY_DEP_MAX_TOKENS" ]] && export QUERY_DEP_MAX_TOKENS && echo " QUERY_DEP_MAX_TOKENS=$QUERY_DEP_MAX_TOKENS"
+[[ -n "$QUERY_DEP_MAX_HITS" ]] && export QUERY_DEP_MAX_HITS && echo " QUERY_DEP_MAX_HITS=$QUERY_DEP_MAX_HITS"
+[[ -n "$QUERY_DEP_LOOKUP_K" ]] && export QUERY_DEP_LOOKUP_K && echo " QUERY_DEP_LOOKUP_K=$QUERY_DEP_LOOKUP_K"
+[[ -n "$QUERY_PROMPT_TOP_M" ]] && export QUERY_PROMPT_TOP_M && echo " QUERY_PROMPT_TOP_M=$QUERY_PROMPT_TOP_M"
+[[ -n "$QUERY_PROMPT_DOC_THRESHOLD" ]] && export QUERY_PROMPT_DOC_THRESHOLD && echo " QUERY_PROMPT_DOC_THRESHOLD=$QUERY_PROMPT_DOC_THRESHOLD"
 
 OLLAMA_PROC=""
 OLLAMA_ALREADY=0
@@ -113,9 +172,14 @@ cleanup_ollama() {
 
 trap cleanup_ollama EXIT
 
+# Poll Ollama readiness with sub-second interval (faster than sleep 1 in a tight loop).
+ollama_ready() {
+  curl -sf --max-time 2 "http://127.0.0.1:11434/" >/dev/null 2>&1
+}
+
 if [[ "$NO_OLLAMA" -eq 0 ]]; then
   echo "[1/2] Starting / reusing local Ollama..."
-  if curl -sf "http://127.0.0.1:11434/" >/dev/null 2>&1; then
+  if ollama_ready; then
     OLLAMA_ALREADY=1
     echo "            Existing Ollama on :11434 — reusing."
   else
@@ -123,12 +187,13 @@ if [[ "$NO_OLLAMA" -eq 0 ]]; then
     OLLAMA_PROC=$!
     echo "            Waiting for http://127.0.0.1:11434 (max ${OLLAMA_TIMEOUT}s)..."
     ready=0
-    for _ in $(seq 1 "$OLLAMA_TIMEOUT"); do
-      if curl -sf "http://127.0.0.1:11434/" >/dev/null 2>&1; then
+    deadline=$((SECONDS + OLLAMA_TIMEOUT))
+    while (( SECONDS < deadline )); do
+      if ollama_ready; then
         ready=1
         break
       fi
-      sleep 1
+      sleep 0.15
     done
     if [[ "$ready" -ne 1 ]]; then
       [[ -n "$OLLAMA_PROC" ]] && kill "$OLLAMA_PROC" 2>/dev/null || true
@@ -139,7 +204,7 @@ if [[ "$NO_OLLAMA" -eq 0 ]]; then
   fi
   emb_model="${EMBEDDING_MODEL:-nomic-embed-text}"
   echo "            Warmup embed: $emb_model"
-  curl -sf -X POST "http://127.0.0.1:11434/api/embed" \
+  curl -sf --max-time 60 -X POST "http://127.0.0.1:11434/api/embed" \
     -H "Content-Type: application/json" \
     -d "{\"model\": \"$emb_model\", \"input\": \"warmup\"}" >/dev/null 2>&1 \
     || echo "    (warmup skipped — run: ollama pull $emb_model)" >&2
@@ -148,7 +213,12 @@ else
 fi
 
 echo "[2/2] Running query.py..."
-cp -f "$SCRIPT_DIR/query.py" "$BASE_DIR/query.py"
+if [[ "$SKIP_COPY" -eq 0 ]]; then
+  cp -f "$SCRIPT_DIR/query.py" "$BASE_DIR/query.py"
+  [[ -f "$SCRIPT_DIR/hybrid_search.py" ]] && cp -f "$SCRIPT_DIR/hybrid_search.py" "$BASE_DIR/hybrid_search.py" || true
+else
+  echo "            (--skip-copy: using query.py already in BaseDir)" >&2
+fi
 
 PYTHON_EXE="$BASE_DIR/Python/bin/python3"
 [[ -x "$PYTHON_EXE" ]] || PYTHON_EXE="$BASE_DIR/Python/bin/python"

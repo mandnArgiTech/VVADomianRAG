@@ -12,6 +12,7 @@ def test_parse_ollama_enrichment_json_plain():
     assert out["llm_summary"] == "loads matrix"
     assert out["llm_tags"] == "BJT,MNA"
     assert out["llm_relations"] == "SPload"
+    assert out["llm_physics_model"] == ""
 
 
 def test_parse_ollama_enrichment_json_fenced():
@@ -27,10 +28,39 @@ def test_parse_ollama_enrichment_json_invalid():
     assert ing._parse_ollama_enrichment_json("not json") is None
 
 
+def test_parse_ollama_enrichment_json_embedded_in_prose():
+    raw = (
+        'Here is the analysis:\n{"summary": "loads BJT", "tags": ["device"], '
+        '"related_functions": ["foo"]}\nThanks.'
+    )
+    out = ing._parse_ollama_enrichment_json(raw)
+    assert out is not None
+    assert out["llm_summary"] == "loads BJT"
+    assert out["llm_tags"] == "device"
+    assert out["llm_relations"] == "foo"
+
+
 def test_parse_ollama_enrichment_json_tags_truncated_to_three():
     raw = '{"summary": "s", "tags": ["1", "2", "3", "4"], "related_functions": []}'
     out = ing._parse_ollama_enrichment_json(raw)
     assert out["llm_tags"] == "1,2,3"
+
+
+def test_parse_ollama_enrichment_json_physics_model():
+    raw = (
+        '{"summary": "s", "tags": [], "related_functions": [], '
+        '"physics_model": "Ebers-Moll BJT"}'
+    )
+    out = ing._parse_ollama_enrichment_json(raw)
+    assert out is not None
+    assert out["llm_physics_model"] == "Ebers-Moll BJT"
+
+
+def test_parse_ollama_enrichment_json_physics_model_ignores_non_scalar():
+    raw = '{"summary": "s", "tags": [], "related_functions": [], "physics_model": {"x": 1}}'
+    out = ing._parse_ollama_enrichment_json(raw)
+    assert out is not None
+    assert out["llm_physics_model"] == ""
 
 
 def test_generate_llm_metadata_success(monkeypatch):
@@ -90,7 +120,12 @@ def test_generate_llm_metadata_http_error_empty(monkeypatch):
 
     monkeypatch.setattr(ing.urllib.request, "urlopen", boom)
     out = ing._generate_llm_metadata("c", "f", "m", timeout_sec=1.0)
-    assert out == {"llm_summary": "", "llm_tags": "", "llm_relations": ""}
+    assert out == {
+        "llm_summary": "",
+        "llm_tags": "",
+        "llm_relations": "",
+        "llm_physics_model": "",
+    }
 
 
 def test_ollama_generate_url_from_host(monkeypatch):

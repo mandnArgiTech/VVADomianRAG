@@ -78,6 +78,29 @@ def test_regex_spice_split_blocks(tmp_path: Path):
     assert all(c[1].get("chunk_strategy") == "regex_spice" for c in chunks)
 
 
+def test_regex_spice_split_oversize_segment_subsplit(tmp_path: Path):
+    """Segments over SPICE_MAX_SEGMENT_CHARS are sub-split without truncating to 8000."""
+    big = "x" * 60_000
+    body = big + "\n.subckt amp in out\nR1 in out 1k\n.ends\n"
+    p = tmp_path / "big.cir"
+    out = ing.regex_spice_split(body, p)
+    assert out
+    assert all(len(c[0]) <= 50_000 for c in out)
+    assert sum(len(c[0]) for c in out) >= 60_000
+
+
+def test_ts_c_cpp_zero_chunks_routes_regex_before_language_split(monkeypatch, tmp_path: Path):
+    p = tmp_path / "fallback.c"
+    p.write_text("void f(void) {}\n", encoding="utf-8")
+    content = p.read_text(encoding="utf-8")
+    monkeypatch.setattr(ing, "_ts_extract_chunks", lambda *a, **k: [])
+    out = ing._ts_extract_chunks_or_language_split_c_cpp(
+        p, content, "c", allow_language_split_fallback=True
+    )
+    assert out
+    assert any(m.get("chunk_strategy") == "regex_code" for _, m in out)
+
+
 def test_regex_code_split_empty_stripped_parts_fallback(tmp_path: Path):
     p = tmp_path / "x.rs"
     # Two `fn` headers with only whitespace between -> stripped middle empty -> raw_parts empty -> generic_split
@@ -370,7 +393,12 @@ def test_ingest_enrich_metadata_branch(
     monkeypatch.setattr(
         ing,
         "_generate_llm_metadata",
-        lambda *a, **k: {"llm_summary": "s", "llm_tags": "t", "llm_relations": "r"},
+        lambda *a, **k: {
+            "llm_summary": "s",
+            "llm_tags": "t",
+            "llm_relations": "r",
+            "llm_physics_model": "",
+        },
     )
 
     src = tmp_path / "src"

@@ -197,6 +197,7 @@ Write-Host "[3/3] Running ingestion pipeline..." -ForegroundColor Yellow
 Copy-Item -Path (Join-Path $PSScriptRoot "ingest.py") -Destination (Join-Path $BaseDir "ingest.py") -Force
 Copy-Item -Path (Join-Path $PSScriptRoot "mcp_server.py") -Destination (Join-Path $BaseDir "mcp_server.py") -Force -ErrorAction SilentlyContinue
 Copy-Item -Path (Join-Path $PSScriptRoot "domain_feeder.py") -Destination (Join-Path $BaseDir "domain_feeder.py") -Force -ErrorAction SilentlyContinue
+Copy-Item -Path (Join-Path $PSScriptRoot "hybrid_search.py") -Destination (Join-Path $BaseDir "hybrid_search.py") -Force -ErrorAction SilentlyContinue
 Copy-Item -Path (Join-Path $PSScriptRoot "sanitizer.py") -Destination (Join-Path $BaseDir "sanitizer.py") -Force -ErrorAction SilentlyContinue
 Copy-Item -Path (Join-Path $PSScriptRoot "concept_registry.json") -Destination (Join-Path $BaseDir "concept_registry.json") -Force -ErrorAction SilentlyContinue
 

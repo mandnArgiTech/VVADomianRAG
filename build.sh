@@ -87,6 +87,9 @@ fi
 need_cmd python3
 need_cmd tar
 
+python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+  || die "Python 3.10 or newer is required (found: $(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')')"
+
 mkdir -p "$BASE_DIR/Ollama" "$BASE_DIR/Python" "$BASE_DIR/Models" "$BASE_DIR/Codebase" \
   "$BASE_DIR/VectorDB" "$BASE_DIR/DomainDocs" "$BASE_DIR/RFCs" "$BASE_DIR/MIBs" \
   "$BASE_DIR/CommunityData"
@@ -127,8 +130,8 @@ else
   echo "      git not found — skipping tree-sitter-scheme (Scheme chunking will use regex fallback)" >&2
 fi
 
-# --- Pull embedding models ---
-echo "[4/7] Downloading embedding models..."
+# --- Pull Ollama models (embeddings + small Qwen LLMs for enrich / local chat) ---
+echo "[4/7] Downloading Ollama models..."
 export OLLAMA_MODELS="$BASE_DIR/Models"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export OLLAMA_KEEP_ALIVE="-1"
@@ -154,6 +157,10 @@ echo "    Pulling nomic-embed-text..."
 "$BASE_DIR/Ollama/ollama" pull nomic-embed-text
 echo "    Pulling mxbai-embed-large..."
 "$BASE_DIR/Ollama/ollama" pull mxbai-embed-large
+echo "    Pulling qwen2.5:0.5b (ingest --enrich-metadata default / tiny LLM)..."
+"$BASE_DIR/Ollama/ollama" pull qwen2.5:0.5b
+echo "    Pulling qwen2.5:3b (small general LLM)..."
+"$BASE_DIR/Ollama/ollama" pull qwen2.5:3b
 
 if [[ -n "${OLLAMA_PROC:-}" ]]; then
   kill "$OLLAMA_PROC" 2>/dev/null || true
@@ -164,14 +171,44 @@ echo "[5/7] Copying scripts and support files..."
 cp -f "$SCRIPT_DIR/ingest.py" "$BASE_DIR/ingest.py"
 cp -f "$SCRIPT_DIR/mcp_server.py" "$BASE_DIR/mcp_server.py"
 cp -f "$SCRIPT_DIR/domain_feeder.py" "$BASE_DIR/domain_feeder.py"
+cp -f "$SCRIPT_DIR/hybrid_search.py" "$BASE_DIR/hybrid_search.py"
+cp -f "$SCRIPT_DIR/query.py" "$BASE_DIR/query.py"
+cp -f "$SCRIPT_DIR/gui_backend.py" "$BASE_DIR/gui_backend.py"
+cp -f "$SCRIPT_DIR/agent_tools.py" "$BASE_DIR/agent_tools.py"
+[[ -f "$SCRIPT_DIR/index.html" ]] && cp -f "$SCRIPT_DIR/index.html" "$BASE_DIR/index.html" || true
+if [[ -d "$SCRIPT_DIR/static" ]]; then
+  mkdir -p "$BASE_DIR/static"
+  cp -a "$SCRIPT_DIR/static/." "$BASE_DIR/static/"
+fi
+if [[ -d "$SCRIPT_DIR/util" ]]; then
+  mkdir -p "$BASE_DIR/util"
+  cp -a "$SCRIPT_DIR/util/." "$BASE_DIR/util/"
+fi
 [[ -f "$SCRIPT_DIR/sanitizer.py" ]] && cp -f "$SCRIPT_DIR/sanitizer.py" "$BASE_DIR/sanitizer.py" || true
 [[ -f "$SCRIPT_DIR/concept_registry.json" ]] && cp -f "$SCRIPT_DIR/concept_registry.json" "$BASE_DIR/concept_registry.json" || true
 
 PY="$BASE_DIR/Python/bin/python3"
 echo "[6/7] Post-install validation..."
-$PY -c "import langchain_chroma, chromadb, tqdm; print('core deps: OK')"
-$PY -c "import tree_sitter; print('tree-sitter: OK')" 2>/dev/null || echo "      tree-sitter optional import failed (C/C++/Java AST will fall back)."
-$PY -c "import tree_sitter_scheme; print('tree-sitter-scheme: OK')" 2>/dev/null || echo "      tree-sitter-scheme import failed (Scheme chunking will use regex fallback)."
+(
+  cd "$BASE_DIR"
+  "$PY" -c "import langchain_chroma, chromadb, tqdm; print('core deps: OK')"
+  "$PY" -c "import hybrid_search; print('hybrid_search: OK')"
+  "$PY" -c "import gui_backend; print('gui_backend: OK')"
+  "$PY" -c "import tree_sitter; print('tree-sitter: OK')" 2>/dev/null || echo "      tree-sitter optional import failed (C/C++/Java AST will fall back)."
+  "$PY" -c "import tree_sitter_scheme; print('tree-sitter-scheme: OK')" 2>/dev/null || echo "      tree-sitter-scheme import failed (Scheme chunking will use regex fallback)."
+)
+
+echo "[6b/7] Downloading frontend assets (Split.js)..."
+mkdir -p "$SCRIPT_DIR/static"
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "https://cdnjs.cloudflare.com/ajax/libs/split.js/1.6.5/split.min.js" \
+    -o "$SCRIPT_DIR/static/split.min.js" \
+    || echo "      WARNING: could not download split.min.js (offline?). Using existing if present."
+elif command -v wget >/dev/null 2>&1; then
+  wget -q -O "$SCRIPT_DIR/static/split.min.js" \
+    "https://cdnjs.cloudflare.com/ajax/libs/split.js/1.6.5/split.min.js" \
+    || echo "      WARNING: could not download split.min.js (offline?). Using existing if present."
+fi
 
 echo "[7/7] Merging ~/.cursor/mcp.json..."
 export DOMAIN_RAG_MCP_BASE="$BASE_DIR"
@@ -230,4 +267,6 @@ echo "* Code ingest:    ./run.sh --mode code                         *"
 echo "* Domain docs:    ./run.sh --mode domain --domain nms          *"
 echo "* Status:         ./run.sh --mode status                       *"
 echo "* GPU model:      ./run.sh --model mxbai-embed-large           *"
+echo "* Query CLI:      ./query.sh semantic \"your question\"         *"
+echo "* Web dashboard:  ./gui.sh (http://127.0.0.1:8501/)            *"
 echo "****************************************************************"

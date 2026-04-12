@@ -45,6 +45,9 @@ usage() {
   echo "  --concept-registry PATH   Path to concept_registry.json"
   echo "  --mib-keep-deprecated"
   echo "  --dry-run  --force  --clean-stale  --recreate-collection  --verbose"
+  echo ""
+  echo "Search / RAG queries use ./query.sh (not this script). Example:"
+  echo "  ./query.sh --dep-max-hits 12 -q \"MNA stamp\" -k 8 --chat"
   exit 0
 }
 
@@ -223,6 +226,7 @@ echo "[3/3] Running ingestion pipeline..."
 cp -f "$SCRIPT_DIR/ingest.py" "$BASE_DIR/ingest.py"
 [[ -f "$SCRIPT_DIR/mcp_server.py" ]] && cp -f "$SCRIPT_DIR/mcp_server.py" "$BASE_DIR/mcp_server.py" || true
 [[ -f "$SCRIPT_DIR/domain_feeder.py" ]] && cp -f "$SCRIPT_DIR/domain_feeder.py" "$BASE_DIR/domain_feeder.py" || true
+[[ -f "$SCRIPT_DIR/hybrid_search.py" ]] && cp -f "$SCRIPT_DIR/hybrid_search.py" "$BASE_DIR/hybrid_search.py" || true
 [[ -f "$SCRIPT_DIR/sanitizer.py" ]] && cp -f "$SCRIPT_DIR/sanitizer.py" "$BASE_DIR/sanitizer.py" || true
 [[ -f "$SCRIPT_DIR/concept_registry.json" ]] && cp -f "$SCRIPT_DIR/concept_registry.json" "$BASE_DIR/concept_registry.json" || true
 
@@ -286,4 +290,5 @@ echo "   ./run.sh --mode code --model mxbai-embed-large"
 echo "   ./run.sh --mode domain --domain nms --source \"$BASE_DIR/DomainDocs\""
 echo "   ./run.sh --mode status"
 echo "   ./run.sh --mode mib --domain nms --source \"$BASE_DIR/MIBs\""
+echo "   ./query.sh --help                    # query CLI + dependency-hop / prompt tuning flags"
 echo ""
