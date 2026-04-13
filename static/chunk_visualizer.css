@@ -99,7 +99,7 @@
 
 #chunkMetaFloat {
   z-index: 100;
-  max-width: min(420px, 92vw);
+  max-width: min(560px, 94vw);
   max-height: min(70vh, 520px);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
 }

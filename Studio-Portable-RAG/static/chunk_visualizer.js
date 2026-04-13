@@ -41,6 +41,20 @@
       .replace(/"/g, '&quot;');
   }
 
+  /** Pretty-print metadata values (objects/arrays as JSON). */
+  function formatMetaDisplayValue(v) {
+    if (v === null || v === undefined) return '—';
+    if (typeof v === 'object') {
+      try {
+        return JSON.stringify(v);
+      } catch (e) {
+        return String(v);
+      }
+    }
+    const s = String(v);
+    return s === '' ? '—' : s;
+  }
+
   function attrEscape(s) {
     return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   }
@@ -134,19 +148,27 @@
     });
 
     const m = c.metadata || {};
-    const abs = c.abs_source || m.source || '—';
-    const rel = c.rel_path || '—';
-    const lines = [
-      ['chunk_name', m.chunk_name || '—'],
-      ['chunk_type', m.chunk_type || '—'],
-      ['collection', c.collection || '—'],
-      ['chunk_index', m.chunk_index || '—'],
-      ['source (abs)', abs],
-      ['rel_path', rel],
-      ['device_family', m.device_family || '—'],
-      ['concepts', m.concepts || '—'],
-      ['source_type', m.source_type || '—'],
+    const absResolved =
+      c.abs_source || (chunkState && chunkState.absSource) || (m.source && String(m.source)) || '';
+    const relResolved =
+      c.rel_path || (m.relative_path && String(m.relative_path)) || (chunkState && chunkState.path) || '';
+    /** Envelope fields from the API / UI context (file view may omit per-chunk abs_source). */
+    const envelope = [
+      ['chunk_id', c.chunk_id],
+      ['collection', c.collection],
+      ['abs_source', absResolved],
+      ['rel_path', relResolved],
     ];
+    const lines = [];
+    for (const [k, v] of envelope) {
+      if (v != null && String(v) !== '') {
+        lines.push([k, formatMetaDisplayValue(v)]);
+      }
+    }
+    const metaKeys = Object.keys(m).sort();
+    for (const k of metaKeys) {
+      lines.push([k, formatMetaDisplayValue(m[k])]);
+    }
     const body = $('chunkMetaFloatBody');
     if (body) {
       body.innerHTML = lines
@@ -154,8 +176,8 @@
           ([k, v]) =>
             '<div class="mb-2"><span class="text-slate-500 text-[10px] uppercase">' +
             escapeHtml(k) +
-            '</span><div class="text-xs font-mono text-slate-200 break-all">' +
-            escapeHtml(String(v)) +
+            '</span><div class="text-xs font-mono text-slate-200 break-all whitespace-pre-wrap">' +
+            escapeHtml(v) +
             '</div></div>'
         )
         .join('');

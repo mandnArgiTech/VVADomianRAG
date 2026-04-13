@@ -68,6 +68,10 @@ DIM_TO_MODEL = {
 TOP_K_DEFAULT = int(os.environ.get("TOP_K", "5"))
 MAX_K = max(1, int(os.environ.get("MCP_MAX_K", "25")))
 RESULT_CHUNK_MAX_CHARS = max(512, int(os.environ.get("MCP_RESULT_CHUNK_MAX_CHARS", "4096")))
+RESULT_CONTEXT_WINDOW_MAX_CHARS = max(
+    RESULT_CHUNK_MAX_CHARS,
+    int(os.environ.get("MCP_RESULT_CONTEXT_WINDOW_MAX_CHARS", "16000")),
+)
 DEFAULT_TIMEOUT = int(os.environ.get("QUERY_CLI_TIMEOUT", "120"))
 HISTORY_FILE = Path.home() / ".rag_query_history"
 
@@ -90,11 +94,6 @@ QUERY_PROMPT_DOC_THRESHOLD = float(os.environ.get("QUERY_PROMPT_DOC_THRESHOLD", 
 
 # BM25 typo expansion: built at ingest time (see ingest.py symbols_vocabulary.json).
 _vocab_cache: Dict[str, frozenset] = {}
-_CAMEL_RE = re.compile(r"(?<=[a-z])(?=[A-Z])")
-
-
-def _is_technical_token(tok: str) -> bool:
-    return "." in tok or "_" in tok or bool(_CAMEL_RE.search(tok))
 
 
 def _load_symbols_vocab(db_path: str) -> frozenset:
@@ -122,18 +121,62 @@ def _load_symbols_vocab(db_path: str) -> frozenset:
     return vocab
 
 
+def _god_mode_chunk_name_matches(query_raw: str, vocab: frozenset) -> List[str]:
+    """Build ``chunk_name`` values for Chroma ``$in`` God-mode (exact + case-insensitive vocab).
+
+    Single-token queries also try the raw token when it is not already represented by a
+    resolved canonical symbol (covers symbols missing from ``symbols_vocabulary.json``).
+    """
+    q = (query_raw or "").strip()
+    if not q or not vocab:
+        return []
+    tokens = set(re.findall(r"[\w\.]+", q))
+    canon_lower: Dict[str, str] = {v.lower(): v for v in vocab}
+    out: List[str] = []
+    seen: set = set()
+
+    def add(name: str) -> None:
+        n = (name or "").strip()
+        if n and n not in seen:
+            out.append(n)
+            seen.add(n)
+
+    for t in tokens:
+        if t in vocab:
+            add(t)
+            continue
+        c = canon_lower.get(t.lower())
+        if c:
+            add(c)
+
+    if " " not in q:
+        cq = canon_lower.get(q.lower())
+        if q not in seen and (cq is None or cq not in seen):
+            if q in vocab:
+                add(q)
+            elif cq:
+                add(cq)
+            else:
+                add(q)
+    return out
+
+
 def _expand_query_typos(query: str, vocab: frozenset) -> str:
     if not vocab or not (query or "").strip():
         return query
-    tokens = query.split()
+    tokens = re.findall(r"[\w\.]+", query)
+    vocab_lower_map = {v.lower(): v for v in vocab}
     expansions: List[str] = []
     for tok in tokens:
-        if _is_technical_token(tok) and tok not in vocab:
-            matches = difflib.get_close_matches(tok, vocab, n=1, cutoff=0.75)
+        if tok.lower() in vocab_lower_map:
+            continue
+        if len(tok) >= 4:
+            matches = difflib.get_close_matches(tok.lower(), vocab_lower_map.keys(), n=1, cutoff=0.75)
             if matches:
-                expansions.append(matches[0])
+                expansions.append(vocab_lower_map[matches[0]])
     if expansions:
-        return query + " [Auto-expanded: " + " ".join(expansions) + "]"
+        deduped = " ".join(dict.fromkeys(expansions))
+        return query + " [Auto-expanded: " + deduped + "]"
     return query
 
 
@@ -423,9 +466,9 @@ def _fence_for(content: str) -> str:
     return "~~~" if "```" in content else "```"
 
 
-def _truncate_chunk(text: str) -> str:
-    """Truncate with newline-aware cut; close dangling ``` fences if needed."""
-    mx = RESULT_CHUNK_MAX_CHARS
+def _truncate_chunk(text: str, max_chars: Optional[int] = None) -> str:
+    """Truncate with newline / `}`-aware cut; close dangling ``` fences if needed."""
+    mx = max_chars if max_chars is not None and max_chars > 0 else RESULT_CHUNK_MAX_CHARS
     if len(text) <= mx:
         return text
     suffix = "\n\n... (truncated for response size) ..."
@@ -438,15 +481,19 @@ def _truncate_chunk(text: str) -> str:
         boundary = text.rfind("\n", 0, cut)
     if boundary >= floor:
         cut = boundary
+    else:
+        brace = text.rfind("}", 0, cut)
+        if brace >= floor:
+            cut = brace + 1
     prefix = text[:cut]
     fence = "```"
-    n_fences = prefix.count(fence)
-    if n_fences % 2 == 1:
+    if prefix.count(fence) % 2 == 1:
         prefix = prefix + "\n" + fence
     return prefix + suffix
 
 
 def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
+    """Prefer ``context_window`` over page_content; larger cap + syntax-aware ``_truncate_chunk``."""
     meta = doc.metadata or {}
     header: List[str] = []
     repo = meta.get("repository", "") or ""
@@ -456,7 +503,14 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
     if score is not None:
         header.append(f"**Distance:** {score:.4f}")
     header.append(f"**source_type:** {source_type}")
-    content = _truncate_chunk(doc.page_content.strip())
+    cw = (meta.get("context_window") or "").strip()
+    if cw:
+        raw_body = cw
+        trunc_limit = RESULT_CONTEXT_WINDOW_MAX_CHARS
+    else:
+        raw_body = (doc.page_content or "").strip()
+        trunc_limit = RESULT_CHUNK_MAX_CHARS
+    content = _truncate_chunk(raw_body, trunc_limit)
     ext = (meta.get("extension") or "").lower()
 
     if source_type == "code":
@@ -596,15 +650,13 @@ def _exact_chunk_name_hits(
     targets: List[str],
     cmap: Dict[str, Chroma],
     repo_filter: str,
+    vocab: frozenset,
 ) -> List[SearchHit]:
-    """Fast metadata pre-fetch: chunks whose chunk_name exactly equals the query string.
-
-    Only activates for single-token queries (no spaces) so natural-language sentences
-    do not trigger expensive per-collection metadata lookups on every search.
-    """
-    q = query_raw.strip()
-    if not q or " " in q:
+    """Fast metadata pre-fetch: chunk_names from ``_god_mode_chunk_name_matches``."""
+    matches = _god_mode_chunk_name_matches(query_raw, vocab)
+    if not matches:
         return []
+    chroma_limit = min(512, max(8, len(matches) * 8))
     exact: List[SearchHit] = []
     seen: set = set()
     rf = repo_filter.strip()
@@ -616,9 +668,10 @@ def _exact_chunk_name_hits(
         if col is None:
             continue
         try:
+            # Chroma expects structured operators (e.g. $in, $eq); bare {"chunk_name": q} is unreliable.
             res = col.get(
-                where={"chunk_name": {"$eq": q}},
-                limit=8,
+                where={"chunk_name": {"$in": matches}},
+                limit=chroma_limit,
                 include=["documents", "metadatas"],
             )
         except Exception as exc:
@@ -663,12 +716,13 @@ def _sync_multi_search(
             cosine-distance space).  0.0 disables the filter.
     """
     db_abs_for_vocab = _resolve_db_abs(db_path, cmap)
-    query = _expand_query_typos(query, _load_symbols_vocab(db_abs_for_vocab))
+    vocab = _load_symbols_vocab(db_abs_for_vocab)
+    query = _expand_query_typos(query, vocab)
     if not cmap:
         raise RuntimeError("ChromaDB has no collections.")
     targets = _select_collection_names(cmap, search_type, domain)
     # --- God Mode: exact chunk_name pre-fetch (bypasses all scoring) ---
-    exact_hits = _exact_chunk_name_hits(query, targets, cmap, repo_filter)
+    exact_hits = _exact_chunk_name_hits(query, targets, cmap, repo_filter, vocab)
     exact_seen = {stable_doc_id(h.collection or "", h.metadata, h.content) for h in exact_hits}
     per = max(1, k // max(1, len(targets)) if targets else k)
     q_emb = _shared_query_embedding(cmap, targets, query)

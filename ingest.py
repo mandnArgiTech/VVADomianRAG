@@ -1857,6 +1857,47 @@ _C_STDLIB_CALLS: FrozenSet[str] = frozenset(
     }
 )
 
+_C_KEYWORDS: FrozenSet[str] = frozenset(
+    {
+        "NULL",
+        "nullptr",
+        "true",
+        "false",
+        "int",
+        "long",
+        "short",
+        "char",
+        "unsigned",
+        "signed",
+        "float",
+        "double",
+        "void",
+        "struct",
+        "enum",
+        "union",
+        "return",
+        "if",
+        "else",
+        "while",
+        "for",
+        "do",
+        "switch",
+        "case",
+        "break",
+        "continue",
+        "goto",
+        "static",
+        "extern",
+        "const",
+        "volatile",
+        "register",
+        "typedef",
+        "sizeof",
+        "inline",
+        "restrict",
+    }
+)
+
 CALLS_METADATA_MAX = 50
 
 
@@ -1871,31 +1912,64 @@ def _format_calls_metadata(names: List[str]) -> str:
 
 
 def _extract_c_calls_from_node(node, content: str) -> List[str]:
-    """Extract function call identifiers from a tree-sitter C/C++ function_definition node."""
+    """Extract function call and function pointer identifiers from a tree-sitter C/C++ node.
+
+    Handles three patterns:
+    - Direct call:          ``bar()``                  → call_expression
+    - Assignment RHS:       ``dev.fn = myHandler``     → assignment_expression
+    - Struct initializer:   ``{ funcA, funcB, NULL }`` → initializer_list
+    """
     calls: Set[str] = set()
+
+    def _add_if_valid(name: str) -> None:
+        if name and name not in _C_STDLIB_CALLS and name not in _C_KEYWORDS and not name.startswith("__"):
+            calls.add(name)
 
     def _walk_calls(n) -> None:
         if n.type == "call_expression":
             func_node = n.children[0] if n.children else None
             if func_node is not None:
                 if func_node.type == "identifier":
-                    name = content[func_node.start_byte : func_node.end_byte]
-                    if name not in _C_STDLIB_CALLS and not name.startswith("__"):
-                        calls.add(name)
+                    _add_if_valid(content[func_node.start_byte : func_node.end_byte])
                 elif func_node.type == "field_expression":
                     for ch in reversed(func_node.children):
                         if ch.type == "field_identifier":
-                            name = content[ch.start_byte : ch.end_byte]
-                            if name not in _C_STDLIB_CALLS and not name.startswith("__"):
-                                calls.add(name)
+                            _add_if_valid(content[ch.start_byte : ch.end_byte])
                             break
-        for ch in n.children:
-            _walk_calls(ch)
+            for ch in n.children:
+                _walk_calls(ch)
+        elif n.type == "assignment_expression":
+            # Capture function pointers on RHS: .DEVload = BSIM3v1load
+            rhs = n.children[2] if len(n.children) >= 3 else None
+            if rhs is not None and rhs.type == "identifier":
+                _add_if_valid(content[rhs.start_byte : rhs.end_byte])
+            for ch in n.children:
+                _walk_calls(ch)
+        elif n.type == "initializer_list":
+            # Capture positional function pointers: { funcA, funcB, 0, NULL }
+            for ch in n.children:
+                if ch.type == "identifier":
+                    _add_if_valid(content[ch.start_byte : ch.end_byte])
+                else:
+                    _walk_calls(ch)
+        elif n.type == "initializer_pair":
+            # Capture designated function pointers: .DEVmodDelete = BSIM3v1mDelete
+            # Tree-Sitter children: [field_designator, "=", identifier]
+            val = n.children[-1] if n.children else None
+            if val is not None and val.type == "identifier":
+                _add_if_valid(content[val.start_byte : val.end_byte])
+            for ch in n.children:
+                _walk_calls(ch)
+        else:
+            for ch in n.children:
+                _walk_calls(ch)
 
-    for child in node.children:
-        if child.type == "compound_statement":
-            _walk_calls(child)
-            break
+    cs = next((ch for ch in node.children if ch.type == "compound_statement"), None)
+    if cs is not None:
+        _walk_calls(cs)
+    else:
+        for ch in node.children:
+            _walk_calls(ch)
 
     return sorted(calls)
 
@@ -2041,13 +2115,9 @@ def _mask_c_macros_for_ast(content: str) -> str:
         flags=re.DOTALL,
     )
 
-    # Preprocessor conditional directives that fragment function bodies
-    masked = re.sub(
-        r"^[ \t]*#[ \t]*(?:if|ifdef|ifndef|else|elif|endif)[^\n]*$",
-        lambda m: " " * len(m.group(0)),
-        masked,
-        flags=re.MULTILINE,
-    )
+    # Do not mask #if/#ifdef/#else/#endif: Tree-Sitter C grammar includes preprocessor
+    # directives; blanking them mis-parses mutually exclusive regions and breaks large
+    # functions (e.g. DCtran bodies spanning conditionals).
 
     # 2. Mask common Ngspice return wrappers or fast-aliasing macros
     # Example: SPICEdev struct instantiations or complex macro headers
@@ -2245,7 +2315,7 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
             ):
                 chunk_type = "core_constant"
             calls_list: List[str] = []
-            if grammar in ("c", "cpp") and t == "function_definition":
+            if grammar in ("c", "cpp") and t in ("function_definition", "declaration"):
                 calls_list = _extract_c_calls_from_node(node, content)
             calls_field = _format_calls_metadata(calls_list)
             out.append(

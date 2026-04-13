@@ -32,6 +32,22 @@ def test_expand_query_typos_empty_vocab():
     assert q._expand_query_typos("any niniter.c", frozenset()) == "any niniter.c"
 
 
+def test_god_mode_chunk_name_matches_sentence_case_insensitive():
+    vocab = frozenset({"DCtrCurv", "niiter.c"})
+    names = q._god_mode_chunk_name_matches("where is dctrcurv defined like niiter.c", vocab)
+    assert "DCtrCurv" in names
+    assert "niiter.c" in names
+
+
+def test_god_mode_chunk_name_matches_empty_vocab():
+    assert q._god_mode_chunk_name_matches("any DCtrCurv", frozenset()) == []
+
+
+def test_god_mode_single_token_falls_back_when_not_in_vocab():
+    vocab = frozenset({"Other"})
+    assert q._god_mode_chunk_name_matches("NotInVocabAtAll", vocab) == ["NotInVocabAtAll"]
+
+
 def test_truncate_chunk_short_unchanged():
     assert q._truncate_chunk("hello") == "hello"
 
@@ -107,6 +123,24 @@ def test_build_context_blocks_prefers_context_window():
     ctx = q._build_context_blocks(hits, max_chars=50000)
     assert "WIDE" in ctx
     assert "Source 1" in ctx
+
+
+def test_format_result_prefers_context_window_for_markdown(monkeypatch):
+    """Agent tool path uses format_markdown → format_result; body must come from context_window."""
+    monkeypatch.setattr(q, "RESULT_CHUNK_MAX_CHARS", 40)
+    monkeypatch.setattr(q, "RESULT_CONTEXT_WINDOW_MAX_CHARS", 500)
+    marker = "UNIQUE_CONTEXT_WINDOW_BODY_MARKER"
+    meta = {
+        "relative_path": "f.c",
+        "chunk_name": "foo",
+        "chunk_type": "function",
+        "extension": ".c",
+        "context_window": "preamble\n" + marker + "\n" + ("x" * 80),
+    }
+    doc = type("D", (), {"page_content": "tiny", "metadata": meta})()
+    out = q.format_result(doc, 0.1, "code")
+    assert marker in out
+    assert "### Code" in out
 
 
 @patch.object(q, "_sync_multi_search", return_value=[])

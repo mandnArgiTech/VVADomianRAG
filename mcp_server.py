@@ -42,6 +42,7 @@ from hybrid_search import (
     stable_doc_id,
 )
 from ingest import iter_concept_ids
+from query import _god_mode_chunk_name_matches, _load_symbols_vocab
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -572,15 +573,13 @@ def _exact_chunk_name_results(
     targets: List[str],
     cmap: Dict[str, Chroma],
     repo_filter: str,
+    vocab: frozenset,
 ) -> List[Tuple[Any, Optional[float], str]]:
-    """Exact chunk_name pre-fetch for mcp_server._sync_multi_search.
-
-    Only activates for single-token queries (no spaces) so natural-language
-    queries do not hit per-collection metadata lookups on every search.
-    """
-    q = query_raw.strip()
-    if not q or " " in q:
+    """Exact chunk_name pre-fetch for mcp_server._sync_multi_search (aligned with query.py God mode)."""
+    matches = _god_mode_chunk_name_matches(query_raw, vocab)
+    if not matches:
         return []
+    chroma_limit = min(512, max(8, len(matches) * 8))
     out: List[Tuple[Any, Optional[float], str]] = []
     seen: set = set()
     rf = repo_filter.strip()
@@ -592,9 +591,10 @@ def _exact_chunk_name_results(
         if col is None:
             continue
         try:
+            # Chroma expects structured operators (e.g. $in, $eq); bare {"chunk_name": q} is unreliable.
             res = col.get(
-                where={"chunk_name": {"$eq": q}},
-                limit=8,
+                where={"chunk_name": {"$in": matches}},
+                limit=chroma_limit,
                 include=["documents", "metadatas"],
             )
         except Exception as exc:
@@ -631,7 +631,8 @@ def _sync_multi_search(
         raise RuntimeError("ChromaDB has no collections.")
     targets = _select_collection_names(cmap, search_type, domain)
     # --- God Mode: exact chunk_name pre-fetch (bypasses all scoring) ---
-    exact = _exact_chunk_name_results(query, targets, cmap, repo_filter)
+    vocab = _load_symbols_vocab(os.path.abspath(DB_PATH))
+    exact = _exact_chunk_name_results(query, targets, cmap, repo_filter, vocab)
     exact_keys = {_doc_dedup_key(d) for d, _, _ in exact}
     per = max(1, k // max(1, len(targets)) if targets else k)
     use_hybrid = HYBRID_SEARCH and HYBRID_AVAILABLE

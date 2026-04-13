@@ -544,6 +544,8 @@ def _list_chroma_catalog_page(
                             )
                         except ValueError:
                             rel_path = ""
+                    if not rel_path:
+                        rel_path = str(meta.get("relative_path") or "").strip().replace("\\", "/")
                     preview = doc[:500] if len(doc) > 500 else doc
                     rows.append(
                         {
@@ -1384,6 +1386,26 @@ def _resolve_browse_root(source_base: Optional[str]) -> Path:
     return resolved_source_base()
 
 
+def _display_rel_path_for_chunk(abs_file: str, meta: Dict[str, Any], browse_root: Path) -> str:
+    """Prefer Chroma ``relative_path``; else derive from ``abs_file`` vs browse or default Codebase root."""
+    rp = str(meta.get("relative_path") or "").strip().replace("\\", "/")
+    if rp:
+        return rp
+    if not (abs_file or "").strip():
+        return ""
+    try:
+        ap = Path(abs_file).resolve()
+    except OSError:
+        ap = Path(abs_file)
+    for base in (browse_root, resolved_source_base()):
+        try:
+            br = base.expanduser().resolve()
+            return str(ap.relative_to(br)).replace("\\", "/")
+        except ValueError:
+            continue
+    return ""
+
+
 @app.get("/api/browse")
 async def api_browse(path: str = "", source_base: Optional[str] = None) -> Dict[str, Any]:
     root = _resolve_browse_root(source_base)
@@ -1466,12 +1488,15 @@ async def api_chunks_file(
                 meta_clean = jsonable_encoder(meta)
             else:
                 meta_clean = {}
+            rel_disp = _display_rel_path_for_chunk(abs_src, meta_clean, root)
             chunks_out.append(
                 {
                     "chunk_id": cid,
                     "text": doc if isinstance(doc, str) else (doc or ""),
                     "metadata": meta_clean,
                     "collection": collection_name,
+                    "rel_path": rel_disp,
+                    "abs_source": abs_src,
                 }
             )
     payload = {
@@ -2114,6 +2139,13 @@ async def api_query(body: QueryBody) -> Any:
         body.search_type = "domain"
 
     if body.history:
+        orig_tech_tokens = list(
+            dict.fromkeys(
+                t
+                for t in re.findall(r"[\w\.]+", raw_query)
+                if (t != t.lower() and t != t.upper()) or "_" in t or "." in t
+            )
+        )
         search_query = await rewrite_query(
             search_query,
             body.history,
@@ -2122,6 +2154,11 @@ async def api_query(body: QueryBody) -> Any:
             body.api_key,
             system_preset=getattr(body, "system_preset", ""),
         )
+        sq_lower = search_query.lower()
+        for tok in orig_tech_tokens:
+            if tok.lower() not in sq_lower:
+                search_query += f" {tok}"
+                sq_lower = search_query.lower()
 
     try:
         hits = await run_search(body, db_path, cmap, search_query=search_query)

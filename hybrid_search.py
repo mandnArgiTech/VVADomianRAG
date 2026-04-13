@@ -29,7 +29,7 @@ except ImportError:
 STABLE_SEP = "\x1f"
 _CHROMA_GET_BATCH = max(256, int(os.environ.get("HYBRID_CHROMA_GET_BATCH", "512")))
 # Bump this string whenever the BM25 token corpus changes to force cache rebuild.
-BM25_INDEX_VERSION = "v2_chunk_name_boost"
+BM25_INDEX_VERSION = "v3_chunk_type_boost"
 
 
 def tokenize(text: str) -> List[str]:
@@ -162,12 +162,10 @@ class CachedBM25Index:
             for text, meta in zip(documents, metadatas):
                 m = dict(meta or {})
                 sid = stable_doc_id(self.collection_name, m, text or "")
-                # Duplicate chunk_name to boost TF for exact function-name queries.
-                search_blob = (
-                    f"{m.get('chunk_name', '')} {m.get('chunk_name', '')} "
-                    f"{m.get('relative_path', '')} {text or ''}"
-                )
-                tokenized_corpus.append(tokenize(search_blob))
+                c_name = m.get("chunk_name", "") or ""
+                c_type = m.get("chunk_type", "") or ""
+                boost = f"{c_name} {c_name} {c_name} {c_type} " * 5
+                tokenized_corpus.append(tokenize(boost + (text or "")))
                 ordered_ids.append(sid)
                 if sid not in id_to_doc:
                     id_to_doc[sid] = (text or "", m)

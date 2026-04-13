@@ -269,6 +269,67 @@ def test_cg12_struct_empty_calls(tmp_path: Path):
     assert not (st[1].get("calls") or "").strip()
 
 
+@skip_without_ts_c
+def test_cg_function_pointer_assignment(tmp_path: Path):
+    """Function pointer assigned via field assignment inside a function body is captured."""
+    src = (
+        "typedef struct { void (*fn)(void); } Dev;\n"
+        "void process_dev(Dev *dev) { dev->fn = myHandler; doWork(); }\n"
+    )
+    path = tmp_path / "fp.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    fn_chunk = next(
+        c for c in chunks if c[1].get("chunk_name") == "process_dev"
+    )
+    ids = ing.iter_concept_ids(fn_chunk[1].get("calls") or "")
+    assert "myHandler" in ids
+    assert "doWork" in ids
+    assert "NULL" not in ids
+    assert "void" not in ids
+
+
+@skip_without_ts_c
+def test_cg_spice_struct_init(tmp_path: Path):
+    """Function pointers in a SPICEdev-style positional struct initializer are captured."""
+    src = (
+        "typedef struct { char *name; int (*DEVmodDelete)(void *); int (*DEVload)(void *); } SPICEdev;\n"
+        'SPICEdev BSIM3v1dev = { "BSIM3v1", BSIM3v1mDelete, BSIM3v1load };\n'
+    )
+    path = tmp_path / "dev.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    decl_chunk = next(
+        (c for c in chunks if "BSIM3v1dev" in (c[1].get("chunk_name") or "")),
+        None,
+    )
+    assert decl_chunk is not None, "declaration chunk for BSIM3v1dev not found"
+    ids = ing.iter_concept_ids(decl_chunk[1].get("calls") or "")
+    assert "BSIM3v1mDelete" in ids
+    assert "BSIM3v1load" in ids
+    assert "NULL" not in ids
+
+
+@skip_without_ts_c
+def test_cg_spice_designated_init(tmp_path: Path):
+    """Designated initializer ``.DEVmodDelete = BSIM3v1mDelete`` is captured via initializer_pair."""
+    src = (
+        "typedef struct { int (*DEVmodDelete)(void *); int (*DEVload)(void *); } SPICEdev;\n"
+        "SPICEdev BSIM3v1dev = { .DEVmodDelete = BSIM3v1mDelete, .DEVload = BSIM3v1load };\n"
+    )
+    path = tmp_path / "dev2.c"
+    path.write_text(src, encoding="utf-8")
+    chunks = ing._ts_extract_chunks(path, src, "c")
+    decl_chunk = next(
+        (c for c in chunks if "BSIM3v1dev" in (c[1].get("chunk_name") or "")),
+        None,
+    )
+    assert decl_chunk is not None, "declaration chunk for BSIM3v1dev not found"
+    ids = ing.iter_concept_ids(decl_chunk[1].get("calls") or "")
+    assert "BSIM3v1mDelete" in ids
+    assert "BSIM3v1load" in ids
+
+
 def test_cg11_python_function_has_calls_metadata(tmp_path: Path):
     p = tmp_path / "m.py"
     p.write_text("def foo():\n    bar()\n", encoding="utf-8")
