@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Linux counterpart to run.ps1 — ingestion runner using Studio-Portable-RAG layout
+#
+# Default chat model (query.py / dashboard): gemma3:27b (128K context, fits A6000 48GB at Q4)
+# Override: export RAG_LLM_MODEL=qwen2.5-coder:32b
+# Pull: ollama pull gemma3:27b
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

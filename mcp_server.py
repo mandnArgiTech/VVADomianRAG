@@ -9,6 +9,9 @@ Tools:
 - search_concepts  -- metadata filter on concept tags
 - feed_domain_doc  -- ingest markdown or RFC .txt into {domain}_domain or rfc collection
 - list_repositories, get_db_stats, reconnect
+
+This server exposes search and ingestion tools only; the default Ollama chat model
+(``gemma3:27b``, overridable via ``RAG_LLM_MODEL``) is configured in ``query.py`` / ``gui_backend.py``.
 """
 
 from __future__ import annotations
@@ -513,7 +516,13 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
 
     if source_type in ("domain_doc", "theory", "wiki"):
         sec = meta.get("section", meta.get("doc_title", "Domain Knowledge"))
-        return f"### {sec}\n*Source: {meta.get('source', '')}*\n\n{content}"
+        src_files = (meta.get("source_c_files") or "").strip()
+        rel_block = ""
+        if src_files:
+            rel_block = "\n\n## Related source files\n\n" + ", ".join(
+                x.strip() for x in src_files.split(",") if x.strip()
+            )
+        return f"### {sec}\n*Source: {meta.get('source', '')}*{rel_block}\n\n{content}"
 
     if source_type == "rfc":
         rfc = meta.get("rfc_number", "")

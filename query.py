@@ -378,6 +378,123 @@ def check_ollama(timeout: float = 3.0) -> bool:
         return False
 
 
+# Default chat LLM (STORY D). ``RAG_LLM_MODEL`` overrides when set in the environment.
+DEFAULT_CHAT_LLM = "gemma3:27b"
+CHAT_MODEL_FALLBACKS = [
+    "gemma3:27b",
+    "gemma3:12b",
+    "qwen2.5-coder:32b",
+    "llama3",
+    "mistral",
+]
+
+
+def default_chat_llm_from_env() -> str:
+    env = (os.environ.get("RAG_LLM_MODEL", "") or "").strip()
+    return env or DEFAULT_CHAT_LLM
+
+
+def _ollama_base_url() -> str:
+    return (os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")).rstrip("/")
+
+
+def _load_system_prompt(domain: str, _prompts_dir: Optional[Path] = None) -> str:
+    """Load ``system_prompts/{domain}_engineer.md``; if missing, ``default.md`` (AC-5).
+
+    When ``domain`` is empty, returns ``""`` so base RAG personas are unchanged unless a domain
+    is selected.
+
+    ``_prompts_dir`` is the ``system_prompts`` directory (for tests); default is next to ``query.py``.
+    """
+    root = Path(__file__).resolve().parent
+    sdir = _prompts_dir if _prompts_dir is not None else (root / "system_prompts")
+    d = (domain or "").strip().lower()
+    if not d:
+        return ""
+    p = sdir / f"{d}_engineer.md"
+    if p.is_file():
+        try:
+            return p.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            return ""
+    p0 = sdir / "default.md"
+    if p0.is_file():
+        try:
+            return p0.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            return ""
+    return ""
+
+
+def _tag_matches_model(tag: str, want: str) -> bool:
+    if not want or not tag:
+        return False
+    if tag == want or tag.startswith(want + ":"):
+        return True
+    if ":" not in want:
+        return tag.split(":")[0] == want.split(":")[0]
+    return False
+
+
+def _pick_ollama_model_tag(names: List[str], want: str) -> str:
+    for n in names:
+        if n and _tag_matches_model(n, want):
+            return n
+    return ""
+
+
+def _ollama_chat_model_names() -> List[str]:
+    url = _ollama_base_url() + "/api/tags"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception:
+        return []
+    models = data.get("models") or []
+    return [str(m.get("name") or "") for m in models if m.get("name")]
+
+
+def _check_model_available(model: str) -> str:
+    """Return an Ollama tag that matches ``model`` if present; else first matching fallback tag."""
+    log = logging.getLogger("query")
+    names = _ollama_chat_model_names()
+    want = (model or "").strip() or default_chat_llm_from_env()
+    if not names:
+        return want
+    tag = _pick_ollama_model_tag(names, want)
+    if tag:
+        return tag
+    log.warning(
+        "Default model %s not found. Run: ollama pull %s",
+        want,
+        want.split(":")[0] if want else want,
+    )
+    for fb in CHAT_MODEL_FALLBACKS:
+        tag = _pick_ollama_model_tag(names, fb)
+        if tag:
+            log.info("Falling back to Ollama model: %s", tag)
+            return tag
+    log.warning("No fallback model found in Ollama tags. Using %s anyway.", want)
+    return want
+
+
+def _ollama_options_for_model(model_name: str) -> Dict[str, Any]:
+    """Ollama ``options`` for chat; Gemma gets larger context and repeat_penalty (STORY D / AC-6)."""
+    tag = (model_name or "").lower()
+    if "gemma" in tag:
+        return {
+            "num_ctx": 65536,
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "repeat_penalty": 1.1,
+        }
+    return {
+        "num_ctx": 32768,
+        "temperature": 0.2,
+        "top_p": 0.95,
+    }
+
+
 def discover_collections(
     db_path: str,
     embeddings: OllamaEmbeddings,
@@ -1172,20 +1289,32 @@ def _effective_system_prompt(
     hits: List[SearchHit],
     search_type: str,
     override: Optional[str],
+    domain: str = "",
 ) -> str:
-    """Pick ngspice vs generic vs debug persona from top-hit source types unless user overrode."""
+    """Pick ngspice vs generic vs debug persona from top-hit source types unless user overrode.
+
+    When ``domain`` is set and ``system_prompts/{domain}_engineer.md`` (or ``default.md``) exists,
+    that text is prepended (AC-4).
+    """
     if override is not None:
         return override
     if not hits:
-        return DEFAULT_SYSTEM_PROMPT
-    m = min(QUERY_PROMPT_TOP_M, len(hits))
-    docish = {"rally", "customer", "community"}
-    cnt = sum(1 for h in hits[:m] if h.source_type in docish)
-    if m > 0 and cnt / m >= QUERY_PROMPT_DOC_THRESHOLD:
-        if search_type.lower() == "troubleshoot":
-            return _DEBUG_SYSTEM_PROMPT
-        return _GENERIC_SYSTEM_PROMPT
-    return _NGSPICE_SYSTEM_PROMPT
+        base = DEFAULT_SYSTEM_PROMPT
+    else:
+        m = min(QUERY_PROMPT_TOP_M, len(hits))
+        docish = {"rally", "customer", "community"}
+        cnt = sum(1 for h in hits[:m] if h.source_type in docish)
+        if m > 0 and cnt / m >= QUERY_PROMPT_DOC_THRESHOLD:
+            if search_type.lower() == "troubleshoot":
+                base = _DEBUG_SYSTEM_PROMPT
+            else:
+                base = _GENERIC_SYSTEM_PROMPT
+        else:
+            base = _NGSPICE_SYSTEM_PROMPT
+    dp = (_load_system_prompt(domain) or "").strip()
+    if dp:
+        return f"{dp}\n\n---\n\n{base}"
+    return base
 
 
 def _concept_parts(concepts_field: str) -> List[str]:
@@ -1424,7 +1553,12 @@ def _collect_llm_answer(
         }
     )
     try:
-        resp = _ollama_mod.chat(model=llm_model, messages=messages, stream=False)
+        resp = _ollama_mod.chat(
+            model=llm_model,
+            messages=messages,
+            stream=False,
+            options=_ollama_options_for_model(llm_model),
+        )
         msg = getattr(resp, "message", None) or (resp.get("message") if isinstance(resp, dict) else None)
         if isinstance(msg, dict):
             return str(msg.get("content") or "")
@@ -1463,7 +1597,12 @@ def _stream_llm_answer(
         }
     )
     try:
-        stream = _ollama_mod.chat(model=llm_model, messages=messages, stream=True)
+        stream = _ollama_mod.chat(
+            model=llm_model,
+            messages=messages,
+            stream=True,
+            options=_ollama_options_for_model(llm_model),
+        )
     except Exception as exc:
         err = str(exc).lower()
         if "not found" in err or "pull" in err:
@@ -1596,8 +1735,8 @@ class SessionState:
         self.mode = ns.mode  # semantic | concept | codebase
         self.timeout = int(ns.timeout)
         self.chat = bool(getattr(ns, "chat", False))
-        env_llm = (os.environ.get("RAG_LLM_MODEL", "") or "").strip()
-        self.llm_model = (getattr(ns, "llm_model", None) or env_llm or "llama3").strip()
+        cli_llm = (getattr(ns, "llm_model", None) or "").strip()
+        self.llm_model = cli_llm or default_chat_llm_from_env()
         sp = (getattr(ns, "system_prompt", None) or "").strip()
         self.system_prompt_override: Optional[str] = sp if sp else None
         self.history_depth = max(1, int(getattr(ns, "history_depth", 5)))
@@ -1787,15 +1926,18 @@ def repl_loop(
             continue
 
         hist_msgs = memory.history_messages_for_llm() if st.chat else None
-        eff_sp = _effective_system_prompt(hits, effective_type, st.system_prompt_override)
+        eff_sp = _effective_system_prompt(
+            hits, effective_type, st.system_prompt_override, st.domain
+        )
 
         if st.chat:
+            llm_tag = _check_model_available(st.llm_model)
             if st.mode == "concept":
                 if st.out_format == "json":
                     ans = _collect_llm_answer(
                         raw_query,
                         hits,
-                        st.llm_model,
+                        llm_tag,
                         eff_sp,
                         hist_msgs,
                     )
@@ -1804,7 +1946,7 @@ def repl_loop(
                     ans = _stream_llm_answer(
                         raw_query,
                         hits,
-                        st.llm_model,
+                        llm_tag,
                         eff_sp,
                         console,
                         hist_msgs,
@@ -1813,7 +1955,7 @@ def repl_loop(
                     ans = _stream_llm_answer(
                         raw_query,
                         hits,
-                        st.llm_model,
+                        llm_tag,
                         eff_sp,
                         None,
                         hist_msgs,
@@ -1825,7 +1967,7 @@ def repl_loop(
                 ans = _collect_llm_answer(
                     raw_query,
                     hits,
-                    st.llm_model,
+                    llm_tag,
                     eff_sp,
                     hist_msgs,
                 )
@@ -1834,7 +1976,7 @@ def repl_loop(
                 ans = _stream_llm_answer(
                     raw_query,
                     hits,
-                    st.llm_model,
+                    llm_tag,
                     eff_sp,
                     console,
                     hist_msgs,
@@ -1843,7 +1985,7 @@ def repl_loop(
                 ans = _stream_llm_answer(
                     raw_query,
                     hits,
-                    st.llm_model,
+                    llm_tag,
                     eff_sp,
                     None,
                     hist_msgs,
@@ -1905,8 +2047,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--llm-model",
-        default=(os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "llama3",
-        help="Ollama chat model for --chat (default: env RAG_LLM_MODEL or llama3)",
+        default="",
+        help="Ollama chat model for --chat (default: gemma3:27b; env RAG_LLM_MODEL overrides when flag omitted)",
     )
     p.add_argument(
         "--system-prompt",
@@ -2045,17 +2187,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(msg)
         return EXIT_NO_RESULTS
 
-    llm_model = (ns.llm_model or "").strip() or "llama3"
+    llm_model = (ns.llm_model or "").strip() or default_chat_llm_from_env()
     sp_override = (ns.system_prompt or "").strip() or None
-    system_prompt = _effective_system_prompt(hits, effective_type, sp_override)
+    system_prompt = _effective_system_prompt(hits, effective_type, sp_override, ns.domain)
 
     if ns.chat:
+        llm_tag = _check_model_available(llm_model)
         if ns.mode == "concept":
             mode_label = "concept"
         else:
             mode_label = ns.mode
         if ns.format == "json":
-            ans = _collect_llm_answer(q, hits, llm_model, system_prompt, None)
+            ans = _collect_llm_answer(q, hits, llm_tag, system_prompt, None)
             text = format_json_output(q, hits, mode_label, answer=ans)
             if ns.output:
                 Path(ns.output).write_text(text, encoding="utf-8")
@@ -2064,17 +2207,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             return EXIT_OK
         if ns.format == "plain":
             if ns.output:
-                ans = _collect_llm_answer(q, hits, llm_model, system_prompt, None)
+                ans = _collect_llm_answer(q, hits, llm_tag, system_prompt, None)
                 Path(ns.output).write_text(ans + ("\n" if ans and not ans.endswith("\n") else ""), encoding="utf-8")
             else:
-                _stream_llm_answer(q, hits, llm_model, system_prompt, None, None)
+                _stream_llm_answer(q, hits, llm_tag, system_prompt, None, None)
             return EXIT_OK
         # markdown
         if ns.output:
-            ans = _collect_llm_answer(q, hits, llm_model, system_prompt, None)
+            ans = _collect_llm_answer(q, hits, llm_tag, system_prompt, None)
             Path(ns.output).write_text(ans + ("\n" if ans and not ans.endswith("\n") else ""), encoding="utf-8")
         else:
-            _stream_llm_answer(q, hits, llm_model, system_prompt, display_console, None)
+            _stream_llm_answer(q, hits, llm_tag, system_prompt, display_console, None)
         return EXIT_OK
 
     if ns.mode == "concept":

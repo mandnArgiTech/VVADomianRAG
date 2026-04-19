@@ -176,7 +176,9 @@ def _chroma_persistent_client_for_gui(db_path: str) -> Any:
 
 
 DEFAULT_DASHBOARD_LLM = (
-    os.environ.get("RAG_LLM_MODEL", "").strip() or "qwen2.5-coder:32b"
+    query_mod.default_chat_llm_from_env()
+    if query_mod is not None
+    else ((os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "gemma3:27b")
 )
 
 # Optional smaller/faster model for query rewrite only (avoids slow rewrites on large chat models).
@@ -858,18 +860,28 @@ _PROVIDER_CONTEXT_CHARS: Dict[str, int] = {
 
 
 def _resolve_system_prompt(body: "QueryBody") -> str:
-    """Return effective system prompt: explicit > preset > default."""
+    """Return effective system prompt: explicit > (domain block + preset/default)."""
     if body.system_prompt.strip():
         return body.system_prompt.strip()
+    domain_block = ""
+    if query_mod is not None and (body.domain or "").strip():
+        domain_block = (
+            query_mod._load_system_prompt((body.domain or "").strip().lower()) or ""
+        ).strip()
     if query_mod is not None:
         preset = (body.system_preset or "").strip().lower()
         if preset:
-            return query_mod.DEFAULT_SYSTEM_PROMPTS.get(preset, query_mod.DEFAULT_SYSTEM_PROMPT)
-        return query_mod.DEFAULT_SYSTEM_PROMPT
-    return (
-        "You are an expert ngspice / SPICE circuit simulator and C-codebase assistant. "
-        "Answer using ONLY the provided source context. Cite file paths when referencing code."
-    )
+            base = query_mod.DEFAULT_SYSTEM_PROMPTS.get(preset, query_mod.DEFAULT_SYSTEM_PROMPT)
+        else:
+            base = query_mod.DEFAULT_SYSTEM_PROMPT
+    else:
+        base = (
+            "You are an expert ngspice / SPICE circuit simulator and C-codebase assistant. "
+            "Answer using ONLY the provided source context. Cite file paths when referencing code."
+        )
+    if domain_block:
+        return f"{domain_block}\n\n---\n\n{base}"
+    return base
 
 
 class QueryBody(BaseModel):
@@ -1033,16 +1045,14 @@ def _iter_llm_tokens(
             "content": f"Context:\n\n{ctx}\n\n---\n\nQuestion: {user_query}",
         }
     )
-    # Generation options
+    stream_budget = getattr(body, "stream_budget", 4096) if body else 4096
     temperature = getattr(body, "temperature", 0.2) if body else 0.2
     top_p = getattr(body, "top_p", 0.9) if body else 0.9
-    stream_budget = getattr(body, "stream_budget", 4096) if body else 4096
-    options = {
-        "temperature": temperature,
-        "top_p": top_p,
-        "num_ctx": 32768,
-        "num_predict": stream_budget,
-    }
+    options = dict(query_mod._ollama_options_for_model(llm_model))
+    options["num_predict"] = stream_budget
+    if "gemma" not in (llm_model or "").lower():
+        options["temperature"] = temperature
+        options["top_p"] = top_p
     try:
         stream = om.chat(model=llm_model, messages=messages, stream=True, options=options)
     except Exception as exc:
@@ -1227,6 +1237,10 @@ async def stream_chat_tokens(
 
     # Resolve effective system prompt (preset > explicit > default)
     sp = _resolve_system_prompt(body)
+
+    if body.llm_provider == "ollama" and query_mod is not None:
+        want = (body.llm_model or "").strip() or query_mod.default_chat_llm_from_env()
+        body.llm_model = query_mod._check_model_available(want)
 
     # Resolve per-provider context char budget
     max_chars = (

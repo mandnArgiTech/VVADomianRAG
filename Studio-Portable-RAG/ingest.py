@@ -191,6 +191,8 @@ METADATA_KEYS = [
     "llm_tags",
     "llm_relations",
     "llm_physics_model",
+    "source_c_files",
+    "chapter_number",
 ]
 
 CONTENT_TYPE_SIGNALS = {
@@ -787,7 +789,156 @@ def _is_diagram_placeholder(para: str) -> bool:
     return bool(_BLOCK_PLACEHOLDER_RE.match(para.strip()))
 
 
-def _split_paragraphs(text: str, target_min: int = 2000, target_max: int = 5000) -> List[str]:
+_MATH_BLOCK_RE = re.compile(r"\\\[(?:.|\n)*?\\\]|\$\$(?:.|\n)*?\$\$", re.DOTALL)
+
+
+def _protect_math_blocks(text: str) -> Tuple[str, List[str]]:
+    """Replace ``\\[...\\]`` and ``$$...$$`` with placeholders so paragraph splits never cut equations."""
+    vault: List[str] = []
+    out_parts: List[str] = []
+    pos = 0
+    for m in _MATH_BLOCK_RE.finditer(text):
+        out_parts.append(text[pos : m.start()])
+        vault.append(m.group(0))
+        out_parts.append(f"__MATH_BLOCK_{len(vault) - 1}__")
+        pos = m.end()
+    out_parts.append(text[pos:])
+    return "".join(out_parts), vault
+
+
+def _restore_math_blocks(segment: str, vault: List[str]) -> str:
+    for i, block in enumerate(vault):
+        segment = segment.replace(f"__MATH_BLOCK_{i}__", block)
+    return segment
+
+
+def _extract_source_c_files(text: str) -> str:
+    """Extract C source file basenames from a ``**Source files:**`` block in domain markdown."""
+    m = re.search(r"\*\*Source files:\*\*\s*\n((?:\s*-\s*.+\n?)*)", text)
+    if not m:
+        return ""
+    basenames: List[str] = []
+    for line in m.group(1).strip().split("\n"):
+        line = line.strip().lstrip("- ").strip()
+        line = line.strip("`").strip()
+        if line:
+            basenames.append(Path(line.replace("\\", "/")).name)
+    return ", ".join(basenames)
+
+
+def _chapter_meta_from_filename(filename: str) -> Dict[str, str]:
+    """Parse ``Chapter_NNN_Title`` stem for chapter number and coarse device family."""
+    stem = Path(filename).stem
+    m = re.match(r"Chapter_(\d+)_(.*)", stem)
+    if not m:
+        return {}
+    chapter_num = m.group(1)
+    rest = m.group(2)
+    family_map = (
+        ("BJT", "BJT"),
+        ("Diode", "DIO"),
+        ("Resistor", "RES"),
+        ("Capacitor", "CAP"),
+        ("Inductor", "IND"),
+        ("MOS1", "MOS1"),
+        ("MOS2", "MOS2"),
+        ("MOS3", "MOS3"),
+        ("MOS6", "MOS6"),
+        ("MOS9", "MOS9"),
+        ("BSIM1", "BSIM1"),
+        ("BSIM2", "BSIM2"),
+        ("BSIM3", "BSIM3"),
+        ("BSIM4v5", "BSIM4V5"),
+        ("BSIM4v6", "BSIM4V6"),
+        ("BSIM4v7", "BSIM4V7"),
+        ("BSIM4", "BSIM4"),
+        ("VBIC", "VBIC"),
+        ("HFET", "HFET"),
+        ("MESFET", "MESFET"),
+        ("JFET", "JFET"),
+        ("LTRA", "LTRA"),
+        ("CIDER", "CIDER"),
+        ("XSPICE", "XSPICE"),
+        ("Switch", "SW"),
+        ("CSW", "CSW"),
+        ("CPL", "CPL"),
+        ("URC", "URC"),
+        ("Tra", "TRA"),
+        ("Txl", "TXL"),
+        ("ISRC", "ISRC"),
+        ("VSRC", "VSRC"),
+        ("Dependent", "DEP"),
+        ("Mutual", "IND"),
+        ("Newton", "CORE"),
+        ("NI", "CORE"),
+        ("Sparse", "CORE"),
+        ("Device", "CORE"),
+        ("MNA", "CORE"),
+        ("Simulation", "CORE"),
+        ("Core", "CORE"),
+        ("Complex", "CORE"),
+        ("Derivative", "CORE"),
+        ("Polynomial", "CORE"),
+        ("Fast", "CORE"),
+        ("Floating", "CORE"),
+        ("Statistical", "CORE"),
+        ("Lexical", "CORE"),
+        ("Parse", "CORE"),
+        ("Symbol", "CORE"),
+        ("Model", "CORE"),
+        ("Event", "CORE"),
+        ("Analog", "CORE"),
+        ("Options", "CORE"),
+        ("Memory", "CORE"),
+    )
+    family = "CORE"
+    for prefix, fam in family_map:
+        if rest.startswith(prefix):
+            family = fam
+            break
+    return {"chapter_number": chapter_num, "device_family": family}
+
+
+def _domain_doc_content_type(stem_rest: str, device_family: str) -> str:
+    """Classify ngspice domain chapter: algorithm vs device_model vs parser."""
+    r = stem_rest
+    if any(
+        p in r
+        for p in (
+            "Lexical",
+            "Parse",
+            "Symbol",
+            "INP",
+            "Netlist",
+            "Preprocessor",
+            "XSPICE_Code",
+        )
+    ):
+        return "parser"
+    if device_family != "CORE":
+        return "device_model"
+    if any(
+        p in r
+        for p in (
+            "Newton",
+            "NI",
+            "Sparse",
+            "Integration",
+            "Jacobian",
+            "Convergence",
+            "Truncation",
+            "Gear",
+            "BDF",
+            "LTE",
+        )
+    ):
+        return "algorithm"
+    return "algorithm"
+
+
+def _split_paragraphs(
+    text: str, target_min: int = 2000, target_max: int = 5000, protect_math: bool = False
+) -> List[str]:
     """Token-aware paragraph packer with diagram-context bonding.
 
     * Uses _estimate_tokens for token-approximate sizing (char limits are still
@@ -796,7 +947,12 @@ def _split_paragraphs(text: str, target_min: int = 2000, target_max: int = 5000)
     * Diagram-context bonding: if the *next* paragraph is a <<BLOCK>> placeholder
       (a diagram), aggressively pack it with the current buffer so that the
       explanatory paragraph preceding the diagram stays in the same chunk.
+    * When ``protect_math`` is True, display math blocks are never split across
+      paragraph boundaries (used by ``chunk_markdown_domain``).
     """
+    math_vault: List[str] = []
+    if protect_math:
+        text, math_vault = _protect_math_blocks(text)
     paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     if not paras:
         return []  # pragma: no cover
@@ -832,6 +988,8 @@ def _split_paragraphs(text: str, target_min: int = 2000, target_max: int = 5000)
             i += 1  # pragma: no cover
     if buf:
         out.append(buf)
+    if math_vault:
+        out = [_restore_math_blocks(seg, math_vault) for seg in out]
     return out
 
 
@@ -1052,6 +1210,19 @@ def chunk_markdown_domain(
     t_min, t_max = _md_char_targets(embed_model)
     split_threshold = int(t_max * 1.2)
 
+    stem_st = Path(path).stem
+    m_chapter = re.match(r"Chapter_\d+_(.*)", stem_st)
+    stem_rest = m_chapter.group(1) if m_chapter else stem_st
+    ch_meta = _chapter_meta_from_filename(path)
+    dev_fam = str(ch_meta.get("device_family", "")).strip()
+    domain_ct = _domain_doc_content_type(stem_rest, dev_fam or "CORE")
+    file_chunk_meta: Dict[str, str] = {
+        "source_c_files": _extract_source_c_files(text),
+        "chapter_number": str(ch_meta.get("chapter_number") or ""),
+        "device_family": dev_fam,
+        "content_type": domain_ct,
+    }
+
     def _finalize(raw_piece: str, section: str, chunk_type: str, idx_ref: List[int]) -> Tuple[str, Dict[str, str]]:
         header = f"{section}\n\n{raw_piece}" if section else raw_piece
         txt, has_diag, diag_label = _unmask_markdown_with_meta(header, vault)
@@ -1065,6 +1236,9 @@ def chunk_markdown_domain(
         }
         if diag_label:
             meta["diagram_type"] = diag_label  # pragma: no cover
+        for fk, fv in file_chunk_meta.items():
+            if fv:
+                meta[fk] = fv
         idx_ref[0] += 1
         return txt, meta
 
@@ -1089,17 +1263,29 @@ def chunk_markdown_domain(
                         b2 = sub[j + 1].strip() if j + 1 < len(sub) else ""  # pragma: no cover
                         j += 2  # pragma: no cover
                         sub_hier = " > ".join(x for x in (h1, title, st) if x)  # pragma: no cover
-                        pieces = _split_paragraphs(b2, t_min, t_max) if len(b2) > split_threshold else [b2]  # pragma: no cover
+                        pieces = (
+                            _split_paragraphs(b2, t_min, t_max, protect_math=True)
+                            if len(b2) > split_threshold
+                            else [b2]
+                        )  # pragma: no cover
                         for piece in pieces:  # pragma: no cover
                             chunks.append(_finalize(piece, sub_hier or hierarchy, "section", idx_ref))  # pragma: no cover
                     else:
                         b0 = sseg  # pragma: no cover
                         j += 1  # pragma: no cover
-                        pieces = _split_paragraphs(b0, t_min, t_max) if len(b0) > split_threshold else [b0]  # pragma: no cover
+                        pieces = (
+                            _split_paragraphs(b0, t_min, t_max, protect_math=True)
+                            if len(b0) > split_threshold
+                            else [b0]
+                        )  # pragma: no cover
                         for piece in pieces:  # pragma: no cover
                             chunks.append(_finalize(piece, hierarchy, "section", idx_ref))  # pragma: no cover
             else:
-                pieces = _split_paragraphs(body, t_min, t_max) if len(body) > split_threshold else [body]
+                pieces = (
+                    _split_paragraphs(body, t_min, t_max, protect_math=True)
+                    if len(body) > split_threshold
+                    else [body]
+                )
                 for piece in pieces:
                     chunks.append(_finalize(piece, hierarchy, "section", idx_ref))
         else:
@@ -1107,7 +1293,11 @@ def chunk_markdown_domain(
             i += 1
             if intro and not intro.startswith("#"):
                 hier = h1 or path
-                pieces = _split_paragraphs(intro, t_min, t_max) if len(intro) > split_threshold else [intro]
+                pieces = (
+                    _split_paragraphs(intro, t_min, t_max, protect_math=True)
+                    if len(intro) > split_threshold
+                    else [intro]
+                )
                 for piece in pieces:
                     chunks.append(_finalize(piece, hier if h1 else "", "preamble", idx_ref))
     if not chunks and text.strip():
@@ -1122,6 +1312,9 @@ def chunk_markdown_domain(
         }
         if diag_label:
             meta["diagram_type"] = diag_label  # pragma: no cover
+        for fk, fv in file_chunk_meta.items():
+            if fv:
+                meta[fk] = fv
         chunks.append((txt, meta))
     return chunks
 
