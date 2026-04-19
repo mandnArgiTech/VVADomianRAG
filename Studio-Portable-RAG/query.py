@@ -380,9 +380,11 @@ def check_ollama(timeout: float = 3.0) -> bool:
 
 
 # Default chat LLM (STORY D). ``RAG_LLM_MODEL`` overrides when set in the environment.
-DEFAULT_CHAT_LLM = "gemma3:27b"
+DEFAULT_CHAT_LLM = "gemma3:27b-it-qat"
 CHAT_MODEL_FALLBACKS = [
+    "gemma3:27b-it-qat",
     "gemma3:27b",
+    "gemma3:12b-it-qat",
     "gemma3:12b",
     "qwen2.5-coder:32b",
     "llama3",
