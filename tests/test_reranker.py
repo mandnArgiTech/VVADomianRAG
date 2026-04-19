@@ -335,7 +335,7 @@ def test_rr12_candidates_env_var(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# RR-13: Default device is cuda:1
+# RR-13: Default device is cuda:0
 # ---------------------------------------------------------------------------
 
 def test_rr13_default_device(monkeypatch):
@@ -344,7 +344,7 @@ def test_rr13_default_device(monkeypatch):
     mod = _fresh_reranker_module()
     r = mod.get_reranker()
     assert r is not None
-    assert r.device == "cuda:1"
+    assert r.device == "cuda:0"
 
 
 # ---------------------------------------------------------------------------

@@ -2480,23 +2480,33 @@ def _ts_find_function_identifier(node, content: str) -> Optional[str]:
 
 
 _EXEMPT_CHUNK_TYPES = frozenset({"file_preamble", "core_constant"})
+# ``declaration`` chunks below this length are usually variable lists / one-liners; keep longer
+# blocks (large typedefs, grouped externs) that may still be useful.
+_DECLARATION_MIN_KEEP_CHARS = 200
 
 
 def _filter_tiny_code_chunks(
     out: List[Tuple[str, Dict[str, str]]],
 ) -> List[Tuple[str, Dict[str, str]]]:
-    """Drop code chunks shorter than CODE_CHUNK_MIN_SIZE (default 50), renumber chunk_index."""
+    """Drop short code chunks (CODE_CHUNK_MIN_SIZE) and noisy short ``declaration`` AST nodes."""
     try:
         code_min = int(os.environ.get("CODE_CHUNK_MIN_SIZE", "50"))
     except ValueError:
         code_min = 50
     if code_min <= 0:
         return out
-    filtered = [
-        (text, meta)
-        for text, meta in out
-        if len(text.strip()) >= code_min or meta.get("chunk_type") in _EXEMPT_CHUNK_TYPES
-    ]
+    filtered = []
+    for text, meta in out:
+        ctype = meta.get("chunk_type")
+        n = len(text.strip())
+        if ctype in _EXEMPT_CHUNK_TYPES:
+            filtered.append((text, meta))
+            continue
+        if n < code_min:
+            continue
+        if ctype == "declaration" and n < _DECLARATION_MIN_KEEP_CHARS:
+            continue
+        filtered.append((text, meta))
     for i, (_, m) in enumerate(filtered):
         m["chunk_index"] = str(i)
     return filtered

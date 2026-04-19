@@ -20,7 +20,8 @@ def test_iq01_code_chunks_under_50_chars_dropped(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("CODE_CHUNK_MIN_SIZE", "50")
     chunks = [_chunk("a" * 20, "declaration"), _chunk("b" * 60, "declaration"), _chunk("c" * 200, "declaration")]
     out = _filter_tiny_code_chunks(chunks)
-    assert [len(x[0]) for x in out] == [60, 200]
+    # Short declarations are also dropped unless >=200 chars (noise reduction).
+    assert [len(x[0]) for x in out] == [200]
 
 
 def test_iq02_file_preamble_short_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,14 +100,15 @@ def test_iq11_chunk_index_sequential_after_filter(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("CODE_CHUNK_MIN_SIZE", "50")
     chunks = [
         _chunk("a" * 40, "declaration", "0"),
-        _chunk("b" * 60, "declaration", "1"),
+        _chunk("b" * 250, "declaration", "1"),
         _chunk("c" * 30, "declaration", "2"),
-        _chunk("d" * 70, "declaration", "3"),
+        _chunk("d" * 70, "function_definition", "3"),
         _chunk("e" * 20, "declaration", "4"),
     ]
     out = _filter_tiny_code_chunks(chunks)
-    # 60- and 70-char chunks survive only
+    # Large declaration + short function (declaration <200 dropped including 60-char case).
     assert [m["chunk_index"] for _, m in out] == ["0", "1"]
+    assert [len(c[0]) for c in out] == [250, 70]
 
 
 def test_iq12_core_constant_short_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -114,3 +116,15 @@ def test_iq12_core_constant_short_preserved(monkeypatch: pytest.MonkeyPatch) -> 
     chunks = [_chunk("#define X 1", "core_constant")]
     out = _filter_tiny_code_chunks(chunks)
     assert len(out) == 1 and out[0][1]["chunk_type"] == "core_constant"
+
+
+def test_declaration_under_200_chars_dropped_even_above_code_min(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CODE_CHUNK_MIN_SIZE", "50")
+    chunks = [
+        _chunk("x" * 199, "declaration"),
+        _chunk("y" * 200, "declaration"),
+    ]
+    out = _filter_tiny_code_chunks(chunks)
+    assert len(out) == 1 and len(out[0][0]) == 200

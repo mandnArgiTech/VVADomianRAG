@@ -8,7 +8,7 @@ Env vars
 --------
 RAG_RERANKER            0/1 — enable reranking (default 0)
 RAG_RERANKER_MODEL      HuggingFace model (default BAAI/bge-reranker-v2-m3)
-RAG_RERANKER_DEVICE     PyTorch device (default cuda:1)
+RAG_RERANKER_DEVICE     PyTorch device (default cuda:0)
 RAG_RERANKER_CANDIDATES Over-fetch pool size passed from callers (default 30)
 RAG_RERANKER_FP16       Use FP16 for inference (default 1)
 
@@ -42,7 +42,7 @@ def get_reranker() -> Optional["Reranker"]:
             model_name=os.environ.get(
                 "RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"
             ),
-            device=os.environ.get("RAG_RERANKER_DEVICE", "cuda:1"),
+            device=os.environ.get("RAG_RERANKER_DEVICE", "cuda:0"),
             use_fp16=os.environ.get("RAG_RERANKER_FP16", "1").strip().lower()
             in ("1", "true", "yes"),
         )
@@ -75,7 +75,7 @@ class Reranker:
     def __init__(
         self,
         model_name: str = "BAAI/bge-reranker-v2-m3",
-        device: str = "cuda:1",
+        device: str = "cuda:0",
         use_fp16: bool = True,
     ) -> None:
         self.model_name = model_name
