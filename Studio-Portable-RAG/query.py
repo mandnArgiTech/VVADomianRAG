@@ -84,6 +84,8 @@ def _metadata_pipe_or_comma_tokens(raw: str) -> List[str]:
     if s.startswith("|"):
         return [x.strip() for x in s.strip("|").split("|") if x.strip()]
     return [x.strip() for x in s.split(",") if x.strip()]
+
+
 HISTORY_FILE = Path.home() / ".rag_query_history"
 
 HYBRID_SEARCH = os.environ.get("HYBRID_SEARCH", "1").strip().lower() not in ("0", "false", "no")
