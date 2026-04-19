@@ -46,6 +46,7 @@ from hybrid_search import (
 )
 from ingest import iter_concept_ids
 from query import SearchHit, _god_mode_chunk_name_matches, _load_symbols_vocab
+from reranker import get_reranker, rerank_pool_limit
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -698,9 +699,16 @@ def _sync_multi_search(
         )
         regular: List[Tuple[Any, Optional[float], str]] = [
             (doc, score, st)
-            for doc, score, st, _cname in merged[:k]
+            for doc, score, st, _cname in merged[:rerank_pool_limit(k)]
             if _doc_dedup_key(doc) not in exact_keys
         ]
+        _reranker = get_reranker()
+        if _reranker is not None and regular:
+            _cand_count = int(os.environ.get("RAG_RERANKER_CANDIDATES", "30"))
+            _to_rerank = regular[:_cand_count]
+            _texts = [getattr(doc, "page_content", "") for doc, _, _ in _to_rerank]
+            _ranked = _reranker.rerank(query, _texts, top_k=k)
+            regular = [_to_rerank[idx] for idx, _score in _ranked]
         return exact + regular
 
     fused: List[Tuple[Any, Optional[float], str, float]] = []
@@ -771,9 +779,16 @@ def _sync_multi_search(
     )
     regular = [
         (doc, score, st)
-        for doc, score, st, _ in fused[:k]
+        for doc, score, st, _ in fused[:rerank_pool_limit(k)]
         if _doc_dedup_key(doc) not in exact_keys
     ]
+    _reranker = get_reranker()
+    if _reranker is not None and regular:
+        _cand_count = int(os.environ.get("RAG_RERANKER_CANDIDATES", "30"))
+        _to_rerank = regular[:_cand_count]
+        _texts = [getattr(doc, "page_content", "") for doc, _, _ in _to_rerank]
+        _ranked = _reranker.rerank(query, _texts, top_k=k)
+        regular = [_to_rerank[idx] for idx, _score in _ranked]
     return exact + regular
 
 

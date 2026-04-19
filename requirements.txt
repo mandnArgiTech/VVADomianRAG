@@ -50,3 +50,7 @@ duckduckgo-search>=7.0.0
 # Vision-augmented PDF parsing (util/universal_vision_parser.py + dashboard tab)
 docling>=2.0.0
 Pillow>=10.0.0
+
+# optional: for RAG_RERANKER=1 cross-encoder reranking (reranker.py).
+# Same pin lives in requirements-reranker.txt for installs that omit the main bundle.
+sentence-transformers>=3.0.0

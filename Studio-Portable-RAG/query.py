@@ -35,6 +35,7 @@ from hybrid_search import (
     search_bm25_ranked_ids,
     stable_doc_id,
 )
+from reranker import get_reranker, rerank_pool_limit
 
 try:
     import ollama as _ollama_mod
@@ -891,9 +892,16 @@ def _sync_multi_search(
         if min_score_threshold > 0:
             merged = [(d, s, st, cn) for d, s, st, cn in merged if s is None or s <= min_score_threshold]
         regular = [
-            _hit(doc, score, st, cn) for doc, score, st, cn in merged[:k]
+            _hit(doc, score, st, cn) for doc, score, st, cn in merged[:rerank_pool_limit(k)]
             if stable_doc_id(cn, doc.metadata or {}, doc.page_content) not in exact_seen
         ]
+        _reranker = get_reranker()
+        if _reranker is not None and regular:
+            _cand_count = int(os.environ.get("RAG_RERANKER_CANDIDATES", "30"))
+            _to_rerank = regular[:_cand_count]
+            _texts = [h.content for h in _to_rerank]
+            _ranked = _reranker.rerank(query, _texts, top_k=k)
+            regular = [_to_rerank[idx] for idx, _score in _ranked]
         return exact_hits + regular
 
     db_abs = _resolve_db_abs(db_path, cmap)
@@ -959,9 +967,16 @@ def _sync_multi_search(
 
     fused.sort(key=lambda x: x[4], reverse=True)
     regular = [
-        _hit(doc, score, st, cn) for doc, score, st, cn, _ in fused[:k]
+        _hit(doc, score, st, cn) for doc, score, st, cn, _ in fused[:rerank_pool_limit(k)]
         if stable_doc_id(cn, doc.metadata or {}, doc.page_content) not in exact_seen
     ]
+    _reranker = get_reranker()
+    if _reranker is not None and regular:
+        _cand_count = int(os.environ.get("RAG_RERANKER_CANDIDATES", "30"))
+        _to_rerank = regular[:_cand_count]
+        _texts = [h.content for h in _to_rerank]
+        _ranked = _reranker.rerank(query, _texts, top_k=k)
+        regular = [_to_rerank[idx] for idx, _score in _ranked]
     return exact_hits + regular
 
 

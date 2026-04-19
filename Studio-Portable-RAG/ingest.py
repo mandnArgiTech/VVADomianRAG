@@ -993,6 +993,84 @@ def _split_paragraphs(
     return out
 
 
+def _top_section(meta: Dict[str, str]) -> str:
+    """Boundary key for min-size merging: same top-level ``##`` / RFC section only."""
+    sec = (meta.get("section") or "").strip()
+    if sec:
+        parts = sec.split(" > ")
+        if len(parts) >= 2:
+            return " > ".join(parts[:2])
+        return sec
+    sec_num = (meta.get("section_number") or "").strip()
+    if sec_num:
+        return sec_num.split(".")[0]
+    return (meta.get("section_title") or "").strip()
+
+
+def _merge_small_chunks(
+    chunks: List[Tuple[str, Dict[str, str]]],
+    min_size: int = 500,
+    max_size: int = 5000,
+) -> List[Tuple[str, Dict[str, str]]]:
+    """Merge adjacent undersized chunks within the same top-level section (Story F).
+
+    Tiny fragments after header-based splitting embed poorly. Only chunks with
+    ``len(text) < min_size`` merge with each other; a chunk at or above
+    ``min_size`` starts a new group. ``max_size`` caps merged body length.
+    """
+    if not chunks or min_size <= 0:
+        return list(chunks)
+
+    out: List[Tuple[str, Dict[str, str]]] = []
+    buf_text = ""
+    buf_meta: Optional[Dict[str, str]] = None
+    buf_section = ""
+
+    for text, meta in chunks:
+        cur_section = _top_section(meta)
+
+        if not buf_text:
+            buf_text = text
+            buf_meta = dict(meta)
+            buf_section = cur_section
+            continue
+
+        same_section = cur_section == buf_section
+        buf_small = len(buf_text) < min_size
+        next_small = len(text) < min_size
+        merged_len = len(buf_text) + len(text) + 2
+
+        if same_section and buf_small and next_small and merged_len <= max_size:
+            buf_text = buf_text + "\n\n" + text
+        else:
+            if buf_meta is not None:
+                out.append((buf_text, buf_meta))
+            buf_text = text
+            buf_meta = dict(meta)
+            buf_section = cur_section
+
+    if buf_text and buf_meta is not None:
+        out.append((buf_text, buf_meta))
+
+    for i, (_, m) in enumerate(out):
+        m["chunk_index"] = str(i)
+
+    return out
+
+
+def _apply_chunk_min_merge(
+    chunks: List[Tuple[str, Dict[str, str]]], max_size: int
+) -> List[Tuple[str, Dict[str, str]]]:
+    raw = os.environ.get("CHUNK_MIN_SIZE", "500")
+    try:
+        min_sz = int(raw)
+    except ValueError:
+        min_sz = 500
+    if min_sz > 0 and len(chunks) > 1:
+        return _merge_small_chunks(chunks, min_size=min_sz, max_size=max_size)
+    return chunks
+
+
 def _md_char_targets(embed_model: str) -> Tuple[int, int]:
     """Derive min/max char targets for markdown domain chunks, analogous to _rfc_char_targets."""
     for key, limit in MODEL_TOKEN_LIMITS.items():
@@ -1316,6 +1394,7 @@ def chunk_markdown_domain(
             if fv:
                 meta[fk] = fv
         chunks.append((txt, meta))
+    chunks = _apply_chunk_min_merge(chunks, t_max)
     return chunks
 
 
@@ -1371,6 +1450,7 @@ def chunk_rfc(
                 "contains_diagram": _meta_contains_diagram(raw_piece),
             }
             out.append((final_t, meta))
+        out = _apply_chunk_min_merge(out, t_max)
         return out
 
     for i, msec in enumerate(sections):  # pragma: no cover
@@ -1400,6 +1480,7 @@ def chunk_rfc(
                     },
                 )
             )
+    out = _apply_chunk_min_merge(out, t_max)
     return out  # pragma: no cover
 
 

@@ -31,3 +31,6 @@ rank-bm25>=0.2.2
 # Enterprise ingest: async Ollama /api/embed, .gitignore matching (ingest.py)
 aiohttp>=3.9.0
 pathspec>=0.12.0
+
+# optional: for RAG_RERANKER=1 cross-encoder reranking (reranker.py; mirrors repo root).
+sentence-transformers>=3.0.0
