@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from ingest import _apply_chunk_min_merge, _merge_small_chunks, _top_section, chunk_markdown_domain
+from ingest import (
+    _apply_chunk_min_merge,
+    _merge_small_chunks,
+    _top_section,
+    chunk_markdown_domain,
+    iter_concept_ids,
+)
 
 
 def _m(section: str, idx: int = 0, **extra: str) -> dict:
@@ -171,6 +177,18 @@ def test_cm12_rfc_adjacent_same_top_level_merge():
     out = _merge_small_chunks(chunks, min_size=500, max_size=5000)
     assert len(out) == 1
     assert "a" * 100 in out[0][0]
+
+
+def test_cm15_merge_unions_calls_and_concepts():
+    sec = "B > S"
+    chunks = [
+        ("a" * 100, {**_m(sec, 0), "calls": "|foo|", "concepts": "|c1|"}),
+        ("b" * 100, {**_m(sec, 1), "calls": "|bar|", "concepts": "|c2|"}),
+    ]
+    out = _merge_small_chunks(chunks, min_size=500, max_size=5000)
+    assert len(out) == 1
+    assert set(iter_concept_ids(out[0][1].get("calls") or "")) == {"foo", "bar"}
+    assert set(iter_concept_ids(out[0][1].get("concepts") or "")) == {"c1", "c2"}
 
 
 def test_cm13_metadata_preserved_from_first():

@@ -506,7 +506,9 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
             header.append(f"**dependencies:** {dshow}")
         calls_str = (meta.get("calls") or "").strip()
         if calls_str:
-            callees_list = [c for c in calls_str.split("|") if c.strip()][:15]
+            callees_list = [
+                c for c in iter_concept_ids(calls_str) if c != "__truncated__"
+            ][:15]
             if callees_list:
                 header.append(f"**Callees (Outgoing):** {', '.join(callees_list)}")
         if meta.get("retrieval_hop") == "caller":

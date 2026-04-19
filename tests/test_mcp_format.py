@@ -50,6 +50,22 @@ def test_truncate_chunk_closes_odd_inner_fence(monkeypatch):
     assert out.count("```") % 2 == 0
 
 
+def test_format_result_code_calls_uses_iter_concept_ids_style():
+    doc = Document(
+        page_content="body",
+        metadata={
+            "repository": "r",
+            "relative_path": "a.c",
+            "extension": ".c",
+            "chunk_name": "f",
+            "calls": "foo, bar",
+        },
+    )
+    out = mcp.format_result(doc, None, "code")
+    assert "Callees" in out
+    assert "foo" in out and "bar" in out
+
+
 def test_context_window_uses_larger_cap(monkeypatch):
     monkeypatch.setattr(mcp, "RESULT_CHUNK_MAX_CHARS", 50)
     monkeypatch.setattr(mcp, "RESULT_CONTEXT_WINDOW_MAX_CHARS", 120)

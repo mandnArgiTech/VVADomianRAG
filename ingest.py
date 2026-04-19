@@ -536,6 +536,22 @@ def format_concepts_field(ids: Iterable[str]) -> str:
     return "|" + "|".join(unique) + "|" if unique else ""
 
 
+def _merge_min_chunk_sidecar_metadata(buf: Dict[str, str], incoming: Dict[str, str]) -> None:
+    """When min-size merge concatenates bodies, union pipe-token fields (e.g. ``calls``, ``concepts``).
+
+    File-scoped keys (``source_c_files``, ``dependencies``, ``doc_title``, …) stay from the first
+    chunk only (Story F).
+    """
+    for key in ("calls", "concepts"):
+        ids = sorted(
+            set(iter_concept_ids(str(buf.get(key) or "")))
+            | set(iter_concept_ids(str(incoming.get(key) or "")))
+        )
+        ids = [i for i in ids if i != "__truncated__"]
+        if ids:
+            buf[key] = format_concepts_field(ids)
+
+
 def read_file_bytes(path: Path) -> Tuple[Optional[str], str]:
     raw = path.read_bytes()
     for enc in ("utf-8", "latin-1", "cp1252", "iso-8859-1"):
@@ -1051,6 +1067,8 @@ def _merge_small_chunks(
 
         if same_section and buf_small and next_small and merged_len <= max_size:
             buf_text = buf_text + "\n\n" + text
+            if buf_meta is not None:
+                _merge_min_chunk_sidecar_metadata(buf_meta, meta)
         else:
             if buf_meta is not None:
                 out.append((buf_text, buf_meta))

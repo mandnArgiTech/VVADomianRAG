@@ -74,6 +74,18 @@ RESULT_CONTEXT_WINDOW_MAX_CHARS = max(
     int(os.environ.get("MCP_RESULT_CONTEXT_WINDOW_MAX_CHARS", "16000")),
 )
 DEFAULT_TIMEOUT = int(os.environ.get("QUERY_CLI_TIMEOUT", "120"))
+
+
+def _metadata_pipe_or_comma_tokens(raw: str) -> List[str]:
+    """Split ``calls`` / ``concepts``-style fields (pipe- or comma-delimited; matches ``ingest.iter_concept_ids``)."""
+    s = (raw or "").strip()
+    if not s:
+        return []
+    if s.startswith("|"):
+        return [x.strip() for x in s.strip("|").split("|") if x.strip()]
+    return [x.strip() for x in s.split(",") if x.strip()]
+
+
 HISTORY_FILE = Path.home() / ".rag_query_history"
 
 HYBRID_SEARCH = os.environ.get("HYBRID_SEARCH", "1").strip().lower() not in ("0", "false", "no")
@@ -646,7 +658,9 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
             header.append(f"**dependencies:** {dshow}")
         calls_str = (meta.get("calls") or "").strip()
         if calls_str:
-            callees_list = [c for c in calls_str.split("|") if c.strip()][:15]
+            callees_list = [
+                c for c in _metadata_pipe_or_comma_tokens(calls_str) if c != "__truncated__"
+            ][:15]
             if callees_list:
                 header.append(f"**Callees (Outgoing):** {', '.join(callees_list)}")
         if meta.get("retrieval_hop") == "caller":
