@@ -22,9 +22,9 @@ param(
     [string]$ConceptRegistry = ""
 )
 
-# Default chat model (query.py / dashboard): gemma3:27b (128K context, fits A6000 48GB at Q4)
+# Default chat model (query.py / dashboard): gemma3:27b-it-qat (QAT int4, 128K context, ~14GB weights, fits A6000 48GB with 19GB headroom)
 # Override: $env:RAG_LLM_MODEL = "qwen2.5-coder:32b"
-# Pull: ollama pull gemma3:27b
+# Pull: ollama pull gemma3:27b-it-qat
 
 $ErrorActionPreference = "Stop"
 # Prefer Studio-Portable-RAG (build.ps1 default), then Portable_RAG.

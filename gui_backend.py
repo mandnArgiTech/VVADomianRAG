@@ -178,7 +178,7 @@ def _chroma_persistent_client_for_gui(db_path: str) -> Any:
 DEFAULT_DASHBOARD_LLM = (
     query_mod.default_chat_llm_from_env()
     if query_mod is not None
-    else ((os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "gemma3:27b")
+    else ((os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "gemma3:27b-it-qat")
 )
 
 # Optional smaller/faster model for query rewrite only (avoids slow rewrites on large chat models).

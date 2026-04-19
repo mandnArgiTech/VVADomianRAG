@@ -12,11 +12,11 @@ def test_gm01_default_chat_llm_constant(monkeypatch):
     monkeypatch.delenv("RAG_LLM_MODEL", raising=False)
     import query
 
-    assert query.DEFAULT_CHAT_LLM == "gemma3:27b"
+    assert query.DEFAULT_CHAT_LLM == "gemma3:27b-it-qat"
     ns = query.parse_args(["-i"])
     assert (ns.llm_model or "").strip() == ""
     st = query.SessionState(ns)
-    assert st.llm_model == "gemma3:27b"
+    assert st.llm_model == "gemma3:27b-it-qat"
 
 
 def test_gm02_gui_default_dashboard_llm(monkeypatch):
@@ -24,7 +24,7 @@ def test_gm02_gui_default_dashboard_llm(monkeypatch):
     import gui_backend
 
     importlib.reload(gui_backend)
-    assert gui_backend.DEFAULT_DASHBOARD_LLM == "gemma3:27b"
+    assert gui_backend.DEFAULT_DASHBOARD_LLM == "gemma3:27b-it-qat"
 
 
 def test_gm03_rag_llm_model_env_overrides(monkeypatch):
