@@ -48,6 +48,35 @@ Linux/macOS (uses portable layout under `Studio-Portable-RAG` when present — s
 
 See [`RUN_SH_USER_GUIDE.md`](RUN_SH_USER_GUIDE.md) for modes, flags, and Ollama notes.
 
+### Multi-Domain Ingestion
+
+All domains can share the same embedding model (set via `--model` on `./run.sh` or `EMBEDDING_MODEL`).
+
+```bash
+# All domains use the same embedding model (example)
+export EMBEDDING_MODEL=mxbai-embed-large
+
+# SPICE (ngspice + NodalAI)
+./run.sh --mode code --domain spice --source /path/to/ngspice/src
+./run.sh --mode code --domain spice --source /path/to/NodalAI/ecad
+./run.sh --mode domain --domain spice --source ./Studio-Portable-RAG/DomainDocs/ngspice
+
+# Kinematica (ArduPilot / ArduRover)
+./run.sh --mode code --domain kinematica --source /path/to/ardupilot
+./run.sh --mode domain --domain kinematica --source ./Studio-Portable-RAG/DomainDocs/kinematica
+
+# MuJoCo
+./run.sh --mode code --domain mujoco --source /path/to/mujoco/src
+
+# Nav2 (ROS 2 Navigation)
+./run.sh --mode code --domain nav2 --source /path/to/navigation2
+
+# DART
+./run.sh --mode code --domain dart --source /path/to/dart
+```
+
+Use `./query.sh` / MCP `search_knowledge` with the same `--domain` value so collection routing matches the ingest prefix (`{domain}_code`, `{domain}_domain`, etc.).
+
 ### 2. Query from the shell
 
 ```bash

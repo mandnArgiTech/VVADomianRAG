@@ -99,7 +99,7 @@ def test_effective_system_prompt_doc_majority_debug_troubleshoot():
     assert sp == q._DEBUG_SYSTEM_PROMPT
 
 
-def test_effective_system_prompt_code_majority_ngspice():
+def test_effective_system_prompt_code_majority_generic():
     hits = [
         q.SearchHit("a", None, "code", {}, "c"),
         q.SearchHit("b", None, "code", {}, "c"),
@@ -107,7 +107,7 @@ def test_effective_system_prompt_code_majority_ngspice():
         q.SearchHit("d", None, "rally", {}, "c"),
     ]
     sp = q._effective_system_prompt(hits, "auto", None)
-    assert sp == q._NGSPICE_SYSTEM_PROMPT
+    assert sp == q._GENERIC_SYSTEM_PROMPT
 
 
 def test_build_context_blocks_prefers_context_window():

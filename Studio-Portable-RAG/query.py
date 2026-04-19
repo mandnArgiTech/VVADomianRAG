@@ -84,8 +84,6 @@ def _metadata_pipe_or_comma_tokens(raw: str) -> List[str]:
     if s.startswith("|"):
         return [x.strip() for x in s.strip("|").split("|") if x.strip()]
     return [x.strip() for x in s.split(",") if x.strip()]
-
-
 HISTORY_FILE = Path.home() / ".rag_query_history"
 
 HYBRID_SEARCH = os.environ.get("HYBRID_SEARCH", "1").strip().lower() not in ("0", "false", "no")
@@ -236,7 +234,7 @@ _DEBUG_SYSTEM_PROMPT = (
     "Be systematic and complete — do not skip edge cases."
 )
 
-DEFAULT_SYSTEM_PROMPT = _NGSPICE_SYSTEM_PROMPT
+DEFAULT_SYSTEM_PROMPT = _GENERIC_SYSTEM_PROMPT
 
 DEFAULT_SYSTEM_PROMPTS: Dict[str, str] = {
     "ngspice": _NGSPICE_SYSTEM_PROMPT,
@@ -707,7 +705,7 @@ def _domain_filter(names: List[str], domain: str) -> List[str]:
     d = domain.strip().lower()
     if not d or d == "general":
         return names
-    return [n for n in names if d in n.lower()]
+    return [n for n in names if n.lower().startswith(d + "_") or n.lower() == d]
 
 
 def _select_collection_names(cmap: Dict[str, Chroma], search_type: str, domain: str) -> List[str]:
@@ -1341,7 +1339,7 @@ def _effective_system_prompt(
             else:
                 base = _GENERIC_SYSTEM_PROMPT
         else:
-            base = _NGSPICE_SYSTEM_PROMPT
+            base = _GENERIC_SYSTEM_PROMPT
     dp = (_load_system_prompt(domain) or "").strip()
     if dp:
         return f"{dp}\n\n---\n\n{base}"
@@ -1367,7 +1365,7 @@ def concept_search_hits(concept: str, domain: str, cmap: Dict[str, Chroma]) -> L
     needle = f"|{safe_concept}|"
     hits: List[SearchHit] = []
     for cname, vs in cmap.items():
-        if domain and domain.lower() not in cname.lower():
+        if domain and not _domain_filter([cname], domain):
             continue
         try:
             col = vs._collection  # type: ignore[attr-defined]

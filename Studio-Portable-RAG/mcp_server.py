@@ -561,7 +561,7 @@ def _domain_filter(names: List[str], domain: str) -> List[str]:
     d = domain.strip().lower()
     if not d or d == "general":
         return names
-    return [n for n in names if d in n.lower()]
+    return [n for n in names if n.lower().startswith(d + "_") or n.lower() == d]
 
 
 def _hybrid_candidate_cap(k: int, env_var: str) -> int:
