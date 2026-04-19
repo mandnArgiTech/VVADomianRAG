@@ -203,12 +203,16 @@ class Reranker:
 
 ### Step 2: Integration point in mcp_server.py
 
-In `_sync_multi_search`, after the final result list is assembled and sorted (around line 770), before returning:
+**CRITICAL:** `_sync_multi_search` has **two separate code paths** with **two separate return statements**:
+- **Dense-only path** (when `use_hybrid` is False): assembles `regular` list and returns at ~line 704
+- **Hybrid/RRF path** (when `use_hybrid` is True): assembles `regular` from `fused` list and returns at ~line 777
+
+**The reranker must be applied in BOTH paths**, immediately before each `return exact + regular` statement. Use the exact same reranker block in both places:
 
 ```python
 from reranker import get_reranker
 
-# --- Reranker stage (AC-3) ---
+# --- Reranker stage (AC-3) — insert BEFORE each "return exact + regular" ---
 reranker = get_reranker()
 if reranker is not None and regular:  # 'regular' = non-exact results
     cand_count = int(os.environ.get("RAG_RERANKER_CANDIDATES", "30"))
@@ -220,11 +224,23 @@ if reranker is not None and regular:  # 'regular' = non-exact results
 return exact + regular
 ```
 
+Insert this block at **both** return points:
+1. After `regular = [...]` at ~line 699–703, before the `return` at line 704
+2. After `regular = [...]` at ~line 772–776, before the `return` at line 777
+
 ### Step 3: Same integration in query.py
 
-Mirror the MCP integration in `query.py`'s `_sync_multi_search` at the equivalent result-assembly point.
+`query.py`'s `_sync_multi_search` (line 828) has the **same dual-path structure** (dense-only and hybrid). Apply the identical reranker block before both return statements in `query.py` as well.
 
-### Step 4: Update requirements.txt
+### Step 4: CrossEncoder API notes
+
+The `sentence_transformers.CrossEncoder` is used (not `FlagEmbedding.FlagReranker`) to avoid adding another dependency. Key API behavior:
+- `CrossEncoder.predict(pairs)` returns **raw logits** (unbounded floats) — higher means more relevant
+- No sigmoid normalization is needed since we only care about relative ordering for re-ranking
+- `trust_remote_code=True` is required for `bge-reranker-v2-m3`
+- The model automatically handles tokenization and truncation to `max_length=512` tokens per pair
+
+### Step 5: Update requirements.txt
 
 Add:
 ```

@@ -111,11 +111,24 @@ def _merge_small_chunks(
         return chunks
 
     def _top_section(meta: Dict[str, str]) -> str:
-        """Extract top-level ## section from hierarchy like 'Title > Section > Sub'."""
+        """Extract top-level section boundary key from chunk metadata.
+
+        Domain doc chunks use ``section`` field with hierarchy like 'Title > Section > Sub'.
+        RFC chunks use ``section_number`` and ``section_title`` instead.
+        This function handles both schemas so _merge_small_chunks works for
+        both chunk_markdown_domain() and chunk_rfc() output.
+        """
         sec = (meta.get("section") or "").strip()
-        parts = sec.split(" > ")
-        # Return first two segments (doc title + ## heading) as boundary key
-        return " > ".join(parts[:2]) if len(parts) >= 2 else sec
+        if sec:
+            parts = sec.split(" > ")
+            # Return first two segments (doc title + ## heading) as boundary key
+            return " > ".join(parts[:2]) if len(parts) >= 2 else sec
+        # RFC fallback: use section_number (e.g., "3.2") → top-level "3"
+        sec_num = (meta.get("section_number") or "").strip()
+        if sec_num:
+            return sec_num.split(".")[0]  # "3.2.1" → "3" (top-level RFC section)
+        # Last resort: section_title
+        return (meta.get("section_title") or "").strip()
 
     out: List[Tuple[str, Dict[str, str]]] = []
     buf_text = ""
@@ -174,7 +187,15 @@ At the end of `chunk_markdown_domain()`, before the `return chunks` line (around
 
 ### Step 3: Wire into `chunk_rfc`
 
-Same pattern at the end of `chunk_rfc()`, before its return statement.
+Same pattern at the end of `chunk_rfc()`, before its return statement (~line 1403 in `ingest.py`).
+
+**Note:** The `chunk_rfc` return at line 1403 is tagged `# pragma: no cover`. The merge integration should be placed just before that return. For testing, use a **direct unit test** of `_merge_small_chunks` with RFC-style metadata (containing `section_number` and `section_title` instead of `section`) rather than an end-to-end `chunk_rfc` test.
+
+**RFC metadata schema differs from domain docs:**
+- Domain doc chunks: `section = "Title > Mathematical Formulation > Subsection"`
+- RFC chunks: `section_number = "3.2"`, `section_title = "Header Compression"`
+
+The `_top_section` helper (updated in Step 1 above) handles both schemas: it checks `section` first (domain docs), falls back to `section_number` for RFC chunks (extracting the top-level number, e.g., "3.2.1" → "3"), and finally falls back to `section_title`.
 
 ---
 
@@ -195,8 +216,9 @@ CM-07   | Merged chunk inherits first chunk's section metadata | Chunks with sec
 CM-08   | Empty input returns empty | Assert _merge_small_chunks([]) == []
 CM-09   | min_size=0 disables merging | 3 small chunks. min_size=0. Assert 3 chunks returned unchanged
 CM-10   | chunk_markdown_domain produces fewer chunks with merging | Feed Chapter_04_Newton_Raphson.md content. Count chunks without merge (CHUNK_MIN_SIZE=0) vs with (CHUNK_MIN_SIZE=500). Assert with < without
-CM-11   | chunk_rfc also applies merging | Feed a short RFC text. Assert small adjacent chunks are merged
-CM-12   | Metadata fields other than chunk_index preserved | Merge two chunks. Assert doc_title, source_c_files, device_family all preserved from first chunk
+CM-11   | RFC metadata: _top_section extracts top-level from section_number | Chunk with section_number="3.2.1", no section field. Assert _top_section returns "3"
+CM-12   | RFC adjacent chunks in same top-level section merge | Two chunks: section_number="3.1" and "3.2", both < min_size. Assert merged (both top-level "3")
+CM-13   | Metadata fields other than chunk_index preserved | Merge two chunks with doc_title, source_c_files, device_family. Assert all preserved from first chunk
 ```
 
 ### Manual validation
@@ -235,4 +257,5 @@ Expected: 20%+ reduction in chunk count with merging enabled.
 - [ ] No output chunk exceeds `max_size`
 - [ ] `chunk_index` renumbered sequentially after merge
 - [ ] Section metadata preserved from first chunk in merge group
-- [ ] All 12 new tests pass, all existing tests pass, coverage ≥ 95%
+- [ ] `_top_section` handles both domain doc (`section` field) and RFC (`section_number` field) metadata
+- [ ] All 13 new tests pass, all existing tests pass, coverage ≥ 95%
