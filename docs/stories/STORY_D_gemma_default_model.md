@@ -1,4 +1,4 @@
-# STORY D: Gemma 3/4 as Default Chat Model with SPICE-Optimized System Prompt
+# STORY D: Gemma 3 27B QAT as Default Chat Model with SPICE-Optimized System Prompt
 
 **Repository:** `mandnArgiTech/VVADomianRAG` branch `ngspice_rag`
 **Priority:** High
@@ -11,12 +11,20 @@
 
 ## Business Context
 
-The RAG currently defaults to `qwen2.5-coder:32b` for chat in the GUI and `llama3` for the query CLI. We want **Gemma 3 27B** (or Gemma 4 when available via Ollama) as the default chat model for all interfaces because:
+The RAG currently defaults to `qwen2.5-coder:32b` for chat in the GUI and `llama3` for the query CLI. We want **Gemma 3 27B QAT (Quantization-Aware Training)** as the default chat model for all interfaces because:
 
 1. **Context window**: Gemma 3 27B supports 128K tokens — critical when the RAG retrieves 10–20 chunks (each 500–2000 chars) plus call-graph expansion plus domain doc cross-references. qwen2.5-coder:32b's 32K context fills up fast.
 2. **Multilingual math**: Gemma 3 handles LaTeX/math notation in the domain docs without mangling it.
-3. **Fits the hardware**: 27B Q4 quantization runs well on the RTX A6000 48GB with room for embeddings.
-4. **Instruction following**: Gemma 3 follows structured system prompts reliably, which we need for the SPICE-engineer persona.
+3. **QAT > PTQ quality**: Google's QAT process bakes quantization into training, reducing perplexity drop by 54% compared to post-training Q4_0 quantization. The `gemma3:27b-it-qat` variant delivers near-BF16 quality at int4 memory cost.
+4. **Fits the hardware perfectly**: On the RTX A6000 48GB:
+   - Model weights (QAT int4): ~14 GB
+   - KV cache at 64K context: ~15 GB
+   - Total: ~29 GB → **19 GB free** for Ollama embeddings (nomic-embed-text ~1GB) + ChromaDB
+   - Compare: standard Q4_K_M (`gemma3:27b`) uses ~17 GB weights → 32 GB total → 16 GB free (still fine but tighter)
+   - Compare: Q8 would use ~28 GB weights → 43 GB total → only 5 GB free (too tight with embeddings)
+5. **Instruction following**: Gemma 3 follows structured system prompts reliably, which we need for the SPICE-engineer persona.
+
+**Ollama pull command:** `ollama pull gemma3:27b-it-qat`
 
 This story also creates a **domain-optimized system prompt** that tells Gemma it's a SPICE kernel engineer, instructs it to cross-reference ngspice C patterns with NodalAI Python implementations, and teaches it to interpret the `source_c_files` metadata to connect domain docs to code.
 
@@ -24,7 +32,7 @@ This story also creates a **domain-optimized system prompt** that tells Gemma it
 
 ## Scope
 
-1. Change default LLM model from `qwen2.5-coder:32b` / `llama3` to `gemma3:27b` across all interfaces
+1. Change default LLM model from `qwen2.5-coder:32b` / `llama3` to `gemma3:27b-it-qat` across all interfaces
 2. Create a `system_prompts/spice_engineer.md` file with a domain-specific system prompt
 3. Auto-load the system prompt when `--domain spice` is active
 4. Keep backward compatibility — any model can still be used via `RAG_LLM_MODEL` env var or `--chat-model` CLI flag
@@ -33,23 +41,23 @@ This story also creates a **domain-optimized system prompt** that tells Gemma it
 
 ## Acceptance Criteria
 
-### AC-1: Default model changed to gemma3:27b
+### AC-1: Default model changed to gemma3:27b-it-qat
 
 **Given** no `RAG_LLM_MODEL` env var is set,
 **When** the user starts `query.py --chat` or opens the GUI dashboard,
-**Then** the LLM model used is `gemma3:27b` (not `qwen2.5-coder:32b` or `llama3`).
+**Then** the LLM model used is `gemma3:27b-it-qat` (not `qwen2.5-coder:32b` or `llama3`).
 
 Implementation points:
-- `gui_backend.py` line 179: change default from `"qwen2.5-coder:32b"` to `"gemma3:27b"`
-- `query.py` line 1908: change `default=` from `"llama3"` to `"gemma3:27b"`
+- `gui_backend.py` line 179: change default from `"qwen2.5-coder:32b"` to `"gemma3:27b-it-qat"`
+- `query.py` line 1908: change `default=` from `"llama3"` to `"gemma3:27b-it-qat"`
 
 ### AC-2: Model availability check at startup
 
 **Given** the user starts any chat interface,
-**When** `gemma3:27b` is not pulled in Ollama,
+**When** `gemma3:27b-it-qat` is not pulled in Ollama,
 **Then** the system:
-1. Logs a warning: `"Default model gemma3:27b not found. Run: ollama pull gemma3:27b"`
-2. Falls back to any available model from the priority list: `["gemma3:27b", "gemma3:12b", "qwen2.5-coder:32b", "llama3", "mistral"]`
+1. Logs a warning: `"Default model gemma3:27b-it-qat not found. Run: ollama pull gemma3:27b-it-qat"`
+2. Falls back to any available model from the priority list: `["gemma3:27b-it-qat", "gemma3:27b", "gemma3:12b-it-qat", "gemma3:12b", "qwen2.5-coder:32b", "llama3", "mistral"]`
 3. Logs which fallback model was selected
 
 ### AC-3: SPICE engineer system prompt created
@@ -97,10 +105,10 @@ Convention: `system_prompts/spice_engineer.md` for `--domain spice`.
 
 ### AC-6: Gemma-specific Ollama API parameters
 
-**Given** the model is `gemma3:*`,
+**Given** the model is `gemma3:*` (including `gemma3:27b-it-qat`),
 **When** the Ollama `/api/chat` call is made,
 **Then** these parameters are set:
-- `num_ctx: 65536` (use 64K of the 128K window — leave room for response)
+- `num_ctx: 65536` (use 64K of the 128K window — leave room for response. On A6000 48GB with QAT int4 weights at ~14GB, the KV cache for 64K context costs ~15GB, totaling ~29GB with 19GB headroom)
 - `temperature: 0.1` (low creativity for technical accuracy)
 - `top_p: 0.9`
 - `repeat_penalty: 1.1`
@@ -119,9 +127,9 @@ For non-Gemma models, keep existing parameter defaults.
 **When** this story is complete,
 **Then** the scripts include a comment documenting:
 ```bash
-# Default chat model: gemma3:27b (128K context, fits A6000 48GB at Q4)
+# Default chat model: gemma3:27b-it-qat (QAT int4, 128K context, ~14GB weights, fits A6000 48GB with 19GB headroom)
 # Override: export RAG_LLM_MODEL=qwen2.5-coder:32b
-# Pull: ollama pull gemma3:27b
+# Pull: ollama pull gemma3:27b-it-qat
 ```
 
 ### AC-9: All existing tests pass
@@ -171,7 +179,7 @@ Call this in the chat initialization path and pass the result to the Ollama API 
 default=(os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "llama3",
 
 # After:
-default=(os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "gemma3:27b",
+default=(os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "gemma3:27b-it-qat",
 ```
 
 ### Step 4: Change defaults in gui_backend.py
@@ -183,7 +191,7 @@ default=(os.environ.get("RAG_LLM_MODEL", "") or "").strip() or "gemma3:27b",
 os.environ.get("RAG_LLM_MODEL", "").strip() or "qwen2.5-coder:32b"
 
 # After:
-os.environ.get("RAG_LLM_MODEL", "").strip() or "gemma3:27b"
+os.environ.get("RAG_LLM_MODEL", "").strip() or "gemma3:27b-it-qat"
 ```
 
 ### Step 5: Model availability check
@@ -191,7 +199,15 @@ os.environ.get("RAG_LLM_MODEL", "").strip() or "gemma3:27b"
 Add to both `query.py` (chat startup) and `gui_backend.py` (first chat request):
 
 ```python
-_FALLBACK_MODELS = ["gemma3:27b", "gemma3:12b", "qwen2.5-coder:32b", "llama3", "mistral"]
+_FALLBACK_MODELS = [
+    "gemma3:27b-it-qat",   # QAT int4 — best quality/memory (14GB weights, ~29GB total @ 64K ctx)
+    "gemma3:27b",           # Standard Q4_K_M — good fallback (17GB weights, ~32GB total @ 64K ctx)
+    "gemma3:12b-it-qat",   # QAT 12B — fits RTX 4060 8GB
+    "gemma3:12b",           # Standard 12B Q4_K_M
+    "qwen2.5-coder:32b",   # Previous default
+    "llama3",               # Widely available
+    "mistral",              # Lightweight fallback
+]
 
 def _check_model_available(model: str, ollama_url: str = "http://127.0.0.1:11434") -> str:
     """Check if model is available in Ollama. Return available model or fallback."""
@@ -252,16 +268,16 @@ Add comments to `run.sh` and `run.ps1` as specified in AC-8.
 ```
 Test ID | Description | Approach
 --------|-------------|----------
-GM-01   | Default model is gemma3:27b in query.py | Import argparse defaults, assert "gemma3:27b" is the default
-GM-02   | Default model is gemma3:27b in gui_backend.py | Check the RAG_LLM_MODEL fallback constant
+GM-01   | Default model is gemma3:27b-it-qat in query.py | Import argparse defaults, assert "gemma3:27b-it-qat" is the default
+GM-02   | Default model is gemma3:27b-it-qat in gui_backend.py | Check the RAG_LLM_MODEL fallback constant
 GM-03   | RAG_LLM_MODEL env var overrides default | Set env var to "qwen2.5-coder:32b", verify it's used
 GM-04   | _load_system_prompt finds spice prompt | Create temp system_prompts/spice_engineer.md, assert loaded
 GM-05   | _load_system_prompt returns empty for unknown domain | Assert _load_system_prompt("nonexistent") returns ""
 GM-06   | _load_system_prompt falls back to default.md | Create temp default.md only, assert it's loaded for any domain
-GM-07   | _ollama_options_for_model returns Gemma-specific params | Assert gemma3:27b gets num_ctx=65536, temperature=0.1
+GM-07   | _ollama_options_for_model returns Gemma-specific params | Assert gemma3:27b-it-qat gets num_ctx=65536, temperature=0.1
 GM-08   | _ollama_options_for_model returns defaults for non-Gemma | Assert qwen2.5-coder:32b gets temperature=0.2
-GM-09   | _check_model_available returns model when present | Mock Ollama /api/tags with gemma3:27b listed. Assert returns "gemma3:27b"
-GM-10   | _check_model_available falls back when model missing | Mock /api/tags without gemma3:27b but with llama3. Assert returns "llama3"
+GM-09   | _check_model_available returns model when present | Mock Ollama /api/tags with gemma3:27b-it-qat listed. Assert returns "gemma3:27b-it-qat"
+GM-10   | _check_model_available falls back when model missing | Mock /api/tags without gemma3:27b-it-qat but with llama3. Assert returns "llama3"
 GM-11   | system_prompts/spice_engineer.md exists and is < 2000 tokens | Check file exists, rough token count (chars/4) < 2000
 GM-12   | System prompt contains key SPICE terminology | Assert "Newton-Raphson", "Jacobian", "companion model", "NodalAI" all present in prompt
 ```
@@ -271,8 +287,8 @@ GM-12   | System prompt contains key SPICE terminology | Assert "Newton-Raphson"
 After implementation:
 
 ```bash
-# Pull Gemma 3
-ollama pull gemma3:27b
+# Pull Gemma 3 QAT (14GB download, int4 quantization-aware trained)
+ollama pull gemma3:27b-it-qat
 
 # Ingest domain docs (Story C must be done first)
 ./run.sh --mode domain --domain spice --source ./Studio-Portable-RAG/DomainDocs/ngspice
@@ -294,18 +310,19 @@ ollama pull gemma3:27b
 
 | Risk | Mitigation |
 |------|------------|
-| Gemma 3 27B doesn't fit A6000 at Q4 with embeddings running | 27B Q4 ≈ 16GB VRAM. A6000 has 48GB. Embeddings (nomic-embed-text) use ~1GB. Plenty of room. If issues arise, fall back to gemma3:12b. |
-| Gemma 3 hallucinates ngspice function names not in context | System prompt explicitly says "only reference functions present in the RAG context". Low temperature (0.1) reduces hallucination. |
-| Gemma 4 releases on Ollama before this ships | The fallback chain checks `gemma3:27b` first. When Gemma 4 is available, add `gemma4:27b` to top of `_FALLBACK_MODELS` list — one-line change. |
-| 65K context window is expensive per query (slow) | On A6000, Gemma 3 27B Q4 generates ~15 tok/s at 64K context. Acceptable for interactive debugging. For batch, user can override to smaller model. |
+| Gemma 3 27B QAT doesn't fit A6000 with embeddings running | QAT int4 weights are ~14GB. KV cache at 64K context is ~15GB. Total ~29GB. A6000 has 48GB. Embeddings (nomic-embed-text) use ~1GB. **19GB headroom** — no risk. If KV cache at 128K context is needed (~30GB KV), reduce `num_ctx` to 65536 or fall back to `gemma3:12b-it-qat` (~6.6GB weights). |
+| Gemma 3 QAT hallucinates ngspice function names not in context | System prompt explicitly says "only reference functions present in the RAG context". Low temperature (0.1) reduces hallucination. |
+| Gemma 4 releases on Ollama before this ships | The fallback chain checks `gemma3:27b-it-qat` first. When Gemma 4 is available, add `gemma4:27b-it-qat` to top of `_FALLBACK_MODELS` list — one-line change. |
+| 65K context window is expensive per query (slow) | On A6000, Gemma 3 27B QAT int4 generates ~15–20 tok/s at 64K context with flash attention. Acceptable for interactive debugging. For batch, user can override to smaller model. Enable flash attention: `OLLAMA_FLASH_ATTENTION=1`. |
 | System prompt takes tokens away from RAG context | System prompt is < 2000 tokens. With 65K context, this is < 3% overhead. |
+| QAT variant not available in user's Ollama version | QAT requires Ollama 0.6+. Fallback chain includes standard `gemma3:27b` (Q4_K_M) as second option. |
 
 ---
 
 ## Definition of Done
 
 - [ ] `system_prompts/spice_engineer.md` exists with domain-specific prompt
-- [ ] Default LLM model is `gemma3:27b` in `query.py` and `gui_backend.py`
+- [ ] Default LLM model is `gemma3:27b-it-qat` in `query.py` and `gui_backend.py`
 - [ ] `_load_system_prompt()` loads domain-specific prompts
 - [ ] `_check_model_available()` with fallback chain implemented
 - [ ] `_ollama_options_for_model()` sets Gemma-specific parameters
