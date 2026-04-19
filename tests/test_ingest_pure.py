@@ -452,6 +452,15 @@ def test_build_arg_parser():
     assert args.mode == "status"
 
 
+def test_default_vector_db_dir_bundle_vs_repo(monkeypatch):
+    bundle = Path("/tmp/fake_bundle/Studio-Portable-RAG")
+    monkeypatch.setattr(ing, "SCRIPT_DIR", bundle)
+    assert ing._default_vector_db_dir() == str((bundle / "VectorDB").resolve())
+    repo = Path("/tmp/fake_repo_root")
+    monkeypatch.setattr(ing, "SCRIPT_DIR", repo)
+    assert ing._default_vector_db_dir() == str((repo / "Studio-Portable-RAG" / "VectorDB").resolve())
+
+
 def test_choose_strategy_mib_wiki_community_release(tmp_path):
     mib = tmp_path / "m.mib"
     mib.write_text("X DEFINITIONS ::= BEGIN END\n", encoding="utf-8")

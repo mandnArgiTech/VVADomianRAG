@@ -165,6 +165,7 @@ if [[ -n "$DB_PATH" ]]; then
   export DB_PATH="$(cd "$DB_PATH" && pwd)"
   echo " VectorDB path   : $DB_PATH"
 else
+  mkdir -p "$BASE_DIR/VectorDB"
   export DB_PATH="$(cd "$BASE_DIR/VectorDB" && pwd)"
   echo " VectorDB path   : $DB_PATH"
 fi

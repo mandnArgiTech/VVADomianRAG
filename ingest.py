@@ -120,6 +120,15 @@ MAX_RETRIES = 5
 EMBED_BACKOFF_SEC = 5
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+
+def _default_vector_db_dir() -> str:
+    """Default Chroma dir: next to ingest in the portable bundle, else repo ``Studio-Portable-RAG/VectorDB``."""
+    p = SCRIPT_DIR
+    if p.name == "Studio-Portable-RAG":
+        return str((p / "VectorDB").resolve())
+    return str((p / "Studio-Portable-RAG" / "VectorDB").resolve())
+
+
 METADATA_KEYS = [
     "source",
     "source_type",
@@ -4748,8 +4757,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--collection", default=os.environ.get("CHROMA_COLLECTION", "").strip() or None)
     p.add_argument(
         "--db-path",
-        default=os.environ.get("DB_PATH", "").strip()
-        or str(SCRIPT_DIR / "Studio-Portable-RAG" / "VectorDB"),
+        default=os.environ.get("DB_PATH", "").strip() or _default_vector_db_dir(),
     )
     p.add_argument("--rally-project", default=os.environ.get("RALLY_PROJECT", "").strip() or None)
     p.add_argument("--rally-filter", default=os.environ.get("RALLY_FILTER", "").strip() or None)
