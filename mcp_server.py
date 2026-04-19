@@ -42,7 +42,7 @@ from hybrid_search import (
     stable_doc_id,
 )
 from ingest import iter_concept_ids
-from query import _god_mode_chunk_name_matches, _load_symbols_vocab
+from query import SearchHit, _god_mode_chunk_name_matches, _load_symbols_vocab
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -102,6 +102,11 @@ OLLAMA_HEARTBEAT_SEC = max(5, int(os.environ.get("MCP_OLLAMA_HEARTBEAT_SEC", "30
 MCP_OLLAMA_HEARTBEAT_TIMEOUT = max(1, int(os.environ.get("MCP_OLLAMA_HEARTBEAT_TIMEOUT", "15")))
 HYBRID_SEARCH = os.environ.get("HYBRID_SEARCH", "1").strip().lower() not in ("0", "false", "no")
 RRF_K = float(os.environ.get("RRF_K", "60"))
+# Dependency / caller second-pass (see _sync_multi_search_with_dependency_hop)
+QUERY_DEP_MAX_TOKENS = max(0, int(os.environ.get("QUERY_DEP_MAX_TOKENS", "16")))
+QUERY_DEP_MAX_HITS = max(0, int(os.environ.get("QUERY_DEP_MAX_HITS", "10")))
+QUERY_DEP_LOOKUP_K = max(1, int(os.environ.get("QUERY_DEP_LOOKUP_K", "2")))
+QUERY_CALLER_MAX_HITS = max(0, int(os.environ.get("QUERY_CALLER_MAX_HITS", "10")))
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_LOG = os.path.join(SCRIPT_DIR, "mcp_server.log")
 LOG_FILE = os.environ.get("MCP_LOG", "") or DEFAULT_LOG
@@ -495,6 +500,13 @@ def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
         if dep:
             dshow = dep if len(dep) <= 500 else dep[:500] + "…"
             header.append(f"**dependencies:** {dshow}")
+        calls_str = (meta.get("calls") or "").strip()
+        if calls_str:
+            callees_list = [c for c in calls_str.split("|") if c.strip()][:15]
+            if callees_list:
+                header.append(f"**Callees (Outgoing):** {', '.join(callees_list)}")
+        if meta.get("retrieval_hop") == "caller":
+            header.append("**[CALLER NODE]** This chunk calls the primary retrieved function.")
         lang = LANG_TAG.get(ext, "")
         fence = _fence_for(content)
         return "### Code\n" + "\n".join(header) + f"\n\n{fence}{lang}\n{content}\n{fence}"
@@ -797,14 +809,14 @@ def _sync_fetch_dependents(
     repo_filter: str,
     cmap: Dict[str, Chroma],
     max_hits: int,
-) -> List[Tuple[Any, Optional[float], str]]:
+) -> List[Tuple[Any, Optional[float], str, str]]:
     """Chunks whose *dependencies* metadata references symbols from primary hits."""
     targets = _select_collection_names(cmap, search_type, domain)
     lookups = _depend_stems_from_results(primary)
     if not lookups or not targets:
         return []
     seen: set = set()
-    out: List[Tuple[Any, Optional[float], str]] = []
+    out: List[Tuple[Any, Optional[float], str, str]] = []
     rf = repo_filter.strip()
     for stem in lookups:
         if not stem:
@@ -837,9 +849,155 @@ def _sync_fetch_dependents(
                 text = docs[i] if i < len(docs) else ""
                 doc = Document(page_content=text or "", metadata=dict(meta or {}))
                 st = _infer_source_type(meta or {})
-                out.append((doc, None, st))
+                out.append((doc, None, st, name))
                 if len(out) >= max_hits:
                     return out
+    return out
+
+
+def _sync_fetch_callers(
+    primary: List[SearchHit],
+    search_type: str,
+    domain: str,
+    repo_filter: str,
+    cmap: Dict[str, Chroma],
+    max_hits: int,
+) -> List[Tuple[Any, Optional[float], str, str]]:
+    """Fetch chunks that call functions found in primary hits (reverse call-graph hop).
+
+    For each primary code hit with a ``chunk_name``, queries code collections for
+    chunks whose ``calls`` metadata contains ``|chunk_name|``.
+    Returns ``(doc, score, source_type, collection_name)`` tuples.
+    """
+    code_names = _select_collection_names(cmap, search_type, domain)
+    rf = repo_filter.strip()
+    seen: set = set()
+    out: List[Tuple[Any, Optional[float], str, str]] = []
+    for hit in primary:
+        if hit.source_type != "code":
+            continue
+        chunk_name = str((hit.metadata or {}).get("chunk_name") or "").strip()
+        if not chunk_name:
+            continue
+        needle = f"|{chunk_name}|"
+        for coll_name in code_names:
+            if len(out) >= max_hits:
+                return out
+            vs = cmap[coll_name]
+            col = getattr(vs, "_collection", None)
+            if col is None:
+                continue
+            try:
+                res = col.get(
+                    where={"calls": {"$contains": needle}},
+                    limit=5,
+                    include=["documents", "metadatas"],
+                )
+            except Exception as exc:
+                logger.warning("caller get failed on %s: %s", coll_name, exc)
+                continue
+            ids_list = res.get("ids") or []
+            docs_list = res.get("documents") or []
+            metas_list = res.get("metadatas") or []
+            for i, did in enumerate(ids_list):
+                if did in seen:
+                    continue
+                meta = metas_list[i] if i < len(metas_list) else {}
+                if rf and str((meta or {}).get("repository", "")).strip() != rf:
+                    continue
+                seen.add(did)
+                text = docs_list[i] if i < len(docs_list) else ""
+                doc = Document(page_content=text or "", metadata=dict(meta or {}))
+                st = _infer_source_type(meta or {})
+                out.append((doc, None, st, coll_name))
+                if len(out) >= max_hits:
+                    return out
+    return out
+
+
+def _sync_multi_search_with_dependency_hop(
+    query: str,
+    k: int,
+    search_type: str,
+    domain: str,
+    repo_filter: str,
+    cmap: Dict[str, Chroma],
+) -> List[Tuple[Any, Optional[float], str]]:
+    """Primary search plus dependency metadata lookup and reverse call-graph (callers)."""
+    primary_tuples = _sync_multi_search(query, k, search_type, domain, repo_filter, cmap)
+    if QUERY_DEP_MAX_HITS <= 0 or not primary_tuples:
+        return primary_tuples
+
+    primary_hits: List[SearchHit] = [
+        SearchHit(
+            content=getattr(d, "page_content", "") or "",
+            score=float(s) if s is not None else None,
+            source_type=st,
+            metadata=dict(getattr(d, "metadata", None) or {}),
+            collection="",
+        )
+        for d, s, st in primary_tuples
+    ]
+    dep_tuples = _sync_fetch_dependents(
+        primary_tuples,
+        search_type,
+        domain,
+        repo_filter,
+        cmap,
+        max_hits=min(k * 2, max(1, QUERY_DEP_MAX_HITS * 2)),
+    )
+    seen = {stable_doc_id(h.collection or "", h.metadata, h.content) for h in primary_hits}
+    extra: List[SearchHit] = []
+    for doc, _sc, st, cname in dep_tuples:
+        sid = stable_doc_id(cname, doc.metadata or {}, doc.page_content or "")
+        if sid in seen:
+            continue
+        seen.add(sid)
+        meta = dict(doc.metadata or {})
+        meta["retrieval_hop"] = "dependency"
+        extra.append(
+            SearchHit(
+                content=doc.page_content or "",
+                score=None,
+                source_type=st,
+                metadata=meta,
+                collection=cname,
+                retrieval_hop="dependency",
+            )
+        )
+
+    if QUERY_CALLER_MAX_HITS > 0:
+        caller_tuples = _sync_fetch_callers(
+            primary_hits,
+            search_type,
+            domain,
+            repo_filter,
+            cmap,
+            max_hits=QUERY_CALLER_MAX_HITS,
+        )
+        for doc, _sc, st, cname in caller_tuples:
+            sid = stable_doc_id(cname, doc.metadata or {}, doc.page_content or "")
+            if sid in seen:
+                continue
+            seen.add(sid)
+            meta = dict(doc.metadata or {})
+            meta["retrieval_hop"] = "caller"
+            extra.append(
+                SearchHit(
+                    content=doc.page_content or "",
+                    score=None,
+                    source_type=st,
+                    metadata=meta,
+                    collection=cname,
+                    retrieval_hop="caller",
+                )
+            )
+
+    merged: List[SearchHit] = primary_hits + extra
+    out: List[Tuple[Any, Optional[float], str]] = []
+    for h in merged:
+        doc = Document(page_content=h.content, metadata=dict(h.metadata or {}))
+        out.append((doc, h.score, h.source_type))
     return out
 
 
@@ -925,7 +1083,7 @@ async def _run_search(
     ex = init_mcp_executor()
     fut = loop.run_in_executor(
         ex,
-        _sync_multi_search,
+        _sync_multi_search_with_dependency_hop,
         query,
         k,
         search_type,
@@ -938,9 +1096,9 @@ async def _run_search(
         return "No matching chunks found."
     parts = [format_result(d, s, st) for d, s, st in results]
     text = "\n\n---\n\n".join(parts)
-    if include_dependents:
+    if include_dependents and QUERY_DEP_MAX_HITS <= 0:
 
-        def _dep() -> List[Tuple[Any, Optional[float], str]]:
+        def _dep() -> List[Tuple[Any, Optional[float], str, str]]:
             return _sync_fetch_dependents(
                 results,
                 search_type,
@@ -956,7 +1114,7 @@ async def _run_search(
         )
         if dep:
             text += "\n\n## Dependent files (import metadata)\n\n"
-            text += "\n\n---\n\n".join(format_result(d, s, st) for d, s, st in dep)
+            text += "\n\n---\n\n".join(format_result(d, s, st) for d, s, st, _ in dep)
 
     def _cal() -> List[Tuple[Any, Optional[float], str]]:
         mc = max(1, int(os.environ.get("RAG_CALLEE_EXPAND_MAX", "10")))
