@@ -107,6 +107,41 @@ QUERY_PROMPT_DOC_THRESHOLD = float(os.environ.get("QUERY_PROMPT_DOC_THRESHOLD", 
 # BM25 typo expansion: built at ingest time (see ingest.py symbols_vocabulary.json).
 _vocab_cache: Dict[str, frozenset] = {}
 
+# God mode (exact chunk_name): drop tiny declaration chunks; skip noisy file stems (Story H).
+GOD_MODE_MIN_CONTENT_SIZE = 50
+
+_GOD_MODE_STEM_DENYLIST: frozenset = frozenset(
+    {
+        "terminal",
+        "main",
+        "init",
+        "util",
+        "utils",
+        "helper",
+        "helpers",
+        "common",
+        "config",
+        "test",
+        "tests",
+        "setup",
+        "build",
+        "makefile",
+        "readme",
+        "changelog",
+        "license",
+        "todo",
+        "fixme",
+    }
+)
+
+
+def _is_noise_stem(name: str, query_raw: str) -> bool:
+    """True if *name* is a denylisted stem and the query does not name the file (e.g. ``terminal.c``)."""
+    n = (name or "").strip().lower()
+    if n not in _GOD_MODE_STEM_DENYLIST:
+        return False
+    return not re.search(rf"\b{re.escape(n)}\.[a-zA-Z]+\b", query_raw or "", re.IGNORECASE)
+
 
 def _load_symbols_vocab(db_path: str) -> frozenset:
     root = (db_path or "").strip()
@@ -155,19 +190,22 @@ def _god_mode_chunk_name_matches(query_raw: str, vocab: frozenset) -> List[str]:
 
     for t in tokens:
         if t in vocab:
-            add(t)
+            if not _is_noise_stem(t, q):
+                add(t)
             continue
         c = canon_lower.get(t.lower())
-        if c:
+        if c and not _is_noise_stem(c, q):
             add(c)
 
     if " " not in q:
         cq = canon_lower.get(q.lower())
         if q not in seen and (cq is None or cq not in seen):
             if q in vocab:
-                add(q)
+                if not _is_noise_stem(q, q):
+                    add(q)
             elif cq:
-                add(cq)
+                if not _is_noise_stem(cq, q):
+                    add(cq)
             else:
                 add(q)
     return out
@@ -822,6 +860,8 @@ def _exact_chunk_name_hits(
         ids_list = res.get("ids") or []
         for i in range(len(docs)):
             text = docs[i] if i < len(docs) else ""
+            if len((text or "").strip()) < GOD_MODE_MIN_CONTENT_SIZE:
+                continue
             meta = dict(metas[i] if i < len(metas) else {})
             did = ids_list[i] if i < len(ids_list) else ""
             key = did or stable_doc_id(name, meta, text)

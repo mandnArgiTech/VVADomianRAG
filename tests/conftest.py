@@ -15,6 +15,12 @@ def _disable_tqdm(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _code_chunk_min_size_off_for_toy_snippets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Story H defaults to 50; many unit tests use tiny C/Java snippets <50 chars."""
+    monkeypatch.setenv("CODE_CHUNK_MIN_SIZE", "0")
+
+
+@pytest.fixture(autouse=True)
 def _ingest_embed_test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep ingest tests offline and deterministic.
 

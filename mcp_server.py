@@ -45,7 +45,12 @@ from hybrid_search import (
     stable_doc_id,
 )
 from ingest import iter_concept_ids
-from query import SearchHit, _god_mode_chunk_name_matches, _load_symbols_vocab
+from query import (
+    GOD_MODE_MIN_CONTENT_SIZE,
+    SearchHit,
+    _god_mode_chunk_name_matches,
+    _load_symbols_vocab,
+)
 from reranker import get_reranker, rerank_pool_limit
 
 # ---------------------------------------------------------------------------
@@ -628,6 +633,8 @@ def _exact_chunk_name_results(
         metas = res.get("metadatas") or []
         for i in range(len(docs)):
             text = docs[i] if i < len(docs) else ""
+            if len((text or "").strip()) < GOD_MODE_MIN_CONTENT_SIZE:
+                continue
             meta = dict(metas[i] if i < len(metas) else {})
             key = _doc_dedup_key(type("D", (), {"metadata": meta, "page_content": text})())
             if key in seen:

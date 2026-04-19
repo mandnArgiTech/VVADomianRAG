@@ -2479,6 +2479,29 @@ def _ts_find_function_identifier(node, content: str) -> Optional[str]:
     return None
 
 
+_EXEMPT_CHUNK_TYPES = frozenset({"file_preamble", "core_constant"})
+
+
+def _filter_tiny_code_chunks(
+    out: List[Tuple[str, Dict[str, str]]],
+) -> List[Tuple[str, Dict[str, str]]]:
+    """Drop code chunks shorter than CODE_CHUNK_MIN_SIZE (default 50), renumber chunk_index."""
+    try:
+        code_min = int(os.environ.get("CODE_CHUNK_MIN_SIZE", "50"))
+    except ValueError:
+        code_min = 50
+    if code_min <= 0:
+        return out
+    filtered = [
+        (text, meta)
+        for text, meta in out
+        if len(text.strip()) >= code_min or meta.get("chunk_type") in _EXEMPT_CHUNK_TYPES
+    ]
+    for i, (_, m) in enumerate(filtered):
+        m["chunk_index"] = str(i)
+    return filtered
+
+
 def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[Tuple[str, Dict[str, str]]]]:
     mod_map = {
         "c": "tree_sitter_c",
@@ -2676,7 +2699,10 @@ def _ts_extract_chunks(path: Path, content: str, grammar: str) -> Optional[List[
             )
 
     walk(tree.root_node)
-    return out if out else None
+    if not out:
+        return None
+    # Empty list means "AST ran but nothing survived the size filter" — not ``None`` (parser / no-walk).
+    return _filter_tiny_code_chunks(out)
 
 
 def _ts_extract_chunks_or_language_split_c_cpp(
@@ -5016,6 +5042,14 @@ _NGSPICE_GITIGNORE_ENTRIES = [
     "src/compat/",
     "src/spicelib/devices/hisim*",
     "src/spicelib/devices/soi*",
+    # Story H: noise / rarely-needed paths for circuit-sim reference ingest
+    "src/spicelib/devices/adms/",
+    "src/spicelib/devices/numd*",
+    "src/spicelib/devices/nbjt*",
+    "src/spicelib/devices/numos*",
+    "src/ciderlib/",
+    "tests/",
+    "*.txt",
 ]
 
 

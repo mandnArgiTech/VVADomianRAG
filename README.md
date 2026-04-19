@@ -77,6 +77,23 @@ export EMBEDDING_MODEL=mxbai-embed-large
 
 Use `./query.sh` / MCP `search_knowledge` with the same `--domain` value so collection routing matches the ingest prefix (`{domain}_code`, `{domain}_domain`, etc.).
 
+### Removing stale Chroma chunks
+
+If you ingested paths you later want excluded (e.g. ngspice `src/frontend/`), you can delete matching rows before re-ingesting. Example:
+
+```python
+# Manual ChromaDB cleanup example
+import chromadb
+
+client = chromadb.PersistentClient(path="./Studio-Portable-RAG/VectorDB")
+coll = client.get_collection("spice_code")
+results = coll.get(where={"relative_path": {"$contains": "frontend/"}}, include=[])
+if results["ids"]:
+    coll.delete(ids=results["ids"])
+```
+
+Adjust `path`, collection name, and the `where` filter to match your metadata (`relative_path`, `source`, etc.).
+
 ### 2. Query from the shell
 
 ```bash
