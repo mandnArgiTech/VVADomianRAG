@@ -1,10 +1,16 @@
 # STORY I: ngspice C Diagnostic Instrumentation — AI-Ready Convergence Trace
 
-**Repository:** `mandnArgiTech/VVADomianRAG` (ngspice source at `Studio-Portable-RAG/Codebase/ngspice/src`)
+**Repository:** `mandnArgiTech/VVADomianRAG` (ngspice source as git submodule at `Studio-Portable-RAG/Codebase/ngspice`)
 **Priority:** High
 **Estimated effort:** 4–5 hours
 **Files to modify:** 5 ngspice C source files + 1 new header
-**Files to create:** `src/include/ngspice/diaghooks.h`
+**Files to create:** `src/include/ngspice/diaghooks.h`, `src/misc/diaghooks.c`
+
+**Reference documents (in this repo):**
+- `Studio-Portable-RAG/DomainDocs/ngspice/ngspice_io_dataflow.md` — complete call-stack trace with exact function signatures and variable names
+- `Studio-Portable-RAG/DomainDocs/ngspice/ngspice_pageindex.md` — hierarchical source tree index with file→function mapping
+
+**ngspice is now a git submodule** — compiled and buildable locally. The hooks are applied directly to this source tree.
 
 ---
 
@@ -122,58 +128,71 @@ void ngspice_diag_close(void) {
 
 ### AC-2: Hook 1 — NR iteration trace
 
-**File:** `src/maths/ni/niiter.c`, inside `NIiterate()` (or the equivalent DC iteration function)
+**File:** `src/maths/ni/niiter.c`, inside `NIiter()` (confirmed by `ngspice_io_dataflow.md` §6.1)
 
-**After each NR iteration completes** (after convergence check, before the next iteration or return), emit:
+The NR loop structure (from io_dataflow §6.1):
+```c
+int NIiter(CKTcircuit *ckt, int maxIter)
+{
+    for (iterno = 0; iterno < maxIter; iterno++) {
+        CKTload(ckt);                    /* stamp all devices */
+        SMPluFac(ckt->CKTmatrix, ...);   /* LU factorise */
+        SMPsolve(ckt->CKTmatrix, ckt->CKTrhs, ckt->CKTrhsSpare); /* solve */
+        if (NIconv(ckt) == OK) return OK;
+        SWAP(ckt->CKTrhs, ckt->CKTrhsOld);
+    }
+    return E_ITERLIM;
+}
+```
+
+**Insert the hook after `NIconv()` returns and before the `SWAP`:**
 
 ```c
 #include "ngspice/diaghooks.h"
 
-/* Inside the iteration loop, after convergence test */
-DIAG_EMIT("{\"hook\":\"nr_iter\",\"iter\":%d,\"max_rhs\":%.6e,\"max_dx\":%.6e,\"damp\":%.4f,\"conv\":%d}\n",
-    ckt->CKTstat->STATnumIter,    /* iteration count */
-    ckt->CKTstat->STATmaxRHS,     /* max KCL residual (‖F‖∞) */
-    ckt->CKTstat->STATmaxDelta,   /* max voltage change (‖Δx‖∞) */
-    ckt->CKTdamping,              /* damping factor (1.0 = undamped) */
-    converged                     /* 0 or 1 */
-);
+/* After NIconv check, before SWAP — emit NR iteration state */
+{
+    /* Compute max |Δx| from CKTrhs vs CKTrhsOld */
+    double diag_max_dx = 0.0, diag_max_rhs = 0.0;
+    int nn;
+    for (nn = 0; nn <= ckt->CKTmaxEqNum; nn++) {
+        double dx = fabs(ckt->CKTrhs[nn] - ckt->CKTrhsOld[nn]);
+        if (dx > diag_max_dx) diag_max_dx = dx;
+    }
+    DIAG_EMIT("{\"hook\":\"nr_iter\",\"iter\":%d,\"max_dx\":%.6e,\"noncon\":%d,\"conv\":%d}\n",
+        iterno, diag_max_dx, ckt->CKTnoncon, (converged == OK) ? 1 : 0);
+}
 ```
 
-**Note:** The exact variable names for max residual and max delta may differ from the domain doc pseudocode. Check the actual `niiter.c` source. The key values are:
-- `max_rhs`: Maximum absolute value of the RHS vector after device load (KCL violation)
-- `max_dx`: Maximum absolute voltage change between iterations
-- `damp`: Current damping factor
-- `conv`: Whether this iteration passed the convergence test
+**Key variables (from io_dataflow §10):**
+- `ckt->CKTrhs[]` — current solution vector (node voltages + branch currents)
+- `ckt->CKTrhsOld[]` — previous iteration solution
+- `ckt->CKTnoncon` — nonconvergence counter (set by `NIconv`)
+- `ckt->CKTmaxEqNum` — matrix size (number of equations)
 
 ### AC-3: Hook 2 — Device limiter activation
 
-**File:** `src/spicelib/devices/devsup.c`, inside `DEVpnjlim()`
+**File:** `src/spicelib/devices/devsup.c`, inside `DEVpnjlim()` (confirmed by `ngspice_io_dataflow.md` §6.3 and `ngspice_pageindex.md` §3.3)
 
-**When the limiter fires** (the `*icheck = 1` path), emit:
+The io_dataflow (§6.3) shows the limiter call in context:
+```
+DIOload → DEVpnjlim(vd, &vd, vt, here->DIOtSatCur, …)
+  "if (vd > vcrit) vd = vdold + Vt * log(1 + (vd - vdold)/Vt)"
+```
+
+**Save original vnew at function entry, emit when limiting occurs:**
 
 ```c
 #include "ngspice/diaghooks.h"
 
-/* Inside DEVpnjlim, ONLY when limiting actually occurs (*icheck = 1) */
-DIAG_EMIT("{\"hook\":\"limiter\",\"fn\":\"DEVpnjlim\",\"vnew_raw\":%.6e,\"vnew_lim\":%.6e,\"vold\":%.6e,\"vcrit\":%.6e}\n",
-    vnew_before_limiting,  /* save vnew at function entry */
-    vnew,                  /* vnew after limiting */
-    vold,                  /* previous iteration voltage */
-    vcrit                  /* critical voltage threshold */
-);
-```
-
-**Implementation detail:** Save `vnew` at the top of `DEVpnjlim` before any modification:
-
-```c
 double DEVpnjlim(double vnew, double vold, double vt, double vcrit, int *icheck)
 {
-    double vnew_orig = vnew;  /* ADD THIS LINE */
+    double vnew_orig = vnew;  /* ← ADD: save before any modification */
     double arg;
 
-    /* ... existing limiting logic ... */
+    /* ... existing limiting logic (unchanged) ... */
 
-    /* ADD: emit diagnostic only when limiting occurred */
+    /* ADD at end, just before return: emit only when limiting fired */
     if (*icheck) {
         DIAG_EMIT("{\"hook\":\"limiter\",\"fn\":\"DEVpnjlim\",\"vnew_raw\":%.6e,\"vnew_lim\":%.6e,\"vold\":%.6e,\"vcrit\":%.6e}\n",
             vnew_orig, vnew, vold, vcrit);
@@ -192,26 +211,37 @@ DIAG_EMIT("{\"hook\":\"limiter\",\"fn\":\"DEVfetlim\",\"vnew_raw\":%.6e,\"vnew_l
 
 ### AC-4: Hook 3 — GMIN / source stepping
 
-**File:** `src/spicelib/analysis/cktop.c`
+**File:** `src/spicelib/analysis/cktop.c` (confirmed by `ngspice_io_dataflow.md` §5.2 and `ngspice_pageindex.md` §3.2)
 
-**At each GMIN step level change** inside `spice3_gmin()` / `dynamic_gmin()`, emit:
+The io_dataflow (§5.2) shows the convergence aid flow:
+```
+DCop() → NIiter() → if not converged → niniter.c (source stepping / GMIN stepping)
+```
+
+**Key variables (from io_dataflow §10):**
+- `ckt->CKTgmin` — current GMIN value (the diagonal conductance added for conditioning)
+- `ckt->CKTsrcFact` — source stepping factor (0→1 during homotopy, not present in all versions — check actual source)
+
+**At each GMIN step level change** inside the GMIN stepping function:
 
 ```c
 #include "ngspice/diaghooks.h"
 
-/* After each GMIN step attempt (converged or not) */
+/* After each GMIN step attempt */
 DIAG_EMIT("{\"hook\":\"gmin\",\"val\":%.6e,\"conv\":%d,\"iters\":%d}\n",
-    ckt->CKTdiagGmin,      /* current GMIN value */
+    ckt->CKTgmin,           /* current GMIN value */
     converged,              /* 0 or 1 */
     iteration_count         /* NR iterations used at this GMIN level */
 );
 ```
 
-**At each source stepping level** inside `gillespie_src()`:
+**Note:** The GMIN stepping function may be named `spice3_gmin()`, `dynamic_gmin()`, or be inline in `cktop.c` — the implementor should search for `CKTdiagGmin` or `CKTgmin` assignments in `cktop.c` and `niniter.c`. The io_dataflow confirms the convergence aid sequence: GMIN stepping first, source stepping as fallback (§5.2).
+
+**At each source stepping level** (if `gillespie_src()` or equivalent exists):
 
 ```c
 DIAG_EMIT("{\"hook\":\"src_step\",\"factor\":%.6e,\"conv\":%d,\"iters\":%d}\n",
-    ckt->CKTsrcFact,       /* current source factor (0→1) */
+    src_factor,             /* current source factor (0→1) */
     converged,
     iteration_count
 );
@@ -219,32 +249,55 @@ DIAG_EMIT("{\"hook\":\"src_step\",\"factor\":%.6e,\"conv\":%d,\"iters\":%d}\n",
 
 ### AC-5: Hook 4 — Device load values (diode only for now)
 
-**File:** `src/spicelib/devices/dio/dioload.c`
+**File:** `src/spicelib/devices/dio/dioload.c` (confirmed by `ngspice_io_dataflow.md` §6.3 and `ngspice_pageindex.md` §3.3)
 
-**After computing diode current, conductance, and equivalent current** (after the Shockley evaluation, before matrix stamping), emit:
+The io_dataflow (§6.3) traces the exact DIOload sequence:
+```
+DIOload(DIOinstance *here, CKTcircuit *ckt)
+  ├─ vd = CKTrhs[here->DIOposNode] - CKTrhs[here->DIOnegNode]
+  ├─ DEVpnjlim(vd, &vd, vt, …)          ← voltage limiter
+  ├─ id = IS * (exp(vd / (N * Vt)) - 1) ← Shockley equation
+  ├─ gd = ∂id/∂vd = IS/(N*Vt) * exp(…)  ← conductance
+  ├─ SMPaddElement(…, gd + Gcond)         ← matrix stamp
+  └─ CKTrhs[node] -= (id - gd*vd)        ← Norton RHS (ieq = id - gd*vd)
+```
+
+**After computing cd (diode current), gd (conductance), and before matrix stamping:**
 
 ```c
 #include "ngspice/diaghooks.h"
 
-/* After computing cd, gd, but before stamping into MNA matrix */
+/* After Shockley evaluation, before SMPaddElement stamps */
 DIAG_EMIT("{\"hook\":\"device\",\"type\":\"DIO\",\"inst\":\"%s\",\"vd\":%.6e,\"id\":%.6e,\"gd\":%.6e,\"ieq\":%.6e}\n",
-    here->DIOname,          /* instance name, e.g., "d1" */
-    vd,                     /* diode voltage */
-    cd,                     /* diode current */
-    gd,                     /* diode conductance (dI/dV) */
-    ceq                     /* equivalent current source for NR linearization */
+    here->DIOname,     /* instance name, e.g., "d1" (from CKT node table) */
+    vd,                /* diode voltage */
+    cd,                /* diode current (variable name in dioload.c) */
+    gd,                /* diode conductance dI/dV */
+    (cd - gd * vd)     /* Norton equivalent current (ieq) */
 );
 ```
 
-**Note:** This hook generates one line PER DEVICE PER ITERATION, which can be verbose for circuits with many diodes. Acceptable for diagnostic use — the file is only created when `NGSPICE_DIAG_FILE` is set.
+**Note on variable names:** The io_dataflow uses `id` for current but the actual `dioload.c` uses `cd`. Both are visible in the RAG retrieval of the DIOload function — the implementor should check the actual local variable name.
 
-**Future extension (not in this story):** Add similar hooks in `bjtload.c` (gm, gmu, gpi, ic, ib) and `mos1load.c` / `bsim4load.c` (ids, gm, gds, vgs, vds). Start with diode only — it's the simplest device and the most relevant for NodalAI's current convergence failures.
+**Future extension (not in this story):** Add similar hooks in:
+- `bjtload.c` — emit `gm`, `gmu`, `gpi`, `ic`, `ib` (see `ngspice_pageindex.md` §3.3 BJT entry)
+- `mos1load.c` / `bsim4v7/b4v7ld.c` — emit `ids`, `gm`, `gds`, `vgs`, `vds`
+
+Start with diode only — it's the simplest device and the most relevant for NodalAI's current convergence failures on the 76-circuit benchmark.
 
 ### AC-6: Hook 5 — Matrix condition after LU factorization
 
-**File:** `src/maths/sparse/spfactor.c`
+**File:** `src/maths/sparse/spfactor.c` (confirmed by `ngspice_pageindex.md` §4.2)
 
-**After LU factorization completes**, emit the min and max diagonal pivot values:
+The io_dataflow (§6.1) shows:
+```
+NIiter loop:
+  SMPluFac(ckt->CKTmatrix, ckt->CKTpivotRelTol, ckt->CKTpivotAbsTol)
+```
+
+The pageindex (§4.2) confirms: "Key functions: `SMPpreOrder()`, `SMPluFac()`, `SMPsolve()`, `SMPclear()`"
+
+**After LU factorization completes in `spFactor()` or `spOrderAndFactor()`**, emit the min and max diagonal pivot values:
 
 ```c
 #include "ngspice/diaghooks.h"
@@ -278,17 +331,26 @@ DIAG_EMIT("{\"hook\":\"matrix\",\"size\":%d,\"min_piv\":%.6e,\"max_piv\":%.6e,\"
 
 ### AC-7: Init/close wired into ngspice startup
 
-**File:** `src/main.c` (or the shared library entry point `src/frontend/inppp.c`)
+**File:** `src/main.c` (confirmed by `ngspice_io_dataflow.md` §9: `main() [src/frontend/main.c]`)
+
+For batch mode (`ngspice -b circuit.cir`), the call stack is:
+```
+main() → ft_doreadcir() → ... → IFrunAnalysis()
+```
+
+For shared library mode, the entry point is the `ngSpice_Init()` export.
 
 ```c
 #include "ngspice/diaghooks.h"
 
-/* In main() or the shared library init, near the top */
+/* In main(), near the top after command-line parsing */
 ngspice_diag_init();
 
-/* At exit / cleanup */
-ngspice_diag_close();
+/* At exit / cleanup (or register via atexit()) */
+atexit(ngspice_diag_close);
 ```
+
+**Alternative:** If modifying `main.c` is too invasive (it's in `src/frontend/` which is outside the core spicelib), put the init in `CKTsetup()` (`src/spicelib/analysis/cktsetup.c`) — this is called once before any analysis runs (confirmed by io_dataflow §4.1). And put the close in `OUTendPlot()` (`src/frontend/outitf.c`) which runs after every analysis completes (io_dataflow §7.3).
 
 ### AC-8: Zero overhead when disabled
 
@@ -308,54 +370,115 @@ Modified ngspice source compiles cleanly with `make` after adding the hooks. No 
 
 ## File Summary
 
+All paths relative to `Studio-Portable-RAG/Codebase/ngspice/` (the git submodule):
+
 | File | Change | Lines Added |
 |---|---|---|
 | `src/include/ngspice/diaghooks.h` | **NEW** — macro + extern + init/close declarations | ~15 |
 | `src/misc/diaghooks.c` | **NEW** — init/close implementation | ~20 |
-| `src/maths/ni/niiter.c` | Hook 1 — NR iteration trace in `NIiterate()` | ~3 |
-| `src/spicelib/devices/devsup.c` | Hook 2 — Limiter activation in `DEVpnjlim()`, `DEVfetlim()` | ~8 |
-| `src/spicelib/analysis/cktop.c` | Hook 3 — GMIN/source step in `spice3_gmin()`, `gillespie_src()` | ~6 |
-| `src/spicelib/devices/dio/dioload.c` | Hook 4 — Device values in `DIOload()` | ~3 |
-| `src/maths/sparse/spfactor.c` | Hook 5 — Matrix condition after factorization | ~6 |
-| `src/main.c` or shared lib entry | Init/close calls | ~2 |
-| **Total** | | **~63 lines** |
+| `src/maths/ni/niiter.c` | Hook 1 — NR iteration trace after `NIconv()` in `NIiter()` loop | ~8 |
+| `src/spicelib/devices/devsup.c` | Hook 2 — Limiter activation at end of `DEVpnjlim()` and `DEVfetlim()` | ~8 |
+| `src/spicelib/analysis/cktop.c` | Hook 3 — GMIN/source step after each homotopy level attempt | ~6 |
+| `src/spicelib/devices/dio/dioload.c` | Hook 4 — Device values after Shockley eval, before `SMPaddElement` stamps | ~3 |
+| `src/maths/sparse/spfactor.c` | Hook 5 — Min/max pivot after LU factorization in `spFactor()` | ~6 |
+| `src/frontend/main.c` (or `src/spicelib/analysis/cktsetup.c`) | `ngspice_diag_init()` call | ~1 |
+| `src/frontend/main.c` (or via `atexit()`) | `ngspice_diag_close()` call | ~1 |
+| **Total** | | **~68 lines** |
+
+## Build & Test
+
+Since ngspice is now a local submodule:
+
+```bash
+cd Studio-Portable-RAG/Codebase/ngspice
+
+# If not yet configured:
+./autogen.sh   # (or ./configure if autogen already ran)
+./configure --prefix=$PWD/install --enable-xspice --disable-debug
+
+# Build with hooks:
+make -j$(nproc)
+
+# Test: verify diag file is created
+NGSPICE_DIAG_FILE=/tmp/test.diag.jsonl ./src/ngspice -b ../../examples/simple_diode.cir
+cat /tmp/test.diag.jsonl | python3 -c "import sys,json; lines=[json.loads(l) for l in sys.stdin]; print(f'VALID: {len(lines)} diagnostic lines')"
+
+# Test: verify no diag file when env var is unset
+unset NGSPICE_DIAG_FILE
+./src/ngspice -b ../../examples/simple_diode.cir
+# No /tmp/test.diag.jsonl modification
+```
 
 ---
 
 ## AI Agent Workflow After Story I
 
 ```bash
-# 1. Run ngspice with diagnostics on a failing benchmark circuit
-NGSPICE_DIAG_FILE=rc_divider.diag.jsonl ngspice -b tests/fixtures/rc_divider.cir
+# 1. Run ngspice (from the submodule) with diagnostics on a failing benchmark circuit
+NGSPICE_DIAG_FILE=rc_divider.diag.jsonl \
+  Studio-Portable-RAG/Codebase/ngspice/src/ngspice -b tests/fixtures/rc_divider.cir
 
 # 2. Run NodalAI on the same circuit (already produces convergence_hints)
 python3 -m ecad.cli dc rc_divider.cir --trace
 
-# 3. AI agent compares the two traces:
-#    - ngspice: 8 NR iterations, limiter fired twice at V=0.55→0.68V, GMIN=1e-12, condition=4.8e8
-#    - NodalAI: 50 NR iterations (max), limiter fired 0 times, no GMIN, condition=2.1e12
-#    → Diagnosis: NodalAI's _limit_junction_voltage threshold is too high, and GMIN stepping is missing
+# 3. AI agent (Cursor) reads both traces via MCP + RAG:
+#    - ngspice trace: 8 NR iterations, limiter fired twice (V=0.55→0.68V),
+#      GMIN=1e-12, matrix condition=4.8e8
+#    - NodalAI trace: 50 iterations (max_iter hit), limiter fired 0 times,
+#      no GMIN stepping, matrix condition=2.1e12
+#    → Diagnosis: NodalAI's _limit_junction_voltage threshold is too high,
+#      and GMIN stepping is missing from the convergence aid sequence
 ```
+
+## Cross-Reference with RAG
+
+The diagnostic hooks produce the **runtime numerical data**. The RAG provides the **code and algorithmic context**. Together:
+
+| Question the AI Agent Asks | Data Source |
+|---|---|
+| "What voltage did ngspice clamp to?" | `.diag.jsonl` → `limiter` hook: `vnew_lim` |
+| "How does the limiter algorithm work?" | RAG → `devsup.c` chunk + Chapter_05 domain doc |
+| "How many NR iterations did ngspice need?" | `.diag.jsonl` → `nr_iter` hook: final `iter` count |
+| "What convergence tolerance was used?" | RAG → `cktdefs.h` chunk: `CKTvntol`, `CKTreltol` + io_dataflow §12 |
+| "Was the matrix ill-conditioned?" | `.diag.jsonl` → `matrix` hook: `ratio` |
+| "What does ngspice do when the matrix is singular?" | RAG → Chapter_06 domain doc: GMIN stepping, source stepping |
 
 ---
 
 ## Test Plan
 
-Testing is done by building the modified ngspice and running a simple circuit:
+Testing is done by building the modified ngspice submodule and running a simple circuit:
 
 ```bash
-# Build modified ngspice
 cd Studio-Portable-RAG/Codebase/ngspice
-./configure && make
 
-# Test: verify diag file is created when env var is set
-NGSPICE_DIAG_FILE=/tmp/test.diag.jsonl ./src/ngspice -b tests/simple_diode.cir
-cat /tmp/test.diag.jsonl | python3 -c "import sys,json; [json.loads(l) for l in sys.stdin]; print('VALID JSON Lines')"
+# Build (assumes ./configure already ran)
+make -j$(nproc)
 
-# Test: verify no diag file when env var is unset
+# Test 1: verify diag file is created when env var is set
+NGSPICE_DIAG_FILE=/tmp/test.diag.jsonl ./src/ngspice -b ../../DomainDocs/ngspice/test_circuits/simple_diode.cir
+# (or use any .cir file with a diode: V1 in 0 5 / R1 in out 1k / D1 out 0 D1N4148 / .model D1N4148 D / .op / .end)
+python3 -c "import sys,json; [json.loads(l) for l in open('/tmp/test.diag.jsonl')]; print('VALID JSON Lines')"
+
+# Test 2: verify no diag file when env var is unset
 unset NGSPICE_DIAG_FILE
-./src/ngspice -b tests/simple_diode.cir
-ls /tmp/test.diag.jsonl  # should not be modified
+./src/ngspice -b ../../DomainDocs/ngspice/test_circuits/simple_diode.cir
+# /tmp/test.diag.jsonl should NOT be modified
+
+# Test 3: verify hooks present in a real simulation
+NGSPICE_DIAG_FILE=/tmp/test.diag.jsonl ./src/ngspice -b ../../DomainDocs/ngspice/test_circuits/simple_diode.cir
+python3 -c "
+import json
+hooks = {}
+for line in open('/tmp/test.diag.jsonl'):
+    d = json.loads(line)
+    hooks.setdefault(d['hook'], 0)
+    hooks[d['hook']] += 1
+print('Hooks found:', hooks)
+assert 'nr_iter' in hooks, 'Missing NR iteration hook'
+assert 'device' in hooks, 'Missing device hook'
+print('ALL HOOKS PRESENT')
+"
 ```
 
 ### Validation Checklist
