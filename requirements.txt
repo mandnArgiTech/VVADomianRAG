@@ -2,6 +2,10 @@
 # Runtime: Ollama must be available for embeddings (local HTTP :11434).
 # Python 3.10+ recommended.
 
+# ngspice ZMQ server client (Studio-Portable-RAG/Codebase/ngspice/zmq_server/python/, Story J)
+pyzmq>=26.0.0
+protobuf>=5.0.0
+
 # Vector database + LangChain vector store / embeddings (ingest.py, mcp_server.py)
 chromadb>=0.4.22
 langchain-chroma>=0.1.2

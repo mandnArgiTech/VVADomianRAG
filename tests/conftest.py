@@ -87,8 +87,11 @@ def concept_registry_path(tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def reset_shutdown_event():
     """Avoid cross-test pollution if ingest_run breaks mid-loop."""
-    import ingest as ingest_mod
-
+    try:
+        import ingest as ingest_mod
+    except ImportError:
+        yield
+        return
     ingest_mod.shutdown_event.clear()
     yield
     ingest_mod.shutdown_event.clear()
