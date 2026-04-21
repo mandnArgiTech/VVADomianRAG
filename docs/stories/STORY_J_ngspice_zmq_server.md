@@ -741,6 +741,31 @@ J6-06   | Python benchmark script runs end-to-end
 
 ---
 
+# STORY J7: Multi-analysis support (`.tran`, `.ac`, `.dc`)
+
+**Estimated effort:** 3–4 hours  
+**Files:** `zmq_server/proto/ngspice_sim.proto`, `zmq_server/ngspice_server.c`, `zmq_server/python/ngspice_client.py`, `zmq_server/tests/test_ngspice_sim_sweep.py`, fixtures under `zmq_server/tests/fixtures/circuits/`
+
+## Summary
+
+Extends Story J3 beyond DC OP: `SimRequest.analysis` may be `tran`, `ac`, or `dc`. The netlist must already contain the matching `.tran` / `.ac` / `.dc` line. The server runs `ngSpice_Command("run")` and collects multi-point results via sharedspice `SendInitData` / `SendData` into `SimResult.vectors` (`VectorData`: `name`, `real_values`, optional `imag_values` for AC). `SimResult.analysis_type` and `SimResult.num_points` describe the run. DC OP remains `ngSpice_Command("op")` with scalar `node_voltages` / `branch_currents` as before.
+
+## Regenerating protobuf (C + Python)
+
+From `Studio-Portable-RAG/Codebase/ngspice/zmq_server/`:
+
+```bash
+make -C proto regen    # Docker `znly/protoc` + host `protoc` for Python; fixes `#include` in .pb-c.c
+```
+
+Or install `protobuf-c-compiler` and run `protoc-c --c_out=. proto/ngspice_sim.proto`, copy `proto/ngspice_sim.pb-c.{c,h}` to `zmq_server/`, then replace `#include "proto/ngspice_sim.pb-c.h"` with `#include "ngspice_sim.pb-c.h"` in the `.c` file.
+
+## Tests
+
+Integration: `RUN_NGSPICE_SERVER=1 pytest zmq_server/tests/test_ngspice_sim_sweep.py`
+
+---
+
 ## Story Dependency Graph
 
 ```
@@ -750,9 +775,10 @@ J1 (proto schema)
            ├─→ J4 (route hooks to PUB socket)  ← requires Story I hooks
            └─→ J5 (Python client library)
                 └─→ J6 (batch + pool optimization)
+                     └─→ J7 (tran / ac / dc sweeps + VectorData on SimResult)
 ```
 
-Implement in order: J1 → J2 → J3 → J4 → J5 → J6.
+Implement in order: J1 → J2 → J3 → J4 → J5 → J6 → J7 (J7 builds on J3/J5/J6).
 
 Stories J1 and J2 can be done without Story I. Story J4 requires Story I's hook points to be in place.
 
