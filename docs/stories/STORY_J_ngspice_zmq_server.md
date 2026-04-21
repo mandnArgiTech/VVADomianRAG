@@ -766,6 +766,16 @@ Integration: `RUN_NGSPICE_SERVER=1 pytest zmq_server/tests/test_ngspice_sim_swee
 
 ---
 
+# STORY J8: `ng.sh` service launcher
+
+**Files:** `zmq_server/ng.sh`, `zmq_server/ng.yaml`, `zmq_server/ngspice_server.c` (`NG_SERVER_VERSION`, `--version`)
+
+## Summary
+
+Single entrypoint for ZMQ server + FastAPI bridge + Vite: **`./ng.sh help`** lists **`up`**, **`down`**, **`restart`**, **`status`**, **`probe`**, **`install`**, **`uninstall`** / **`remove`**. **`up`** prints the resolved YAML path, a full YAML dump of effective config, `SPICE_LIB_DIR`, libngspice version (via `strings`), **`ngspice-server --version`**, **`ldd`**-resolved shared libraries, Python **libzmq** / **pyzmq** / **uvicorn** versions, then brings each tier up with port checks. **`down`** stops **vite → bridge → zmq** with **SIGTERM** (process group for listeners), **SIGKILL** fallback, and port-release wait (Vite uses **`ss`** to store the real **node** PID because `npx` exits early). **`status`** shows PID / port / uptime from **`.ng/last_up.json`**. **`probe`** runs a tiny `.op` via **`ngspice_client`**. **`install`** writes a **systemd** unit (`Type=forking`, **PIDFile** = `.ng/zmq_server.pid`); use **`--system`** for `/etc/systemd/system/` (root). Keep **`service.version`** in **`ng.yaml`** aligned with **`NG_SERVER_VERSION`** in C.
+
+---
+
 ## Story Dependency Graph
 
 ```
@@ -776,9 +786,10 @@ J1 (proto schema)
            └─→ J5 (Python client library)
                 └─→ J6 (batch + pool optimization)
                      └─→ J7 (tran / ac / dc sweeps + VectorData on SimResult)
+                          └─→ J8 (ng.sh / ng.yaml stack launcher + systemd install)
 ```
 
-Implement in order: J1 → J2 → J3 → J4 → J5 → J6 → J7 (J7 builds on J3/J5/J6).
+Implement in order: J1 → J2 → J3 → J4 → J5 → J6 → J7 (J7 builds on J3/J5/J6). J8 is optional ops polish on top of J7.
 
 Stories J1 and J2 can be done without Story I. Story J4 requires Story I's hook points to be in place.
 
