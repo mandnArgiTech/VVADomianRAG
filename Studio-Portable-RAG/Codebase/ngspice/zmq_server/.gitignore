@@ -1,0 +1,18 @@
+# Built artifact (run: make -C zmq_server)
+ngspice-server
+*.o
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+
+# VidhuBijakam demo (npm / Vite)
+vidhubijakam-demo/node_modules/
+vidhubijakam-demo/standalone/dist-kernel/
+vidhubijakam-demo/__pycache__/
+vidhubijakam-demo/.venv/
+
+# ng.sh supervisor
+.ng/

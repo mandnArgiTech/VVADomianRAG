@@ -2,7 +2,7 @@
 
 > **This is a multi-part story.** Each sub-story (J1–J6) is independently implementable and testable. Implement in order — each builds on the previous.
 
-**Repository:** `mandnArgiTech/VVADomianRAG` (ngspice submodule at `Studio-Portable-RAG/Codebase/ngspice`)
+**Repository:** `mandnArgiTech/VVADomianRAG` (vendored ngspice tree at `Studio-Portable-RAG/Codebase/ngspice`, not a submodule)
 **Priority:** Medium (after Story I file-based hooks are validated)
 **Total estimated effort:** 12–16 hours across 6 sub-stories
 

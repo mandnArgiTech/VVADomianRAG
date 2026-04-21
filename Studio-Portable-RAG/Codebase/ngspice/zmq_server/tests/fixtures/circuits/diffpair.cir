@@ -1,0 +1,14 @@
+BJT diffpair DC fixture
+.model qnp npn level=1 bf=100 is=1e-15
+q1 n1 nb1 ne qnp
+q2 n2 nb2 ne qnp
+ire ne 0 0.5m
+r1 vcc nb1 10k
+r2 vcc nb2 10k
+r3 vcc n1 8k
+r4 vcc n2 8k
+vb1 nb1 0 2.5
+vb2 nb2 0 2.5
+vcc vcc 0 12
+.op
+.end

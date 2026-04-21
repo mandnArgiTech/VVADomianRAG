@@ -1,0 +1,25 @@
+* =================================================================
+* NodalAI Example: Series Resistors
+* =================================================================
+*
+* DESCRIPTION:
+*   Two resistors in series: R_total = R1 + R2 = 2kΩ\nCurrent is same through both.
+*
+* HOW TO SIMULATE:
+*   1. Run DC OP (F5)\n2. V(mid) = 5V × 1k/2k = 2.5V\n3. I(R1) = I(R2) = 5V/2kΩ = 2.5mA
+*
+* EXPECTED RESULTS:
+*   V(mid) = 2.50 V\nI = 2.50 mA
+*
+* REAL COMPONENTS USED:
+*   V1: 5V DC
+*   R1: 1kΩ
+*   R2: 1kΩ
+*
+* =================================================================
+V1 in 0 5
+R1 in mid 1k
+R2 mid 0 1k
+
+.op
+.end

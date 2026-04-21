@@ -1,0 +1,55 @@
+# ng.sh — single entrypoint for ZMQ server + HTTP bridge + kernel demo UI.
+# All paths below are relative to the zmq_server directory (where ng.sh lives),
+# unless you use an absolute path.
+
+# Stack identity + lifecycle (used by ng.sh banner, graceful shutdown, systemd install).
+service:
+  name: ngspice-stack
+  # Display / docs: should match NG_SERVER_VERSION in ngspice_server.c
+  version: "1.0.0"
+  shutdown_timeout_sec: 10
+
+zmq_server:
+  # Path to the built binary (run `make` in this directory first).
+  binary: ./ngspice-server
+  # libngspice needs device/model scripts from the ngspice install tree.
+  spice_lib_dir: ../install/share/ngspice
+  # Listen on all IPv4 interfaces (remote clients use your host IP + rep_port).
+  bind_addr: "0.0.0.0"
+  # Bridge on this host connects here (must not be 0.0.0.0). Remote clients instead set
+  # NGSPICE_ZMQ_REP=tcp://<this-machine-LAN-IP>:5555 and open the firewall for rep/pub ports.
+  rep_connect_host: "127.0.0.1"
+  rep_port: 5555
+  pub_port: 5556
+  # Seconds to wait for REP port after start.
+  startup_timeout_sec: 30
+
+bridge:
+  # Directory containing bridge_server.py (relative to zmq_server).
+  working_directory: vidhubijakam-demo
+  # PYTHONPATH entry for ngspice_client / protobuf (relative to zmq_server).
+  pythonpath: python
+  host: "0.0.0.0"
+  port: 8000
+  # uvicorn --workers (each worker has its own ZMQ DEALER pool; override with NGSPICE_UVICORN_WORKERS).
+  uvicorn_workers: 1
+  module: bridge_server:app
+  # Seconds to wait for HTTP port after start.
+  startup_timeout_sec: 30
+
+frontend:
+  # Vite dev server (kernel demo). Proxy uses ECAD_API_PORT → bridge.port.
+  working_directory: vidhubijakam-demo
+  vite_config: vidhubijakam-demo/standalone/vite.kernel.config.ts
+  host: "0.0.0.0"
+  port: 5180
+  startup_timeout_sec: 45
+
+runtime:
+  # ng.sh picks Python: $NG_SH_PYTHON, zmq_server/.venv, $VIRTUAL_ENV, then PATH
+  # (prefer zmq_server/.venv so bridge gets pyzmq even if vidhubijakam-demo/.venv is active).
+  state_dir: .ng
+  log_dir: .ng/logs
+  # If true, run `pip install -r ...` before starting the bridge (uses bridge_requirements).
+  pip_install_bridge: false
+  bridge_requirements: vidhubijakam-demo/requirements-bridge.txt

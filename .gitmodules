@@ -1,6 +1,3 @@
-[submodule "Studio-Portable-RAG/Codebase/ngspice"]
-	path = Studio-Portable-RAG/Codebase/ngspice
-	url = https://github.com/ngspice/ngspice.git
 [submodule "Studio-Portable-RAG/Codebase/ardupilot"]
 	path = Studio-Portable-RAG/Codebase/ardupilot
 	url = https://github.com/ArduPilot/ardupilot.git

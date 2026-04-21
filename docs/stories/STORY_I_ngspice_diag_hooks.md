@@ -2,7 +2,7 @@
 
 > **Status:** ✅ DONE — Applied to ngspice submodule (commit `2af7692`). Story J4 routes hooks to ZMQ PUB. Story L consumes hook data in ConvergenceDiff.
 
-**Repository:** `mandnArgiTech/VVADomianRAG` (ngspice submodule at `Studio-Portable-RAG/Codebase/ngspice`)
+**Repository:** `mandnArgiTech/VVADomianRAG` (vendored ngspice tree at `Studio-Portable-RAG/Codebase/ngspice`, not a submodule)
 **Files created:** `src/include/ngspice/diaghooks.h`, `src/misc/diaghooks.c`
 **Files modified:** `src/maths/ni/niiter.c`, `src/spicelib/devices/devsup.c`, `src/spicelib/analysis/cktop.c`, `src/spicelib/devices/dio/dioload.c`, `src/maths/sparse/spfactor.c`, `src/main.c`, `src/sharedspice.c`, `src/misc/Makefile.am`
 

@@ -1,0 +1,23 @@
+* Perfect Half-Wave Rectifier: unfiltered vs filtered (50 Hz)
+* DSO waveforms: set toolbar analysis to **Transient** and install the `ngspice` batch binary
+* (NGSPICE_CLI or PATH). The ZMQ ngspice-server path is DC OP only; .tran uses `ngspice -b` in the bridge.
+
+* 1. AC input (12 V RMS ~ 17 V peak @ 50 Hz)
+Vin input 0 SIN(0 17 50)
+
+* 2. Unfiltered branch
+D1 input out_unfilt Drect
+R1 out_unfilt 0 1k
+
+* 3. Filtered branch (100 uF ripple)
+D2 input out_filt Drect
+R2 out_filt 0 1k
+C1 out_filt 0 100uF
+
+* 4. Diode model (1N4007-like)
+.model Drect D(is=1e-14 n=1.5 cjo=10p m=0.33 vj=0.7)
+
+* 5. Transient (0.1 ms step, 100 ms ~ 5 cycles @ 50 Hz; SPICE suffix m = milli)
+.tran 0.1m 100m
+
+.end

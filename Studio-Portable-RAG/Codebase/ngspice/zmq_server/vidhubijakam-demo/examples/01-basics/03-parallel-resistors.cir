@@ -1,0 +1,25 @@
+* =================================================================
+* NodalAI Example: Parallel Resistors
+* =================================================================
+*
+* DESCRIPTION:
+*   Two 1kΩ resistors in parallel: R_total = 500Ω\nVoltage is same across both.
+*
+* HOW TO SIMULATE:
+*   1. Run DC OP (F5)\n2. I_total = 5V/500Ω = 10mA\n3. Each branch: I = 5V/1kΩ = 5mA
+*
+* EXPECTED RESULTS:
+*   I(R1) = 5.00 mA\nI(R2) = 5.00 mA\nI(V1) = 10.00 mA
+*
+* REAL COMPONENTS USED:
+*   V1: 5V DC
+*   R1: 1kΩ
+*   R2: 1kΩ
+*
+* =================================================================
+V1 in 0 5
+R1 in 0 1k
+R2 in 0 1k
+
+.op
+.end

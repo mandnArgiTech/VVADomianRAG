@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "id": "01-basics",
+      "name": "Basic Circuits",
+      "icon": "zap",
+      "circuits": [
+        {
+          "id": "01-ohms-law",
+          "name": "Ohm's Law",
+          "file": "01-basics/01-ohms-law.cir",
+          "description": "Single resistor with voltage source \u2014 verify I = V/R",
+          "analysis": "op",
+          "difficulty": "beginner",
+          "cached_schematic": null
+        },
+        {
+          "id": "02-series-resistors",
+          "name": "Series Resistors",
+          "file": "01-basics/02-series-resistors.cir",
+          "description": "Two resistors in series \u2014 R_total = R1 + R2",
+          "analysis": "op",
+          "difficulty": "beginner",
+          "cached_schematic": null
+        },
+        {
+          "id": "03-parallel-resistors",
+          "name": "Parallel Resistors",
+          "file": "01-basics/03-parallel-resistors.cir",
+          "description": "Two resistors in parallel \u2014 R_total = R1\u00b7R2/(R1+R2)",
+          "analysis": "op",
+          "difficulty": "beginner",
+          "cached_schematic": null
+        }
+      ]
+    },
+    {
+      "id": "02-transient",
+      "name": "Transient (DSO)",
+      "icon": "activity",
+      "circuits": [
+        {
+          "id": "halfwave-rectifier",
+          "name": "Half-wave rectifier (filtered vs unfiltered)",
+          "file": "02-transient/halfwave-rectifier.cir",
+          "description": "Sine source, two diode loads, RC filter \u2014 .tran for oscilloscope tab (needs ngspice CLI)",
+          "analysis": "tran",
+          "difficulty": "intermediate",
+          "cached_schematic": null
+        }
+      ]
+    }
+  ]
+}

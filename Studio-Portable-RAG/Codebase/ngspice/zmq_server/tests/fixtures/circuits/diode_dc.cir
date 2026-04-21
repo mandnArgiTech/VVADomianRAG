@@ -1,0 +1,7 @@
+Diode DC fixture
+V1 a 0 5
+R1 a b 1k
+D1 b 0 DMOD
+.model DMOD D(IS=2.52e-9 N=1.752)
+.op
+.end

@@ -1,0 +1,4 @@
+node_modules/
+standalone/dist-kernel/
+__pycache__/
+.venv/

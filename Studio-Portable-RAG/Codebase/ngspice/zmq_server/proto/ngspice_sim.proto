@@ -1,0 +1,134 @@
+// Wire schema for ngspice-server (ZMQ ROUTER + PUB). Must match ngspice_sim.pb-c.c / .h.
+syntax = "proto3";
+
+package ngspice;
+
+// --- Client → Server ---
+
+message SimRequest {
+  string netlist = 1;
+  string analysis = 2;
+  map<string, double> options = 3;
+  bool stream_diagnostics = 4;
+  string request_id = 5;
+}
+
+message BatchSimRequest {
+  repeated SimRequest requests = 1;
+}
+
+message VectorData {
+  string name = 1;
+  repeated double real_values = 2;
+  repeated double imag_values = 3;
+}
+
+// --- Server → Client (reply) ---
+
+message SimResult {
+  string request_id = 1;
+  bool converged = 2;
+  int32 iterations = 3;
+  map<string, double> node_voltages = 4;
+  map<string, double> branch_currents = 5;
+  repeated string warnings = 6;
+  double wall_time_ms = 7;
+  ErrorCode error = 8;
+  repeated VectorData vectors = 9;
+  string analysis_type = 10;
+  int32 num_points = 11;
+
+  enum ErrorCode {
+    OK = 0;
+    PARSE_ERROR = 1;
+    CONVERGENCE_FAILURE = 2;
+    SINGULAR_MATRIX = 3;
+    INTERNAL_ERROR = 4;
+    TIMEOUT = 5;
+    // Admission control: all workers busy and wait queue is full.
+    SERVER_BUSY = 6;
+  }
+}
+
+message BatchSimResult {
+  repeated SimResult results = 1;
+  double total_wall_time_ms = 2;
+}
+
+// --- WIRE_STATS (3) request/response: body is packed ServerStats (no extra framing). ---
+
+message ServerStats {
+  int32 pool_size = 1;
+  uint32 admit_queued = 2;
+  uint32 admit_cap = 3;
+  int32 workers_busy = 4;
+  uint64 requests_completed = 5;
+  uint64 server_busy_replies = 6;
+  uint64 worker_restarts = 7;
+  uint64 request_timeouts = 8;
+}
+
+// --- Diagnostic stream (PUB socket) ---
+
+message NRIteration {
+  int32 iter = 1;
+  double max_dx = 2;
+  int32 noncon = 3;
+  bool converged = 4;
+  double max_rhs = 5;
+  double damp = 6;
+}
+
+message LimiterActivation {
+  string function = 1;
+  string instance = 2;
+  double vnew_raw = 3;
+  double vnew_limited = 4;
+  double vold = 5;
+  double vcrit = 6;
+  double vto = 7;
+}
+
+message GminStep {
+  double value = 1;
+  bool converged = 2;
+  int32 iterations = 3;
+}
+
+message SourceStep {
+  double factor = 1;
+  bool converged = 2;
+  int32 iterations = 3;
+}
+
+message DeviceLoadValuesEntry {
+  string key = 1;
+  double value = 2;
+}
+
+message DeviceLoad {
+  string type = 1;
+  string instance = 2;
+  repeated DeviceLoadValuesEntry values = 3;
+}
+
+message MatrixCondition {
+  int32 size = 1;
+  double min_pivot = 2;
+  double max_pivot = 3;
+  double condition_ratio = 4;
+}
+
+message DiagEvent {
+  string request_id = 1;
+  int64 timestamp_us = 2;
+
+  oneof event {
+    NRIteration nr_iter = 10;
+    LimiterActivation limiter = 11;
+    GminStep gmin = 12;
+    SourceStep src_step = 13;
+    DeviceLoad device = 14;
+    MatrixCondition matrix = 15;
+  }
+}

@@ -1,0 +1,6 @@
+RC lowpass AC
+V1 in 0 AC 1 0
+R1 in out 1k
+C1 out 0 1u
+.ac dec 8 100 1meg
+.end

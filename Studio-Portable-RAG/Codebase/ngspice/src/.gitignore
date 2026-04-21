@@ -1,0 +1,15 @@
+
+# Ngspice legacy boilerplate (auto-added by ingest.py --write-ngspice-gitignore)
+src/frontend/
+src/x11/
+src/misc/
+src/compat/
+src/spicelib/devices/hisim*
+src/spicelib/devices/soi*
+src/spicelib/devices/adms/
+src/spicelib/devices/numd*
+src/spicelib/devices/nbjt*
+src/spicelib/devices/numos*
+src/ciderlib/
+tests/
+*.txt

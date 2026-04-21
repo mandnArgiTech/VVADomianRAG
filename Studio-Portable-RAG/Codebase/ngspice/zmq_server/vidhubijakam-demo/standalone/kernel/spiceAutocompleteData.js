@@ -1,0 +1,70 @@
+/* Autocomplete DB */
+export const AC_DIR = [
+  { w: ".title", d: "Title", s: ".title " },
+  { w: ".end", d: "End", s: ".end" },
+  { w: ".op", d: "DC OP", s: ".op" },
+  { w: ".ac", d: "AC sweep", s: ".ac dec 50 10 100k" },
+  { w: ".dc", d: "DC sweep", s: ".dc V1 0 5 0.1" },
+  { w: ".tran", d: "Transient", s: ".tran 1u 10m" },
+  { w: ".model", d: "Model def", s: ".model NAME TYPE()" },
+  { w: ".subckt", d: "Subcircuit", s: ".subckt NAME nodes" },
+  { w: ".ends", d: "End subckt", s: ".ends" },
+  { w: ".param", d: "Parameter", s: ".param NAME=val" },
+  { w: ".ic", d: "Init cond", s: ".ic V(node)=val" },
+  { w: ".include", d: "Include", s: ".include file" },
+  { w: ".lib", d: "Library", s: ".lib file" },
+  { w: ".options", d: "Options", s: ".options RELTOL=0.001" },
+  { w: ".four", d: "Fourier", s: ".four freq V(out)" },
+  { w: ".noise", d: "Noise", s: ".noise V(out) V1 dec 10 1 1Meg" },
+];
+export const AC_CMP = [
+  { w: "R", d: "Resistor", s: "R1 n1 n2 10k", k: "pas" },
+  { w: "C", d: "Capacitor", s: "C1 n1 n2 100n", k: "pas" },
+  { w: "L", d: "Inductor", s: "L1 n1 n2 1m", k: "pas" },
+  { w: "V", d: "Voltage src", s: "V1 n+ n- DC 5", k: "src" },
+  { w: "I", d: "Current src", s: "I1 n+ n- DC 1m", k: "src" },
+  { w: "D", d: "Diode", s: "D1 anode cathode MODEL", k: "sem" },
+  { w: "Q", d: "BJT", s: "Q1 c b e MODEL", k: "sem" },
+  { w: "M", d: "MOSFET", s: "M1 d g s b MODEL W=10u L=1u", k: "sem" },
+  { w: "J", d: "JFET", s: "J1 d g s MODEL", k: "sem" },
+  { w: "E", d: "VCVS", s: "E1 n+ n- ctrl+ ctrl- gain", k: "dep" },
+  { w: "F", d: "CCCS", s: "F1 n+ n- Vsense gain", k: "dep" },
+  { w: "G", d: "VCCS", s: "G1 n+ n- ctrl+ ctrl- gain", k: "dep" },
+  { w: "H", d: "CCVS", s: "H1 n+ n- Vsense gain", k: "dep" },
+  { w: "K", d: "Coupling", s: "K1 L1 L2 0.99", k: "pas" },
+  { w: "X", d: "Subckt inst", s: "X1 nodes SUBCKT", k: "sub" },
+];
+export const AC_SRC = [
+  { w: "DC", d: "DC value", s: "DC 5" },
+  { w: "AC", d: "AC mag", s: "AC 1" },
+  { w: "SIN", d: "Sine", s: "SIN(0 5 1k)" },
+  { w: "PULSE", d: "Pulse", s: "PULSE(0 5 0 1n 1n 5u 10u)" },
+  { w: "PWL", d: "Piecewise", s: "PWL(0 0 1m 5 2m 0)" },
+];
+export const AC_TYP = [
+  { w: "NPN", d: "NPN BJT" },
+  { w: "PNP", d: "PNP BJT" },
+  { w: "NMOS", d: "N-MOSFET" },
+  { w: "PMOS", d: "P-MOSFET" },
+  { w: "D", d: "Diode" },
+  { w: "NJF", d: "N-JFET" },
+  { w: "PJF", d: "P-JFET" },
+];
+export const AC_PAR = {
+  D: ["IS", "N", "RS", "BV", "IBV", "CJO", "TT"],
+  NPN: ["BF", "IS", "VAF", "NF", "NR", "ISE", "RB", "RC", "RE", "CJE", "CJC", "TF", "TR", "IKF"],
+  PNP: ["BF", "IS", "VAF", "NF", "NR", "TF", "TR"],
+  NMOS: ["VTO", "KP", "GAMMA", "LAMBDA", "PHI", "TOX", "W", "L"],
+  PMOS: ["VTO", "KP", "GAMMA", "LAMBDA", "W", "L"],
+};
+export const kindBg = {
+  dir: "#0000FF",
+  typ: "#800080",
+  src: "#FF8000",
+  cmp: "#0060C0",
+  par: "#808000",
+  nod: "#008000",
+  kw: "#666",
+  lib: "#00695C",
+  part: "#2E7D32",
+};

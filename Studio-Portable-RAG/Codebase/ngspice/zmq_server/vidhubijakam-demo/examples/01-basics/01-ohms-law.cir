@@ -1,0 +1,25 @@
+* =================================================================
+* NodalAI Example: Ohm's Law — V = IR
+* =================================================================
+*
+* DESCRIPTION:
+*   A single 1kΩ resistor connected to a 5V source.\nThe most fundamental circuit in electronics.
+*
+* HOW TO SIMULATE:
+*   1. Press F5 (Run DC OP)\n2. Check V(out) = 0V (all voltage drops across R1)\n3. Check I(R1) = 5V / 1kΩ = 5mA
+*
+* EXPECTED RESULTS:
+*   I(R1) = 5.00 mA\nV(in) = 5.00 V\nPower = 25 mW
+*
+* REAL COMPONENTS USED:
+*   V1: 5V DC source
+*   R1: 1kΩ resistor (E24 standard value)
+*
+* =================================================================
+* --- Circuit ---
+V1 in 0 5
+R1 in 0 1k
+
+* --- Analysis ---
+.op
+.end

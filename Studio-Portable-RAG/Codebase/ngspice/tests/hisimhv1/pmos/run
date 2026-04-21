@@ -1,0 +1,5 @@
+#!/bin/sh
+
+../../bin/run_cmc_check clean
+cp qaSpec.basic qaSpec
+../../bin/run_cmc_check ngspice | tee cmcqa_basic.log

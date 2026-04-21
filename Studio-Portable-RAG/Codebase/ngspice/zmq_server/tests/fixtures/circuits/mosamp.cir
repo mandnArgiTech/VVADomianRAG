@@ -1,0 +1,9 @@
+NMOS DC bias fixture
+.model mmod nmos level=1 vto=0.7 kp=50e-6
+m1 drain gate 0 0 mmod w=20u l=1u
+rd vdd drain 10k
+rg in gate 100k
+vg in 0 1.5
+vv vdd 0 3.3
+.op
+.end
