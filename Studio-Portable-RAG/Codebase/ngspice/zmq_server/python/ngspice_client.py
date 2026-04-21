@@ -202,3 +202,115 @@ async def simulate_transient_async(
         "_wall_ms": float(res.wall_time_ms),
     }
     return True, tr, ""
+
+
+# ---------------------------------------------------------------------------
+# DiagEvent subscriber — Story J5 completion
+# ---------------------------------------------------------------------------
+
+from ngspice_sim_pb2 import DiagEvent  # noqa: E402
+
+
+class NgspiceDiagStream:
+    """
+    ZMQ SUB subscriber for DiagEvent frames emitted by ngspice-server on
+    the PUB socket (default tcp://localhost:5556).
+
+    Usage::
+
+        with NgspiceDiagStream() as stream:
+            result = client.simulate(netlist, stream_diagnostics=True, request_id="r1")
+            events = stream.collect(request_id="r1", timeout_sec=2.0)
+
+    The server publishes each DiagEvent as a two-frame multipart message:
+        frame 0: topic = request_id (bytes)
+        frame 1: serialised DiagEvent protobuf (bytes)
+
+    When ``request_id`` is empty or "default", the topic is b"default".
+    ``collect()`` reads all available frames (non-blocking poll after
+    ``timeout_sec`` drain window) and optionally filters by request_id.
+    """
+
+    DEFAULT_PUB_URL = os.environ.get(
+        "NGSPICE_ZMQ_PUB_URL",
+        f"tcp://localhost:{os.environ.get('NGSPICE_ZMQ_PUB_PORT', '5556')}",
+    )
+
+    def __init__(self, pub_url: Optional[str] = None) -> None:
+        self._url = pub_url or self.DEFAULT_PUB_URL
+        self._ctx = zmq.Context.instance()
+        self._sock = self._ctx.socket(zmq.SUB)
+        self._sock.setsockopt(zmq.SUBSCRIBE, b"")  # subscribe to all topics
+        self._sock.setsockopt(zmq.RCVTIMEO, 0)     # non-blocking by default
+        self._sock.connect(self._url)
+
+    # ---- context manager support ----
+
+    def __enter__(self) -> "NgspiceDiagStream":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the SUB socket."""
+        try:
+            self._sock.close(linger=0)
+        except Exception:
+            pass
+
+    # ---- main API ----
+
+    def collect(
+        self,
+        *,
+        request_id: str = "",
+        timeout_sec: float = 2.0,
+    ) -> List["DiagEvent"]:
+        """
+        Drain DiagEvent frames from the PUB socket for up to ``timeout_sec``
+        seconds, then return all frames matching ``request_id`` (or all frames
+        if ``request_id`` is empty).
+
+        Returns a list of decoded ``DiagEvent`` protobuf objects.
+        """
+        deadline = time.monotonic() + timeout_sec
+        raw: List[bytes] = []
+
+        # Blocking poll until deadline, then drain without blocking
+        remaining_ms = max(1, int((deadline - time.monotonic()) * 1000))
+        while time.monotonic() < deadline:
+            remaining_ms = max(1, int((deadline - time.monotonic()) * 1000))
+            if self._sock.poll(remaining_ms, zmq.POLLIN):
+                try:
+                    frames = self._sock.recv_multipart(zmq.NOBLOCK)
+                    if len(frames) >= 2:
+                        raw.append((frames[0], frames[1]))
+                except zmq.Again:
+                    pass
+            else:
+                break  # nothing arrived before deadline
+
+        # Drain any remaining buffered frames non-blocking
+        while True:
+            try:
+                frames = self._sock.recv_multipart(zmq.NOBLOCK)
+                if len(frames) >= 2:
+                    raw.append((frames[0], frames[1]))
+            except zmq.Again:
+                break
+
+        # Decode and optionally filter
+        result: List[DiagEvent] = []
+        target = request_id.encode() if request_id else None
+        for topic_bytes, body_bytes in raw:
+            if target is not None and topic_bytes != target:
+                continue
+            ev = DiagEvent()
+            try:
+                ev.ParseFromString(body_bytes)
+                result.append(ev)
+            except Exception:
+                pass  # malformed frame — skip
+
+        return result

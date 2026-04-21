@@ -625,7 +625,7 @@ J5-10   | Stream filter by request_id only returns matching events
 ## Definition of Done
 
 - [ ] `NgspiceClient` class with `simulate()` method
-- [ ] `NgspiceDiagStream` class with `collect()` method
+- [x] `NgspiceDiagStream` class with `collect()` method — **IMPLEMENTED** in `zmq_server/python/ngspice_client.py` (ZMQ SUB, topic-filtered `collect(request_id, timeout_sec)`)
 - [ ] `compare_dc_op()` helper function
 - [ ] Context manager support
 - [ ] Timeout and error handling

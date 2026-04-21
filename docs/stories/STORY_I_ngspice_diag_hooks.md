@@ -1,6 +1,6 @@
 # STORY I: ngspice C Diagnostic Instrumentation — AI-Ready Convergence Trace
 
-> **Status:** ✅ DONE — Applied to ngspice submodule (commit `2af7692`). Story J4 routes hooks to ZMQ PUB. Story L consumes hook data in ConvergenceDiff.
+> **Status:** ✅ DONE — Applied to vendored ngspice tree (`Studio-Portable-RAG/Codebase/ngspice/`). Story J4 routes hooks via `NgspiceDiagSink` callbacks. Story L consumes hook data in ConvergenceDiff.
 
 **Repository:** `mandnArgiTech/VVADomianRAG` (vendored ngspice tree at `Studio-Portable-RAG/Codebase/ngspice`, not a submodule)
 **Files created:** `src/include/ngspice/diaghooks.h`, `src/misc/diaghooks.c`
@@ -36,7 +36,7 @@ NGSPICE_DIAG_FILE=circuit.diag.jsonl ngspice -b circuit.cir
 ```
 
 **Socket mode (Story J4):**
-`ngspice_diag_zmq_pub != NULL` → hooks emit protobuf DiagEvent to ZMQ PUB socket instead of file. Both modes can coexist for server debugging.
+`ngspice_diag_sink != NULL` → hooks call the sink's function pointers (e.g. `on_nr_iter`, `on_limiter_pnj`) which the ZMQ server wires to `pub_diag()` to emit protobuf DiagEvents on the PUB socket. Both file and sink modes can be active simultaneously.
 
 ### Hook Output — JSON Lines
 
