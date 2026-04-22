@@ -36,6 +36,41 @@ from hybrid_search import (
     stable_doc_id,
 )
 from reranker import get_reranker, rerank_pool_limit
+from util.constants import DIM_TO_MODEL as _util_DIM_TO_MODEL, LANG_TAG as _util_LANG_TAG
+from util.chroma_client import (
+    detect_embedding_model,
+    embedding_model_from_db_path,
+    persistent_chroma_client as _persistent_chroma_client,
+    discover_collections,
+    connect_chroma_with_retry as _util_connect_chroma,
+    safe_collection_count as _safe_count_util,
+)
+from util.formatting import (
+    infer_source_type as _infer_source_type,
+    fence_for as _fence_for,
+    truncate_chunk as _truncate_chunk,
+    format_result,
+    format_markdown,
+    format_concept_markdown,
+    format_plain,
+    format_json_output,
+)
+from util.chunk_metadata import (
+    metadata_pipe_or_comma_tokens as _metadata_pipe_or_comma_tokens,
+    parse_dependency_tokens as _parse_dependency_tokens,
+    depend_stems_from_results as _depend_stems_from_results,
+    dependencies_where_comma_token as _dependencies_where_comma_token,
+)
+from util.search_core import (
+    SearchHit,
+    domain_filter as _domain_filter,
+    select_collection_names as _select_collection_names,
+    hybrid_candidate_cap as _hybrid_candidate_cap,
+    shared_query_embedding as _shared_query_embedding,
+    similarity_search_with_score as _similarity_search_with_score_efficient,
+    sync_fetch_dependents as _sync_fetch_dependents,
+    sync_fetch_callers as _sync_fetch_callers,
+)
 
 try:
     import ollama as _ollama_mod
@@ -61,10 +96,7 @@ except ImportError:  # pragma: no cover
 # Constants (aligned with mcp_server.py)
 # ---------------------------------------------------------------------------
 
-DIM_TO_MODEL = {
-    1024: "mxbai-embed-large",
-    768: "nomic-embed-text",
-}
+DIM_TO_MODEL = _util_DIM_TO_MODEL  # alias → util.constants.DIM_TO_MODEL
 
 TOP_K_DEFAULT = int(os.environ.get("TOP_K", "5"))
 MAX_K = max(1, int(os.environ.get("MCP_MAX_K", "25")))
@@ -76,15 +108,7 @@ RESULT_CONTEXT_WINDOW_MAX_CHARS = max(
 DEFAULT_TIMEOUT = int(os.environ.get("QUERY_CLI_TIMEOUT", "120"))
 
 
-def _metadata_pipe_or_comma_tokens(raw: str) -> List[str]:
-    """Split ``calls`` / ``concepts``-style fields (pipe- or comma-delimited; matches ``ingest.iter_concept_ids``)."""
-    s = (raw or "").strip()
-    if not s:
-        return []
-    if s.startswith("|"):
-        return [x.strip() for x in s.strip("|").split("|") if x.strip()]
-    return [x.strip() for x in s.split(",") if x.strip()]
-
+# _metadata_pipe_or_comma_tokens → util.chunk_metadata (imported above)
 
 HISTORY_FILE = Path.home() / ".rag_query_history"
 
@@ -232,21 +256,7 @@ def _expand_query_typos(query: str, vocab: frozenset) -> str:
     return query
 
 
-def _persistent_chroma_client(path: str) -> chromadb.PersistentClient:
-    """Chroma client with telemetry off (faster init, production hygiene)."""
-    try:
-        from chromadb.config import Settings
-
-        return chromadb.PersistentClient(
-            path=path,
-            settings=Settings(anonymized_telemetry=False),
-        )
-    except Exception:
-        return chromadb.PersistentClient(path=path)
-
-# ---------------------------------------------------------------------------
-# System prompt presets
-# ---------------------------------------------------------------------------
+# _persistent_chroma_client → util.chroma_client.persistent_chroma_client (imported above)
 
 _NGSPICE_SYSTEM_PROMPT = (
     "You are an expert ngspice / SPICE circuit simulator and C-codebase assistant "
@@ -290,33 +300,7 @@ def estimate_tokens(text: str, provider: str = "ollama") -> int:
     divisor = 4.0 if provider == "anthropic" else 3.5
     return max(1, int(len(text) / divisor))
 
-LANG_TAG = {
-    ".py": "python",
-    ".java": "java",
-    ".js": "javascript",
-    ".ts": "typescript",
-    ".tsx": "tsx",
-    ".jsx": "jsx",
-    ".cs": "csharp",
-    ".cpp": "cpp",
-    ".c": "c",
-    ".go": "go",
-    ".rs": "rust",
-    ".rb": "ruby",
-    ".kt": "kotlin",
-    ".scala": "scala",
-    ".sql": "sql",
-    ".sh": "bash",
-    ".ps1": "powershell",
-    ".yml": "yaml",
-    ".yaml": "yaml",
-    ".json": "json",
-    ".xml": "xml",
-    ".html": "html",
-    ".md": "markdown",
-    ".proto": "protobuf",
-    ".properties": "properties",
-}
+LANG_TAG = _util_LANG_TAG  # alias → util.constants.LANG_TAG
 
 EXIT_OK = 0
 EXIT_NO_RESULTS = 1
@@ -336,12 +320,7 @@ def _resolve_db_abs(db_path: str, cmap: Dict[str, Chroma]) -> str:
     return ""
 
 
-def _hybrid_candidate_cap(k: int, env_var: str) -> int:
-    raw = os.environ.get(env_var, "").strip()
-    if raw.isdigit():
-        return max(1, int(raw))
-    return max(40, k * 4)
-
+# _hybrid_candidate_cap → util.search_core (imported above)
 
 def _make_console(*, no_color: bool, file=None) -> Any:
     if not RICH_AVAILABLE or Console is None:
@@ -383,43 +362,9 @@ def _stream_chunk_text(chunk: Any) -> str:
     return str(getattr(msg, "content", None) or "")
 
 
-def embedding_model_from_db_path(db_path: str) -> str:
-    """Resolve embedding model from on-disk DB config / Chroma dims only (no EMBEDDING_MODEL env).
+# embedding_model_from_db_path → util.chroma_client (imported above)
 
-    Use for ingestion paths that must match an existing VectorDB; ``detect_embedding_model`` still
-    honors the env override first for query-time behavior.
-    """
-    config_path = os.path.join(db_path, "ingestion_config.json")
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, encoding="utf-8") as fh:
-                model = json.load(fh).get("embedding_model", "")
-            if model:
-                return str(model).strip()
-        except Exception:
-            pass
-    try:
-        client = _persistent_chroma_client(db_path)
-        cols = client.list_collections()
-        if cols:
-            col = client.get_collection(cols[0].name)
-            rows = col.get(limit=1, include=["embeddings"])
-            embs = rows.get("embeddings")
-            if embs is not None and len(embs) > 0 and len(embs[0]) > 0:
-                dim = len(embs[0])
-                if dim in DIM_TO_MODEL:
-                    return DIM_TO_MODEL[dim]
-    except Exception:
-        pass
-    return "nomic-embed-text"
-
-
-def detect_embedding_model(db_path: str) -> str:
-    env_val = os.environ.get("EMBEDDING_MODEL", "").strip()
-    if env_val:
-        return env_val
-    return embedding_model_from_db_path(db_path)
-
+# detect_embedding_model → util.chroma_client (imported above)
 
 def check_ollama(timeout: float = 3.0) -> bool:
     try:
@@ -548,282 +493,34 @@ def _ollama_options_for_model(model_name: str) -> Dict[str, Any]:
     }
 
 
-def discover_collections(
-    db_path: str,
-    embeddings: OllamaEmbeddings,
-    chroma_client: Optional[chromadb.PersistentClient] = None,
-) -> Dict[str, Chroma]:
-    """Open one PersistentClient and attach LangChain Chroma stores per collection.
-
-    Reuses ``client`` for every ``Chroma`` wrapper (avoids a second sqlite open) and uses
-    ``create_collection_if_not_exists=False`` so we only bind to existing collections — the
-    default ``get_or_create`` path can misbehave across Chroma / LangChain versions when a DB
-    already contains data.
-    """
-    out: Dict[str, Chroma] = {}
-    log = logging.getLogger("query")
-    try:
-        client = chroma_client or _persistent_chroma_client(db_path)
-        infos = client.list_collections()
-    except Exception as exc:
-        log.error("discover_collections: list_collections failed for %s: %s", db_path, exc)
-        return out
-    if not infos:
-        log.warning(
-            "discover_collections: list_collections() returned no collections for %s "
-            "(folder may be empty or DB is locked by another process).",
-            db_path,
-        )
-        return out
-    for info in infos:
-        name = info.name
-        try:
-            out[name] = Chroma(
-                client=client,
-                collection_name=name,
-                embedding_function=embeddings,
-                create_collection_if_not_exists=False,
-            )
-        except Exception as exc:
-            log.error("discover_collections: failed to open collection %r: %s", name, exc)
-    return out
-
+# discover_collections → util.chroma_client (imported above)
 
 def connect_chroma_with_retry(
     db_path: str,
     model: str,
 ) -> Tuple[chromadb.PersistentClient, OllamaEmbeddings, Dict[str, Chroma]]:
-    import time
-
-    log = logging.getLogger("query")
-    last_exc: Optional[Exception] = None
-    for attempt in range(3):
-        try:
-            client = _persistent_chroma_client(db_path)
-            client.list_collections()
-            embedder = OllamaEmbeddings(model=model)
-            cmap = discover_collections(db_path, embedder, client)
-            return client, embedder, cmap
-        except Exception as exc:
-            last_exc = exc
-            log.warning("Chroma connect attempt %d failed: %s", attempt + 1, exc)
-            time.sleep(2)
-    raise RuntimeError(f"ChromaDB connection failed: {last_exc}")
+    """Thin wrapper preserving the (db_path, model) call signature used by this module."""
+    from util.chroma_client import connect_chroma_with_retry as _ccwr
+    return _ccwr(db_path, model)
 
 
-def _infer_source_type(meta: Dict[str, Any]) -> str:
-    st = (meta.get("source_type") or "").strip().lower()
-    if st:
-        return st
-    cname = (meta.get("chunk_strategy") or "").lower()
-    if "rfc" in cname:
-        return "rfc"
-    if "mib" in cname:
-        return "mib"
-    if "rally" in cname or meta.get("rally_id"):
-        return "rally"
-    if meta.get("ticket_id"):
-        return "customer"
-    if "wiki" in cname:
-        return "wiki"
-    if "community" in cname:
-        return "community"
-    if "release" in cname:
-        return "release_notes"
-    return "code"
+# _infer_source_type → util.formatting (imported above)
 
+# _fence_for → util.formatting (imported above)
 
-def _fence_for(content: str) -> str:
-    return "~~~" if "```" in content else "```"
+# _truncate_chunk → util.formatting (imported above)
 
+# format_result → util.formatting (imported above)
 
-def _truncate_chunk(text: str, max_chars: Optional[int] = None) -> str:
-    """Truncate with newline / `}`-aware cut; close dangling ``` fences if needed."""
-    mx = max_chars if max_chars is not None and max_chars > 0 else RESULT_CHUNK_MAX_CHARS
-    if len(text) <= mx:
-        return text
-    suffix = "\n\n... (truncated for response size) ..."
-    floor = min(mx, max(512, mx // 2))
-    target_cut = mx - len(suffix)
-    cut = max(floor, min(target_cut, len(text)))
-    cut = min(cut, len(text))
-    boundary = text.rfind("\n\n", 0, cut)
-    if boundary < floor:
-        boundary = text.rfind("\n", 0, cut)
-    if boundary >= floor:
-        cut = boundary
-    else:
-        brace = text.rfind("}", 0, cut)
-        if brace >= floor:
-            cut = brace + 1
-    prefix = text[:cut]
-    fence = "```"
-    if prefix.count(fence) % 2 == 1:
-        prefix = prefix + "\n" + fence
-    return prefix + suffix
+# _domain_filter → util.search_core (imported above)
 
+# _select_collection_names → util.search_core (imported above)
 
-def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
-    """Prefer ``context_window`` over page_content; larger cap + syntax-aware ``_truncate_chunk``."""
-    meta = doc.metadata or {}
-    header: List[str] = []
-    repo = meta.get("repository", "") or ""
-    src = meta.get("relative_path", meta.get("source", "")) or ""
-    cname = meta.get("chunk_name", "") or ""
-    ctype = meta.get("chunk_type", "") or ""
-    if score is not None:
-        header.append(f"**Distance:** {score:.4f}")
-    header.append(f"**source_type:** {source_type}")
-    cw = (meta.get("context_window") or "").strip()
-    if cw:
-        raw_body = cw
-        trunc_limit = RESULT_CONTEXT_WINDOW_MAX_CHARS
-    else:
-        raw_body = (doc.page_content or "").strip()
-        trunc_limit = RESULT_CHUNK_MAX_CHARS
-    content = _truncate_chunk(raw_body, trunc_limit)
-    ext = (meta.get("extension") or "").lower()
+# SearchHit → util.search_core.SearchHit (imported above)
 
-    if source_type == "code":
-        if repo:
-            header.append(f"**Repo:** {repo}")
-        header.append(f"**File:** {repo + '/' + src if repo else src}")
-        if cname:
-            header.append(f"**Component:** {cname} ({ctype})")
-        dep = (meta.get("dependencies") or "").strip()
-        if dep:
-            dshow = dep if len(dep) <= 500 else dep[:500] + "…"
-            header.append(f"**dependencies:** {dshow}")
-        calls_str = (meta.get("calls") or "").strip()
-        if calls_str:
-            callees_list = [
-                c for c in _metadata_pipe_or_comma_tokens(calls_str) if c != "__truncated__"
-            ][:15]
-            if callees_list:
-                header.append(f"**Callees (Outgoing):** {', '.join(callees_list)}")
-        if meta.get("retrieval_hop") == "caller":
-            header.append("**[CALLER NODE]** This chunk calls the primary retrieved function.")
-        lang = LANG_TAG.get(ext, "")
-        fence = _fence_for(content)
-        return "### Code\n" + "\n".join(header) + f"\n\n{fence}{lang}\n{content}\n{fence}"
+# _shared_query_embedding → util.search_core (imported above)
 
-    if source_type in ("domain_doc", "theory", "wiki"):
-        sec = meta.get("section", meta.get("doc_title", "Domain Knowledge"))
-        return f"### {sec}\n*Source: {meta.get('source', '')}*\n\n{content}"
-
-    if source_type == "rfc":
-        rfc = meta.get("rfc_number", "")
-        sec = meta.get("section_number", "")
-        st = meta.get("section_title", "")
-        head = f"RFC {rfc} §{sec}"
-        if st:
-            head += f": {st}"
-        return f"### {head}\n\n{content}"
-
-    if source_type in ("rally", "customer"):
-        tid = meta.get("rally_id", "") or meta.get("ticket_id", "")
-        title = meta.get("chunk_name", "") or meta.get("Name", "")
-        res = meta.get("has_resolution", "") == "true"
-        line = f"[{tid}] {title}" if title else f"[{tid}]"
-        if res:
-            line += " — Resolution: (see body)"
-        return f"### {line}\n\n{content}"
-
-    if source_type == "mib":
-        oid = meta.get("object_name", "")
-        path = meta.get("oid_path", "")
-        return f"### OID: {oid} ({path}) — Description\n\n{content}"
-
-    if source_type == "community":
-        plat = meta.get("source_platform", "unknown")
-        return f"### Source: [{plat}] — {meta.get('source_url', '')}\n\n{content}"
-
-    return "### Result\n" + "\n".join(header) + f"\n\n{content}"
-
-
-def _domain_filter(names: List[str], domain: str) -> List[str]:
-    d = domain.strip().lower()
-    if not d or d == "general":
-        return names
-    return [n for n in names if n.lower().startswith(d + "_") or n.lower() == d]
-
-
-def _select_collection_names(cmap: Dict[str, Chroma], search_type: str, domain: str) -> List[str]:
-    names = list(cmap.keys())
-    names = _domain_filter(names, domain)
-    st = search_type.lower().strip()
-    if st == "auto" or not st:
-        return names
-    if st == "code":
-        return [n for n in names if n.endswith("_code")]
-    if st == "domain":
-        return [n for n in names if "_domain" in n or n == "theory"]
-    if st == "troubleshoot":
-        return [
-            n
-            for n in names
-            if any(x in n for x in ("_domain", "community", "_customer", "_internal"))
-        ]
-    if st == "reference":
-        return [n for n in names if n == "rfc" or n == "theory" or "_mib" in n or n.endswith("_releases")]
-    return names
-
-
-@dataclass
-class SearchHit:
-    content: str
-    score: Optional[float]
-    source_type: str
-    metadata: Dict[str, Any]
-    collection: Optional[str] = None
-    retrieval_hop: Optional[str] = None
-
-
-def _shared_query_embedding(cmap: Dict[str, Chroma], targets: List[str], query: str) -> Optional[List[float]]:
-    """Single embed_query for all collections (same model / vector space)."""
-    if not RAG_QUERY_SHARED_EMBED or not targets or not (query or "").strip():
-        return None
-    vs0 = cmap.get(targets[0])
-    if vs0 is None:
-        return None
-    emb_fn = getattr(vs0, "_embedding_function", None)
-    if emb_fn is None:
-        return None
-    try:
-        vec = emb_fn.embed_query(query)
-        return list(vec) if vec is not None else None
-    except Exception as exc:
-        log.debug("shared embed_query failed, using per-query embedding: %s", exc)
-        return None
-
-
-def _similarity_search_with_score_efficient(
-    vs: Any,
-    query: str,
-    k: int,
-    flt: Optional[Dict[str, str]],
-    q_emb: Optional[List[float]],
-) -> List[Tuple[Any, Any]]:
-    """Dense search: reuse precomputed embedding when LangChain Chroma supports it."""
-    if q_emb is not None:
-        fn = getattr(vs, "similarity_search_by_vector_with_relevance_scores", None)
-        if callable(fn):
-            try:
-                return fn(q_emb, k=k, filter=flt)
-            except TypeError:
-                try:
-                    return fn(q_emb, k, flt)
-                except Exception:
-                    pass
-            except Exception as exc:
-                log.debug("similarity_search_by_vector_with_relevance_scores failed: %s", exc)
-    try:
-        if flt is not None:
-            return vs.similarity_search_with_score(query, k=k, filter=flt)
-        return vs.similarity_search_with_score(query, k=k)
-    except TypeError:
-        return vs.similarity_search_with_score(query, k=k)
-
+# _similarity_search_with_score_efficient → util.search_core (imported above)
 
 def _exact_chunk_name_hits(
     query_raw: str,
@@ -1036,17 +733,7 @@ def _sync_multi_search(
     return exact_hits + regular
 
 
-def _parse_dependency_tokens(deps: str) -> List[str]:
-    seen: set[str] = set()
-    out: List[str] = []
-    for part in (deps or "").split(","):
-        t = part.strip()
-        if not t or t in seen:
-            continue
-        seen.add(t)
-        out.append(t)
-    return out
-
+# _parse_dependency_tokens → util.chunk_metadata (imported above)
 
 def _fused_docs_for_query_text(
     name: str,
@@ -1128,154 +815,13 @@ def _fused_docs_for_query_text(
     return out2
 
 
-def _depend_stems_from_results(
-    results: List[Tuple[Any, Optional[float], str]],
-) -> List[str]:
-    stems: set = set()
-    for doc, _, _ in results:
-        meta = getattr(doc, "metadata", None) or {}
-        rel = str(meta.get("relative_path") or "").strip()
-        if rel:
-            stem = Path(rel).stem
-            if stem:
-                stems.add(stem)
-            stems.add(Path(rel.replace("\\", "/")).name)
-        cn = str(meta.get("chunk_name") or "").strip()
-        if cn:
-            stems.add(cn)
-    return sorted(stems)
+# _depend_stems_from_results → util.chunk_metadata (imported above)
 
+# _dependencies_where_comma_token → util.chunk_metadata (imported above)
 
-def _dependencies_where_comma_token(stem: str) -> Dict[str, Any]:
-    """Match *stem* as a whole entry in comma-separated ``dependencies`` metadata."""
-    s = (stem or "").strip()
-    if not s:
-        return {"dependencies": {"$eq": "__empty_dependency_stem__"}}
-    return {
-        "$or": [
-            {"dependencies": {"$eq": s}},
-            {"dependencies": {"$contains": f"{s}, "}},
-            {"dependencies": {"$contains": f", {s}, "}},
-            {"dependencies": {"$contains": f", {s}"}},
-        ]
-    }
+# _sync_fetch_dependents → util.search_core (imported above)
 
-
-def _sync_fetch_dependents(
-    primary: List[Tuple[Any, Optional[float], str]],
-    search_type: str,
-    domain: str,
-    repo_filter: str,
-    cmap: Dict[str, Chroma],
-    max_hits: int,
-) -> List[Tuple[Any, Optional[float], str, str]]:
-    """Chunks whose *dependencies* metadata references symbols from primary hits.
-
-    Returns ``(doc, score, source_type, collection_name)`` for stable dedupe / SearchHit.
-    """
-    targets = _select_collection_names(cmap, search_type, domain)
-    lookups = _depend_stems_from_results(primary)
-    if not lookups or not targets:
-        return []
-    seen: set = set()
-    out: List[Tuple[Any, Optional[float], str, str]] = []
-    rf = repo_filter.strip()
-    for stem in lookups:
-        if not stem:
-            continue
-        where_dep = _dependencies_where_comma_token(stem)
-        for name in targets:
-            vs = cmap[name]
-            col = getattr(vs, "_collection", None)
-            if col is None:
-                continue
-            try:
-                res = col.get(
-                    where=where_dep,
-                    limit=40,
-                    include=["documents", "metadatas"],
-                )
-            except Exception as exc:
-                log.warning("dependents get failed on %s: %s", name, exc)
-                continue
-            ids_list = res.get("ids") or []
-            docs = res.get("documents") or []
-            metas = res.get("metadatas") or []
-            for i, did in enumerate(ids_list):
-                if did in seen:
-                    continue
-                meta = metas[i] if i < len(metas) else {}
-                if rf and str((meta or {}).get("repository", "")).strip() != rf:
-                    continue
-                seen.add(did)
-                text = docs[i] if i < len(docs) else ""
-                doc = Document(page_content=text or "", metadata=dict(meta or {}))
-                st = _infer_source_type(meta or {})
-                out.append((doc, None, st, name))
-                if len(out) >= max_hits:
-                    return out
-    return out
-
-
-def _sync_fetch_callers(
-    primary: List[SearchHit],
-    search_type: str,
-    domain: str,
-    repo_filter: str,
-    cmap: Dict[str, Chroma],
-    max_hits: int,
-) -> List[Tuple[Any, Optional[float], str, str]]:
-    """Fetch chunks that call functions found in primary hits (reverse call-graph hop).
-
-    For each primary code hit with a ``chunk_name``, queries code collections for
-    chunks whose ``calls`` metadata contains ``|chunk_name|``.
-    Returns ``(doc, score, source_type, collection_name)`` tuples.
-    """
-    code_names = _select_collection_names(cmap, search_type, domain)
-    rf = repo_filter.strip()
-    seen: set = set()
-    out: List[Tuple[Any, Optional[float], str, str]] = []
-    for hit in primary:
-        if hit.source_type != "code":
-            continue
-        chunk_name = str((hit.metadata or {}).get("chunk_name") or "").strip()
-        if not chunk_name:
-            continue
-        needle = f"|{chunk_name}|"
-        for coll_name in code_names:
-            if len(out) >= max_hits:
-                return out
-            vs = cmap[coll_name]
-            col = getattr(vs, "_collection", None)
-            if col is None:
-                continue
-            try:
-                res = col.get(
-                    where={"calls": {"$contains": needle}},
-                    limit=5,
-                    include=["documents", "metadatas"],
-                )
-            except Exception as exc:
-                log.warning("caller get failed on %s: %s", coll_name, exc)
-                continue
-            ids_list = res.get("ids") or []
-            docs_list = res.get("documents") or []
-            metas_list = res.get("metadatas") or []
-            for i, did in enumerate(ids_list):
-                if did in seen:
-                    continue
-                meta = metas_list[i] if i < len(metas_list) else {}
-                if rf and str((meta or {}).get("repository", "")).strip() != rf:
-                    continue
-                seen.add(did)
-                text = docs_list[i] if i < len(docs_list) else ""
-                doc = Document(page_content=text or "", metadata=dict(meta or {}))
-                st = _infer_source_type(meta or {})
-                out.append((doc, None, st, coll_name))
-                if len(out) >= max_hits:
-                    return out
-    return out
-
+# _sync_fetch_callers → util.search_core (imported above)
 
 def _sync_multi_search_with_dependency_hop(
     query: str,
@@ -1443,11 +989,9 @@ def concept_search_hits(concept: str, domain: str, cmap: Dict[str, Chroma]) -> L
     return hits
 
 
-def _safe_count(coll: Any) -> int:
-    try:
-        return int(coll.count())
-    except Exception:
-        return 0
+def _safe_count(coll) -> int:  # noqa: D401
+    """Alias to util.chroma_client.safe_collection_count."""
+    return _safe_count_util(coll)
 
 
 def run_status(db_path: str) -> str:
@@ -1510,59 +1054,13 @@ def run_with_timeout(seconds: int, fn, *args, **kwargs):
         signal.signal(signal.SIGALRM, old)
 
 
-def format_markdown(hits: List[SearchHit], query: str) -> str:
-    if not hits:
-        return "No matching chunks found."
-    fake_docs = []
-    for h in hits:
-        doc = type("D", (), {"page_content": h.content, "metadata": h.metadata})()
-        fake_docs.append(format_result(doc, h.score, h.source_type))
-    return "\n\n---\n\n".join(fake_docs)
+# format_markdown → util.formatting (imported above)
 
+# format_concept_markdown → util.formatting (imported above)
 
-def format_concept_markdown(hits: List[SearchHit], concept: str) -> str:
-    if not hits:
-        return f"No chunks tagged with concept '{concept}'."
-    by_st: Dict[str, List[str]] = {}
-    for h in hits:
-        doc = type("D", (), {"page_content": h.content, "metadata": h.metadata})()
-        formatted = format_result(doc, None, h.source_type)
-        cname = h.collection or ""
-        by_st.setdefault(h.source_type, []).append(f"*({cname})* {formatted}")
-    parts = []
-    for st in sorted(by_st.keys()):
-        parts.append(f"## source_type: **{st}**")
-        parts.extend(by_st[st])
-    return "\n\n".join(parts)
+# format_json_output → util.formatting (imported above)
 
-
-def format_json_output(
-    query: str, hits: List[SearchHit], mode: str, answer: str = ""
-) -> str:
-    payload: Dict[str, Any] = {
-        "query": query,
-        "mode": mode,
-        "results": [asdict(h) for h in hits],
-    }
-    if answer:
-        payload["answer"] = answer
-    return json.dumps(payload, indent=2)
-
-
-def format_plain(hits: List[SearchHit]) -> str:
-    if not hits:
-        return ""
-    blocks = []
-    for h in hits:
-        head = f"[{h.source_type}]"
-        if h.collection:
-            head += f" ({h.collection})"
-        if h.score is not None:
-            head += f" score={h.score:.4f}"
-        src = h.metadata.get("relative_path") or h.metadata.get("source", "")
-        blocks.append(f"{head}\n{src}\n{h.content[:RESULT_CHUNK_MAX_CHARS]}")
-    return "\n\n---\n\n".join(blocks)
-
+# format_plain → util.formatting (imported above)
 
 def _build_context_blocks(hits: List[SearchHit], max_chars: Optional[int] = None) -> str:
     """Build the RAG context string for the LLM prompt.
