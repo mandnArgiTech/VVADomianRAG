@@ -287,86 +287,81 @@ def format_result(
 # ---------------------------------------------------------------------------
 
 def format_markdown(hits: list, query: str) -> str:
-    """Render a list of SearchHit objects as Markdown."""
+    """Render a list of SearchHit objects as Markdown (joined by horizontal rules)."""
     if not hits:
-        return "_No results._"
+        return "No matching chunks found."
     parts: List[str] = []
     for h in hits:
-        parts.append(
-            format_result(
-                _hit_to_doc(h),
-                h.score,
-                h.source_type,
-            )
-        )
+        doc = _HitDoc(getattr(h, "content", "") or "", dict(getattr(h, "metadata", None) or {}))
+        parts.append(format_result(doc, h.score, h.source_type))
     return "\n\n---\n\n".join(parts)
 
 
 def format_concept_markdown(hits: list, concept: str) -> str:
-    """Render concept-search hits as Markdown."""
+    """Render concept-search hits grouped by source_type."""
     if not hits:
-        return f"_No chunks found for concept `{concept}`._"
-    parts: List[str] = []
+        return f"No chunks tagged with concept \'{concept}\'."
+    by_st: Dict[str, List[str]] = {}
     for h in hits:
-        parts.append(
-            format_result(
-                _hit_to_doc(h),
-                h.score,
-                h.source_type,
-            )
-        )
-    return f"## Concept: `{concept}`\n\n" + "\n\n---\n\n".join(parts)
+        doc = _HitDoc(getattr(h, "content", "") or "", dict(getattr(h, "metadata", None) or {}))
+        formatted = format_result(doc, None, h.source_type)
+        cname = getattr(h, "collection", None) or ""
+        by_st.setdefault(h.source_type, []).append(f"*({cname})* {formatted}")
+    parts: List[str] = []
+    for st in sorted(by_st.keys()):
+        parts.append(f"## source_type: **{st}**")
+        parts.extend(by_st[st])
+    return "\n\n".join(parts)
 
 
 def format_plain(hits: list) -> str:
-    """Plain-text rendering for terminal output."""
-    lines: List[str] = []
-    for i, h in enumerate(hits, 1):
-        meta = h.metadata or {}
-        src = meta.get("source", meta.get("relative_path", ""))
-        score_str = f"  score={h.score:.4f}" if h.score is not None else ""
-        lines.append(f"[{i}] {h.source_type}{score_str}  {src}")
-        lines.append(h.content[:300].replace("\n", " "))
-        lines.append("")
-    return "\n".join(lines)
+    """Plain-text rendering for terminal / non-rich output."""
+    if not hits:
+        return ""
+    blocks: List[str] = []
+    for h in hits:
+        head = f"[{h.source_type}]"
+        coll = getattr(h, "collection", None)
+        if coll:
+            head += f" ({coll})"
+        if h.score is not None:
+            head += f" score={h.score:.4f}"
+        meta = getattr(h, "metadata", None) or {}
+        src = meta.get("relative_path") or meta.get("source", "")
+        blocks.append(f"{head}\n{src}\n{h.content[:_RESULT_CHUNK_MAX_CHARS]}")
+    return "\n\n---\n\n".join(blocks)
 
 
 def format_json_output(
-    hits: list,
     query: str,
-    k: int,
-    search_type: str,
-    domain: str,
-    db_path: str,
+    hits: list,
+    mode: str,
+    answer: str = "",
 ) -> str:
-    """Render hits as a JSON string (for --output json CLI mode)."""
-    records = []
-    for h in hits:
-        records.append(
-            {
-                "content": h.content,
-                "score": h.score,
-                "source_type": h.source_type,
-                "metadata": h.metadata or {},
-                "collection": getattr(h, "collection", None),
-            }
-        )
-    return json.dumps(
-        {
-            "query": query,
-            "k": k,
-            "search_type": search_type,
-            "domain": domain,
-            "db_path": db_path,
-            "results": records,
-        },
-        indent=2,
-        default=str,
-    )
+    """Render hits as a JSON string (for --output json / --format json CLI mode).
+
+    Parameters match the original query.py signature:
+    ``format_json_output(query, hits, mode, answer="")``
+    """
+    from dataclasses import asdict
+    payload: Dict[str, Any] = {
+        "query": query,
+        "mode": mode,
+        "results": [asdict(h) if hasattr(h, "__dataclass_fields__") else {
+            "content": getattr(h, "content", ""),
+            "score": getattr(h, "score", None),
+            "source_type": getattr(h, "source_type", ""),
+            "metadata": getattr(h, "metadata", {}),
+            "collection": getattr(h, "collection", None),
+        } for h in hits],
+    }
+    if answer:
+        payload["answer"] = answer
+    return json.dumps(payload, indent=2)
 
 
 # ---------------------------------------------------------------------------
-# Internal helper: SearchHit → thin Document-like wrapper
+# Internal helper: SearchHit → thin Document-like wrapper for format_result
 # ---------------------------------------------------------------------------
 
 class _HitDoc:
@@ -377,10 +372,3 @@ class _HitDoc:
     def __init__(self, content: str, metadata: Dict[str, Any]) -> None:
         self.page_content = content
         self.metadata = metadata
-
-
-def _hit_to_doc(hit: Any) -> _HitDoc:
-    return _HitDoc(
-        content=getattr(hit, "content", "") or "",
-        metadata=dict(getattr(hit, "metadata", None) or {}),
-    )

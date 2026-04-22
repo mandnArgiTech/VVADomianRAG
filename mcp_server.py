@@ -132,22 +132,18 @@ def _set_ollama_healthy(ok: bool) -> None:
     with _ollama_health_lock:
         _ollama_healthy = ok
 
-
 def ollama_is_healthy() -> bool:
     with _ollama_health_lock:
         return _ollama_healthy
-
 
 def _collections_snapshot() -> Dict[str, Chroma]:
     with _collections_lock:
         return dict(collections_map)
 
-
 def _collections_assign(new_map: Dict[str, Chroma]) -> None:
     global collections_map
     with _collections_lock:
         collections_map = new_map
-
 
 def init_mcp_executor() -> ThreadPoolExecutor:
     global _mcp_executor
@@ -157,7 +153,6 @@ def init_mcp_executor() -> ThreadPoolExecutor:
             thread_name_prefix="mcp",
         )
     return _mcp_executor
-
 
 def _heartbeat_worker() -> None:
     while not _shutdown_event.is_set():
@@ -178,7 +173,6 @@ def _heartbeat_worker() -> None:
             except Exception as exc:
                 logger.error("Ollama recovery after heartbeat failed: %s", exc)
 
-
 def _start_heartbeat_thread() -> None:
     t = threading.Thread(
         target=_heartbeat_worker,
@@ -186,7 +180,6 @@ def _start_heartbeat_thread() -> None:
         daemon=True,
     )
     t.start()
-
 
 def _safe_count_chroma(vs: Chroma) -> int:
     try:
@@ -201,16 +194,12 @@ def _safe_count_chroma(vs: Chroma) -> int:
             logger.warning("fallback count failed: %s", exc2)
             return 0
 
-
-# discover_collections → util.chroma_client (imported above)
-
 def _ollama_is_ready() -> bool:
     try:
         urllib.request.urlopen("http://localhost:11434", timeout=2)
         return True
     except Exception:
         return False
-
 
 def start_ollama() -> None:
     global ollama_proc
@@ -239,7 +228,6 @@ def start_ollama() -> None:
     ollama_proc = None
     raise RuntimeError("Ollama did not become ready within 30 seconds.")
 
-
 def stop_ollama() -> None:
     global ollama_proc
     if ollama_proc is None:
@@ -258,7 +246,6 @@ def stop_ollama() -> None:
     finally:
         ollama_proc = None
 
-
 def connect_chroma_with_retry() -> Dict[str, Chroma]:
     embeddings = _shared_embedder or OllamaEmbeddings(model=EMBEDDING_MODEL)
     chroma_client = _shared_chroma_client
@@ -272,7 +259,6 @@ def connect_chroma_with_retry() -> Dict[str, Chroma]:
             time.sleep(5)
     logger.error("ChromaDB connection failed after retries: %s", last_exc)
     return {}
-
 
 def startup() -> None:
     global _shared_embedder, _shared_chroma_client
@@ -292,7 +278,6 @@ def startup() -> None:
     logger.info("ChromaDB -- %d collections, ~%d total chunks", len(cmap), total)
     _start_heartbeat_thread()
 
-
 def shutdown(*args: Any) -> None:
     _shutdown_event.set()
     stop_ollama()
@@ -307,15 +292,12 @@ def shutdown(*args: Any) -> None:
             logger.warning("ThreadPoolExecutor shutdown: %s", exc)
         _mcp_executor = None
 
-
 def _signal_handler(signum: int, frame: Any) -> None:
     logger.info("Signal %s received, shutting down MCP server resources", signum)
     shutdown()
     sys.exit(0 if signum == signal.SIGINT else 128 + signum)
 
-
 atexit.register(shutdown)
-
 
 def _structural_importance_int(meta: Optional[Dict[str, Any]]) -> int:
     try:
@@ -323,16 +305,12 @@ def _structural_importance_int(meta: Optional[Dict[str, Any]]) -> int:
     except (TypeError, ValueError):
         return 0
 
-
 def _doc_dedup_key(doc: Any) -> str:
     m = getattr(doc, "metadata", None) or {}
     return "|".join(
         str(m.get(k) or "")
         for k in ("repository", "source", "relative_path", "chunk_name", "chunk_index")
     )
-
-
-# _infer_source_type → util.formatting (imported above)
 
 def _exact_chunk_name_results(
     query_raw: str,
@@ -385,7 +363,6 @@ def _exact_chunk_name_results(
                 (type("D", (), {"page_content": text, "metadata": meta, "metadata_": meta})(), 0.0, st)
             )
     return out
-
 
 def _sync_multi_search(
     query: str,
@@ -537,9 +514,6 @@ def _sync_multi_search(
         regular = [_to_rerank[idx] for idx, _score in _ranked]
     return exact + regular
 
-
-# _depend_stems_from_results → util.chunk_metadata (imported above)
-
 def _sync_fetch_dependents(
     primary: List[Tuple[Any, Optional[float], str]],
     search_type: str,
@@ -591,7 +565,6 @@ def _sync_fetch_dependents(
                 if len(out) >= max_hits:
                     return out
     return out
-
 
 def _sync_fetch_callers(
     primary: List[SearchHit],
@@ -651,7 +624,6 @@ def _sync_fetch_callers(
                 if len(out) >= max_hits:
                     return out
     return out
-
 
 def _sync_multi_search_with_dependency_hop(
     query: str,
@@ -738,11 +710,9 @@ def _sync_multi_search_with_dependency_hop(
         out.append((doc, h.score, h.source_type))
     return out
 
-
 def _callee_expand_enabled() -> bool:
     v = os.environ.get("RAG_CALLEE_EXPAND", "1").strip().lower()
     return v not in ("0", "false", "no")
-
 
 def _sync_fetch_callees(
     primary: List[Tuple[Any, Optional[float], str]],
@@ -806,7 +776,6 @@ def _sync_fetch_callees(
                 seen.add(did)
                 out.append((doc, None, "callee"))
     return out
-
 
 async def _run_search(
     query: str,
@@ -874,7 +843,6 @@ async def _run_search(
         text += "\n\n---\n\n".join(format_result(d, s, st) for d, s, st in cal)
     return text
 
-
 mcp = FastMCP(
     "codebase-rag",
     instructions=(
@@ -882,7 +850,6 @@ mcp = FastMCP(
         "Use search_concepts for tagged topics. feed_domain_doc to add markdown or RFC .txt."
     ),
 )
-
 
 @mcp.tool()
 async def reconnect() -> str:
@@ -900,7 +867,6 @@ async def reconnect() -> str:
 
     n, t = await loop.run_in_executor(ex, _do)
     return f"Reconnected: {n} collections, ~{t} chunks."
-
 
 @mcp.tool()
 async def search_knowledge(
@@ -935,14 +901,12 @@ async def search_knowledge(
         logger.exception("search_knowledge failed")
         return f"Error: {exc}"
 
-
 @mcp.tool()
 async def search_codebase(query: str, k: int = TOP_K_DEFAULT, repo: str = "") -> str:
     """Backward-compatible code search; same as search_knowledge with search_type=code."""
     return await search_knowledge(
         query, k=k, search_type="code", domain="", repo=repo, include_dependents=False
     )
-
 
 @mcp.tool()
 async def search_concepts(concept: str, domain: str = "") -> str:
@@ -1013,7 +977,6 @@ async def search_concepts(concept: str, domain: str = "") -> str:
     except asyncio.TimeoutError:
         return f"Error: search_concepts timed out after {QUERY_TIMEOUT}s"
 
-
 @mcp.tool()
 async def feed_domain_doc(
     filepath: str, domain: str = "nms", source_type: str = "auto"
@@ -1069,7 +1032,6 @@ async def feed_domain_doc(
         logger.exception("feed_domain_doc")
         return f"Error: {exc}"
 
-
 def _sample_source_type_counts(vs: Chroma, cap: int = 1500) -> Dict[str, int]:
     counts: Dict[str, int] = {}
     try:
@@ -1085,7 +1047,6 @@ def _sample_source_type_counts(vs: Chroma, cap: int = 1500) -> Dict[str, int]:
     except Exception:
         pass
     return counts
-
 
 @mcp.tool()
 async def list_repositories() -> str:
@@ -1122,7 +1083,6 @@ async def list_repositories() -> str:
         lines.append("\nNo Chroma collections connected.")
     return "\n".join(lines)
 
-
 @mcp.tool()
 async def get_db_stats() -> str:
     """Per-collection stats and quick concept/content_type sampling."""
@@ -1156,7 +1116,6 @@ async def get_db_stats() -> str:
     if ctype_hits:
         lines.append("**Content types (sample):** " + ", ".join(f"{k}={v}" for k, v in sorted(ctype_hits.items())))
     return "\n".join(lines)
-
 
 if __name__ == "__main__":
     if hasattr(signal, "SIGINT"):
