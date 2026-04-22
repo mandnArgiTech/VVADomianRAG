@@ -403,85 +403,42 @@ J3-08   | branch_currents has voltage source currents
 
 ## Business Context
 
-Replace Story I's `fprintf` with protobuf serialization → ZMQ PUB socket. The 5 hook points stay the same — only the output routing changes.
+Story I adds **call sites** in ngspice C. `src/misc/diaghooks.c` implements **`ngspice_diag_emit_*`**: each path writes JSON Lines when `NGSPICE_DIAG_FILE` / `ngspice_diag_fp` is set, and invokes **`NgspiceDiagSink`** callbacks when `ngspice_diag_sink` is non-NULL. **`ngspice-server`** (`zmq_server/ngspice_server.c`) installs **`server_sink`** on workers so callbacks build protobuf **`DiagEvent`** and forward to the master for the **PUB** socket (`pub_diag`). There is **no** `ngspice_diag_zmq_pub`; ZMQ publishing lives entirely in the server process.
 
-## Acceptance Criteria
+## Acceptance Criteria (as shipped)
 
-### AC-1: DIAG_EMIT macro routes to ZMQ when server mode is active
+### AC-1: Public API (`diaghooks.h` / `diaghooks.c`)
 
-```c
-// Updated diaghooks.h
-extern FILE *ngspice_diag_fp;        // file mode (Story I)
-extern void *ngspice_diag_zmq_pub;   // socket mode (Story J4)
+- `NgspiceDiagSink` with typed callbacks (`on_nr_iter`, `on_limiter_pnj`, `on_limiter_fet`, `on_gmin`, `on_src_step`, `on_device_dio`, `on_matrix`).
+- `ngspice_diag_sink`, `ngspice_diag_request_id`, `ngspice_diag_fp`.
+- `ngspice_diag_wants_*()` gates hot paths before expensive work.
+- `ngspice_diag_emit_nr_iter`, `ngspice_diag_emit_limiter_pnj`, `ngspice_diag_emit_limiter_fet`, `ngspice_diag_emit_gmin`, `ngspice_diag_emit_src_step`, `ngspice_diag_emit_device_dio`, `ngspice_diag_emit_matrix`.
 
-// Macro dispatches to whichever is active
-#define DIAG_EMIT_FILE(...) \
-    do { if (ngspice_diag_fp) fprintf(ngspice_diag_fp, __VA_ARGS__); } while (0)
+`DIAG_EMIT` remains for legacy string-only paths; the five Story I hook sites use typed emits (see [Story I](./STORY_I_ngspice_diag_hooks.md)).
 
-// New: protobuf + ZMQ emit (one function per hook type for type safety)
-void diag_emit_nr_iter(int iter, double max_dx, int noncon, int converged);
-void diag_emit_limiter(const char *fn, double vnew_raw, double vnew_lim, double vold, double vcrit);
-void diag_emit_gmin(double value, int converged, int iterations);
-void diag_emit_src_step(double factor, int converged, int iterations);
-void diag_emit_device(const char *type, const char *inst, double vd, double id, double gd, double ieq);
-void diag_emit_matrix(int size, double min_piv, double max_piv, double ratio);
-```
+### AC-2: Hook points call typed emits
 
-### AC-2: Hook points call typed emit functions
+`niiter.c`, `devsup.c`, `cktop.c`, `dioload.c`, `spfactor.c` call **`ngspice_diag_emit_*`** (Story I locations).
 
-Replace the `DIAG_EMIT` fprintf calls from Story I with the typed functions:
+### AC-3: PUB path is server-side
 
-```c
-// In niiter.c (was: DIAG_EMIT("{\"hook\":\"nr_iter\",...}\n", ...))
-diag_emit_nr_iter(iterno, diag_max_dx, ckt->CKTnoncon, converged);
+Workers attach the sink; `ngspice_server.c` packs **`DiagEvent`** and sends on **`sock_pub`** as multipart: **topic** (request id bytes) + **protobuf body**. Bind URLs: Story J2.
 
-// In devsup.c
-diag_emit_limiter("DEVpnjlim", vnew_orig, vnew, vold, vcrit);
+### AC-4: File and sink coexist
 
-// In dioload.c
-diag_emit_device("DIO", here->DIOname, vd, cd, gd, cd - gd * vd);
-```
+`diaghooks.c` may emit JSONL and invoke sink callbacks in the same emit when both file and sink are active.
 
-### AC-3: Each emit function serializes protobuf and publishes
+### AC-5: Near-zero overhead when disabled
 
-```c
-void diag_emit_nr_iter(int iter, double max_dx, int noncon, int converged) {
-    if (!ngspice_diag_zmq_pub && !ngspice_diag_fp) return;  // neither active
+When `ngspice_diag_fp == NULL` and no relevant sink callbacks are registered, **`ngspice_diag_wants_*`** is false and hook sites skip work.
 
-    // File mode (backward compatible with Story I)
-    if (ngspice_diag_fp) {
-        fprintf(ngspice_diag_fp,
-            "{\"hook\":\"nr_iter\",\"iter\":%d,\"max_dx\":%.6e,\"noncon\":%d,\"conv\":%d}\n",
-            iter, max_dx, noncon, converged);
-    }
+## Python client (cross-reference)
 
-    // Socket mode
-    if (ngspice_diag_zmq_pub) {
-        DiagEvent event = DIAG_EVENT__INIT;
-        NRIteration nr = NR_ITERATION__INIT;
-        nr.iter = iter;
-        nr.max_dx = max_dx;
-        nr.noncon = noncon;
-        nr.converged = converged;
-        event.event_case = DIAG_EVENT__EVENT_NR_ITER;
-        event.nr_iter = &nr;
+- **[`ngspice_client.py`](../../Studio-Portable-RAG/Codebase/ngspice/zmq_server/python/ngspice_client.py):** **`NgspiceClient`** — ZMQ **REQ** to REP; wire byte **`WIRE_SIM` (1)** + packed **`SimRequest`** / **`SimResult`**; constants **`WIRE_STATS` (3)** for stats-style probes that share the same framing convention.
+- **`simulate_transient_async`** — async path uses **`AsyncZmqSimPool`** in **`ngspice_zmq_pool.py`** (**DEALER** → server ROUTER), not REQ.
+- **`NgspiceDiagStream`** — ZMQ **SUB** on PUB; two-frame multipart (topic = `request_id`, body = **`DiagEvent`**). Defaults/env: **`NGSPICE_ZMQ_PUB_URL`**, **`NGSPICE_ZMQ_PUB_PORT`**; REP often **`NGSPICE_ZMQ_REP`** (see module and class docstrings).
 
-        size_t len = diag_event__get_packed_size(&event);
-        uint8_t *buf = malloc(len);
-        diag_event__pack(&event, buf);
-        zmq_send(ngspice_diag_zmq_pub, buf, len, ZMQ_DONTWAIT);
-        free(buf);
-    }
-}
-```
-
-### AC-4: Both file and socket modes can coexist
-
-If both `NGSPICE_DIAG_FILE` and the server PUB socket are active, hooks emit to both. This supports debugging the server itself.
-
-### AC-5: Zero overhead when neither is active
-
-When `ngspice_diag_fp == NULL && ngspice_diag_zmq_pub == NULL`, the typed emit functions return immediately on the first check. No protobuf allocation, no serialization.
+Architecture: [Story I](./STORY_I_ngspice_diag_hooks.md) (hooks + JSONL) vs this document (server + PUB).
 
 ## Test Plan
 
@@ -500,12 +457,12 @@ J4-08   | 1000 events per second sustained without buffer overflow
 
 ## Definition of Done
 
-- [ ] 6 typed `diag_emit_*` functions implemented
-- [ ] Hook points call typed functions instead of raw fprintf
-- [ ] PUB socket publishes protobuf DiagEvent messages
-- [ ] File mode (Story I) still works as fallback
-- [ ] Both modes can coexist
-- [ ] Zero overhead when disabled
+- [x] Typed **`ngspice_diag_emit_*`** helpers implemented in `diaghooks.c`
+- [x] Hook points call typed emits (not ad-hoc `DIAG_EMIT` for those hooks)
+- [x] PUB socket publishes protobuf **`DiagEvent`** messages when server + `stream_diagnostics` are active
+- [x] File mode (Story I) still works — `NGSPICE_DIAG_FILE`; manual recipe: [STORY_I Build & Test](./STORY_I_ngspice_diag_hooks.md#build--test)
+- [x] File and sink modes can coexist (`diaghooks.c` dual path)
+- [x] Near-zero overhead when diagnostics disabled (`ngspice_diag_wants_*` guards)
 
 ---
 

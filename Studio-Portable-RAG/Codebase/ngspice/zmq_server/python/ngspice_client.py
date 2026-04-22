@@ -1,4 +1,18 @@
-"""ZMQ REQ client for ``ngspice-server`` (wire byte + packed ``SimRequest`` / ``SimResult``)."""
+"""Python side of ``ngspice-server`` ZMQ I/O.
+
+Wire framing: first byte is the message kind — ``WIRE_SIM`` (1) prefixes packed
+``SimRequest`` / ``SimResult`` on the REP/REQ path; ``WIRE_STATS`` (3) is reserved
+for the same one-byte + protobuf pattern used by stats-style probes.
+
+- ``NgspiceClient``: synchronous **REQ** socket; ``simulate()`` sends ``WIRE_SIM``.
+- ``simulate_transient_async``: async **DEALER** via ``AsyncZmqSimPool`` in
+  ``ngspice_zmq_pool.py`` (bridge / high concurrency), same protobuf bodies.
+- ``NgspiceDiagStream``: **SUB** to the server PUB; multipart topic (``request_id``)
+  + ``DiagEvent`` payload; see ``NGSPICE_ZMQ_PUB_URL`` / ``NGSPICE_ZMQ_PUB_PORT``.
+
+Architecture and hook semantics: ``docs/stories/STORY_J_ngspice_zmq_server.md``;
+JSONL + C hooks: ``docs/stories/STORY_I_ngspice_diag_hooks.md`` (repo root paths).
+"""
 
 from __future__ import annotations
 
