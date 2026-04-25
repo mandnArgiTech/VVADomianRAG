@@ -216,4 +216,4 @@ git push origin ngspice_rag
 - [x] `mcp_server.py` line count &lt; 1150 (was 1465; M4 snapshot ~1146 after doc/header trim)
 - [x] All M4-D smoke checks pass
 - [x] `python3 query.py --help` exits 0
-- [ ] Committed and pushed to `ngspice_rag` (confirm after `git push`)
+- [x] Committed and pushed to `ngspice_rag`
