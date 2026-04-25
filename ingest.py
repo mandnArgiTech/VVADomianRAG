@@ -32,8 +32,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from langchain_ollama import OllamaEmbeddings
-from util.chroma_client import safe_collection_count as _safe_count_util
-
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from tqdm import tqdm
 
@@ -579,8 +577,13 @@ def strip_html(text: str) -> str:
 
 
 def _safe_count(coll) -> int:
-    """Alias to util.chroma_client.safe_collection_count."""
-    return _safe_count_util(coll)
+    try:
+        return int(coll.count())
+    except Exception:  # pragma: no cover
+        try:  # pragma: no cover
+            return int(coll._collection.count())  # type: ignore[attr-defined]  # pragma: no cover
+        except Exception:  # pragma: no cover
+            return 0  # pragma: no cover
 
 
 def parse_rally_filter(filter_str: Optional[str]) -> Dict[str, Any]:

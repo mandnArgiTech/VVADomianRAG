@@ -45,31 +45,6 @@ from hybrid_search import (
     stable_doc_id,
 )
 from ingest import iter_concept_ids
-from util.constants import DIM_TO_MODEL as _util_DIM_TO_MODEL, LANG_TAG as _util_LANG_TAG
-from util.chroma_client import (
-    detect_embedding_model,
-    embedding_model_from_db_path,
-    persistent_chroma_client as _persistent_chroma_client,
-    discover_collections,
-    safe_collection_count as _safe_count_chroma_util,
-)
-from util.formatting import (
-    infer_source_type as _infer_source_type,
-    fence_for as _fence_for,
-    truncate_chunk as _truncate_chunk,
-    format_result,
-)
-from util.chunk_metadata import (
-    depend_stems_from_results as _depend_stems_from_results,
-    dependencies_where_comma_token as _dependencies_where_comma_token,
-    iter_concept_ids as _iter_concept_ids_util,
-)
-from util.search_core import (
-    SearchHit,
-    domain_filter as _domain_filter,
-    select_collection_names as _select_collection_names,
-    hybrid_candidate_cap as _hybrid_candidate_cap,
-)
 from query import (
     GOD_MODE_MIN_CONTENT_SIZE,
     SearchHit,
@@ -84,7 +59,40 @@ from reranker import get_reranker, rerank_pool_limit
 
 DB_PATH = os.environ.get("DB_PATH", "./vector_db")
 
-DIM_TO_MODEL = _util_DIM_TO_MODEL  # alias → util.constants
+DIM_TO_MODEL = {
+    1024: "mxbai-embed-large",
+    768: "nomic-embed-text",
+}
+
+
+def detect_embedding_model(db_path: str) -> str:
+    env_val = os.environ.get("EMBEDDING_MODEL", "").strip()
+    if env_val:
+        return env_val
+    config_path = os.path.join(db_path, "ingestion_config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, encoding="utf-8") as fh:
+                model = json.load(fh).get("embedding_model", "")
+            if model:
+                return model
+        except Exception:
+            pass
+    try:
+        client = chromadb.PersistentClient(path=db_path)
+        cols = client.list_collections()
+        if cols:
+            col = client.get_collection(cols[0].name)
+            rows = col.get(limit=1, include=["embeddings"])
+            embs = rows.get("embeddings")
+            if embs is not None and len(embs) > 0 and len(embs[0]) > 0:
+                dim = len(embs[0])
+                if dim in DIM_TO_MODEL:
+                    return DIM_TO_MODEL[dim]
+    except Exception:
+        pass
+    return "nomic-embed-text"
+
 
 EMBEDDING_MODEL = detect_embedding_model(DB_PATH)
 OLLAMA_EXE = os.environ.get("OLLAMA_EXE", "ollama/ollama.exe")
@@ -125,7 +133,46 @@ logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
 logger.propagate = False
 
-LANG_TAG = _util_LANG_TAG  # alias → util.constants
+LANG_TAG = {
+    ".py": "python",
+    ".java": "java",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".jsx": "jsx",
+    ".cs": "csharp",
+    ".cpp": "cpp",
+    ".c": "c",
+    ".go": "go",
+    ".rs": "rust",
+    ".rb": "ruby",
+    ".kt": "kotlin",
+    ".scala": "scala",
+    ".sql": "sql",
+    ".sh": "bash",
+    ".ps1": "powershell",
+    ".yml": "yaml",
+    ".yaml": "yaml",
+    ".json": "json",
+    ".xml": "xml",
+    ".html": "html",
+    ".md": "markdown",
+    ".proto": "protobuf",
+    ".properties": "properties",
+}
+
+collections_map: Dict[str, Chroma] = {}
+ollama_proc: Optional[subprocess.Popen] = None
+
+_collections_lock = threading.RLock()
+_shared_chroma_client: Optional[chromadb.PersistentClient] = None
+_shared_embedder: Optional[OllamaEmbeddings] = None
+_mcp_executor: Optional[ThreadPoolExecutor] = None
+_shutdown_event = threading.Event()
+_feed_semaphore: Optional[asyncio.Semaphore] = None
+_ollama_health_lock = threading.Lock()
+_ollama_healthy = True
+
 
 def _set_ollama_healthy(ok: bool) -> None:
     global _ollama_healthy
@@ -202,7 +249,38 @@ def _safe_count_chroma(vs: Chroma) -> int:
             return 0
 
 
-# discover_collections → util.chroma_client (imported above)
+def discover_collections(
+    db_path: str,
+    embeddings: OllamaEmbeddings,
+    chroma_client: Optional[chromadb.PersistentClient] = None,
+) -> Dict[str, Chroma]:
+    """Single Chroma client + get_collection binding (see query.discover_collections)."""
+    out: Dict[str, Chroma] = {}
+    try:
+        client = chroma_client or chromadb.PersistentClient(path=db_path)
+        infos = client.list_collections()
+    except Exception as exc:
+        logger.error("discover_collections: list_collections failed for %s: %s", db_path, exc)
+        return out
+    if not infos:
+        logger.warning(
+            "discover_collections: no collections listed for %s (empty DB or locked).",
+            db_path,
+        )
+        return out
+    for info in infos:
+        name = info.name
+        try:
+            out[name] = Chroma(
+                client=client,
+                collection_name=name,
+                embedding_function=embeddings,
+                create_collection_if_not_exists=False,
+            )
+        except Exception as exc:
+            logger.error("discover_collections: failed to open collection %r: %s", name, exc)
+    return out
+
 
 def _ollama_is_ready() -> bool:
     try:
@@ -332,7 +410,192 @@ def _doc_dedup_key(doc: Any) -> str:
     )
 
 
-# _infer_source_type → util.formatting (imported above)
+def _infer_source_type(meta: Dict[str, Any]) -> str:
+    st = (meta.get("source_type") or "").strip().lower()
+    if st:
+        return st
+    cname = (meta.get("chunk_strategy") or "").lower()
+    if "rfc" in cname:
+        return "rfc"
+    if "mib" in cname:
+        return "mib"
+    if "rally" in cname or meta.get("rally_id"):
+        return "rally"
+    if meta.get("ticket_id"):
+        return "customer"
+    if "wiki" in cname:
+        return "wiki"
+    if "community" in cname:
+        return "community"
+    if "release" in cname:
+        return "release_notes"
+    return "code"
+
+
+def _fence_for(content: str) -> str:
+    return "~~~" if "```" in content else "```"
+
+
+def _truncate_chunk(text: str, max_chars: Optional[int] = None) -> str:
+    """Truncate with newline / `}`-aware cut; close dangling ``` fences if needed."""
+    mx = max_chars if max_chars is not None and max_chars > 0 else RESULT_CHUNK_MAX_CHARS
+    if len(text) <= mx:
+        return text
+    suffix = "\n\n... (truncated for MCP response size) ..."
+    floor = min(mx, max(512, mx // 2))
+    target_cut = mx - len(suffix)
+    cut = max(floor, min(target_cut, len(text)))
+    cut = min(cut, len(text))
+    boundary = text.rfind("\n\n", 0, cut)
+    if boundary < floor:
+        boundary = text.rfind("\n", 0, cut)
+    if boundary >= floor:
+        cut = boundary
+    else:
+        brace = text.rfind("}", 0, cut)
+        if brace >= floor:
+            cut = brace + 1
+    prefix = text[:cut]
+    fence = "```"
+    if prefix.count(fence) % 2 == 1:
+        prefix = prefix + "\n" + fence
+    return prefix + suffix
+
+
+def format_result(doc: Any, score: Optional[float], source_type: str) -> str:
+    """Prefer ``context_window`` over page_content; larger cap + syntax-aware ``_truncate_chunk``."""
+    meta = doc.metadata or {}
+    header: List[str] = []
+    repo = meta.get("repository", "") or ""
+    src = meta.get("relative_path", meta.get("source", "")) or ""
+    cname = meta.get("chunk_name", "") or ""
+    ctype = meta.get("chunk_type", "") or ""
+    if score is not None:
+        header.append(f"**Distance:** {score:.4f}")
+    header.append(f"**source_type:** {source_type}")
+    cw = (meta.get("context_window") or "").strip()
+    if cw:
+        raw_body = cw
+        trunc_limit = RESULT_CONTEXT_WINDOW_MAX_CHARS
+    else:
+        raw_body = (doc.page_content or "").strip()
+        trunc_limit = RESULT_CHUNK_MAX_CHARS
+    content = _truncate_chunk(raw_body, trunc_limit)
+    ext = (meta.get("extension") or "").lower()
+
+    if source_type == "callee":
+        if repo:
+            header.append(f"**Repo:** {repo}")
+        header.append(f"**File:** {repo + '/' + src if repo else src}")
+        if cname:
+            header.append(f"**Component:** {cname} ({ctype})")
+        si = _structural_importance_int(meta)
+        if si > 0:
+            header.append(f"**importance:** {si}")
+        lang = LANG_TAG.get(ext, "")
+        fence = _fence_for(content)
+        return "### Callee (auto-expanded)\n" + "\n".join(header) + f"\n\n{fence}{lang}\n{content}\n{fence}"
+
+    if source_type == "code":
+        if repo:
+            header.append(f"**Repo:** {repo}")
+        header.append(f"**File:** {repo + '/' + src if repo else src}")
+        if cname:
+            header.append(f"**Component:** {cname} ({ctype})")
+        si = _structural_importance_int(meta)
+        if si > 0:
+            header.append(f"**importance:** {si}")
+        dep = (meta.get("dependencies") or "").strip()
+        if dep:
+            dshow = dep if len(dep) <= 500 else dep[:500] + "…"
+            header.append(f"**dependencies:** {dshow}")
+        calls_str = (meta.get("calls") or "").strip()
+        if calls_str:
+            callees_list = [
+                c for c in iter_concept_ids(calls_str) if c != "__truncated__"
+            ][:15]
+            if callees_list:
+                header.append(f"**Callees (Outgoing):** {', '.join(callees_list)}")
+        if meta.get("retrieval_hop") == "caller":
+            header.append("**[CALLER NODE]** This chunk calls the primary retrieved function.")
+        lang = LANG_TAG.get(ext, "")
+        fence = _fence_for(content)
+        return "### Code\n" + "\n".join(header) + f"\n\n{fence}{lang}\n{content}\n{fence}"
+
+    if source_type in ("domain_doc", "theory", "wiki"):
+        sec = meta.get("section", meta.get("doc_title", "Domain Knowledge"))
+        src_files = (meta.get("source_c_files") or "").strip()
+        rel_block = ""
+        if src_files:
+            rel_block = "\n\n## Related source files\n\n" + ", ".join(
+                x.strip() for x in src_files.split(",") if x.strip()
+            )
+        return f"### {sec}\n*Source: {meta.get('source', '')}*{rel_block}\n\n{content}"
+
+    if source_type == "rfc":
+        rfc = meta.get("rfc_number", "")
+        sec = meta.get("section_number", "")
+        st = meta.get("section_title", "")
+        head = f"RFC {rfc} §{sec}"
+        if st:
+            head += f": {st}"
+        return f"### {head}\n\n{content}"
+
+    if source_type in ("rally", "customer"):
+        tid = meta.get("rally_id", "") or meta.get("ticket_id", "")
+        title = meta.get("chunk_name", "") or meta.get("Name", "")
+        res = meta.get("has_resolution", "") == "true"
+        line = f"[{tid}] {title}" if title else f"[{tid}]"
+        if res:
+            line += " — Resolution: (see body)"
+        return f"### {line}\n\n{content}"
+
+    if source_type == "mib":
+        oid = meta.get("object_name", "")
+        path = meta.get("oid_path", "")
+        return f"### OID: {oid} ({path}) — Description\n\n{content}"
+
+    if source_type == "community":
+        plat = meta.get("source_platform", "unknown")
+        return f"### Source: [{plat}] — {meta.get('source_url', '')}\n\n{content}"
+
+    return "### Result\n" + "\n".join(header) + f"\n\n{content}"
+
+
+def _domain_filter(names: List[str], domain: str) -> List[str]:
+    d = domain.strip().lower()
+    if not d or d == "general":
+        return names
+    return [n for n in names if n.lower().startswith(d + "_") or n.lower() == d]
+
+
+def _hybrid_candidate_cap(k: int, env_var: str) -> int:
+    raw = os.environ.get(env_var, "").strip()
+    if raw.isdigit():
+        return max(1, int(raw))
+    return max(40, k * 4)
+
+
+def _select_collection_names(cmap: Dict[str, Chroma], search_type: str, domain: str) -> List[str]:
+    names = list(cmap.keys())
+    names = _domain_filter(names, domain)
+    st = search_type.lower().strip()
+    if st == "auto" or not st:
+        return names
+    if st == "code":
+        return [n for n in names if n.endswith("_code")]
+    if st == "domain":
+        return [n for n in names if "_domain" in n or n == "theory"]
+    if st == "troubleshoot":
+        return [
+            n
+            for n in names
+            if any(x in n for x in ("_domain", "community", "_customer", "_internal"))
+        ]
+    if st == "reference":
+        return [n for n in names if n == "rfc" or n == "theory" or "_mib" in n or n.endswith("_releases")]
+    return names
+
 
 def _exact_chunk_name_results(
     query_raw: str,
@@ -538,7 +801,39 @@ def _sync_multi_search(
     return exact + regular
 
 
-# _depend_stems_from_results → util.chunk_metadata (imported above)
+def _depend_stems_from_results(
+    results: List[Tuple[Any, Optional[float], str]],
+) -> List[str]:
+    from pathlib import Path as _P
+
+    stems: set = set()
+    for doc, _, _ in results:
+        meta = getattr(doc, "metadata", None) or {}
+        rel = str(meta.get("relative_path") or "").strip()
+        if rel:
+            stem = _P(rel).stem
+            if stem:
+                stems.add(stem)
+        cn = str(meta.get("chunk_name") or "").strip()
+        if cn:
+            stems.add(cn)
+    return sorted(stems)
+
+
+def _dependencies_where_comma_token(stem: str) -> Dict[str, Any]:
+    """Match *stem* as a whole entry in comma-separated ``dependencies`` metadata."""
+    s = (stem or "").strip()
+    if not s:
+        return {"dependencies": {"$eq": "__empty_dependency_stem__"}}
+    return {
+        "$or": [
+            {"dependencies": {"$eq": s}},
+            {"dependencies": {"$contains": f"{s}, "}},
+            {"dependencies": {"$contains": f", {s}, "}},
+            {"dependencies": {"$contains": f", {s}"}},
+        ]
+    }
+
 
 def _sync_fetch_dependents(
     primary: List[Tuple[Any, Optional[float], str]],
