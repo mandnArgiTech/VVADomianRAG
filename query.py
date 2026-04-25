@@ -107,6 +107,9 @@ RESULT_CONTEXT_WINDOW_MAX_CHARS = max(
 )
 DEFAULT_TIMEOUT = int(os.environ.get("QUERY_CLI_TIMEOUT", "120"))
 
+
+# _metadata_pipe_or_comma_tokens → util.chunk_metadata (imported above)
+
 HISTORY_FILE = Path.home() / ".rag_query_history"
 
 HYBRID_SEARCH = os.environ.get("HYBRID_SEARCH", "1").strip().lower() not in ("0", "false", "no")
@@ -157,12 +160,14 @@ _GOD_MODE_STEM_DENYLIST: frozenset = frozenset(
     }
 )
 
+
 def _is_noise_stem(name: str, query_raw: str) -> bool:
     """True if *name* is a denylisted stem and the query does not name the file (e.g. ``terminal.c``)."""
     n = (name or "").strip().lower()
     if n not in _GOD_MODE_STEM_DENYLIST:
         return False
     return not re.search(rf"\b{re.escape(n)}\.[a-zA-Z]+\b", query_raw or "", re.IGNORECASE)
+
 
 def _load_symbols_vocab(db_path: str) -> frozenset:
     root = (db_path or "").strip()
@@ -187,6 +192,7 @@ def _load_symbols_vocab(db_path: str) -> frozenset:
         vocab = frozenset()
     _vocab_cache[key] = vocab
     return vocab
+
 
 def _god_mode_chunk_name_matches(query_raw: str, vocab: frozenset) -> List[str]:
     """Build ``chunk_name`` values for Chroma ``$in`` God-mode (exact + case-insensitive vocab).
@@ -230,6 +236,7 @@ def _god_mode_chunk_name_matches(query_raw: str, vocab: frozenset) -> List[str]:
                 add(q)
     return out
 
+
 def _expand_query_typos(query: str, vocab: frozenset) -> str:
     if not vocab or not (query or "").strip():
         return query
@@ -247,6 +254,9 @@ def _expand_query_typos(query: str, vocab: frozenset) -> str:
         deduped = " ".join(dict.fromkeys(expansions))
         return query + " [Auto-expanded: " + deduped + "]"
     return query
+
+
+# _persistent_chroma_client → util.chroma_client.persistent_chroma_client (imported above)
 
 _NGSPICE_SYSTEM_PROMPT = (
     "You are an expert ngspice / SPICE circuit simulator and C-codebase assistant "
@@ -282,6 +292,7 @@ DEFAULT_SYSTEM_PROMPTS: Dict[str, str] = {
     "debug": _DEBUG_SYSTEM_PROMPT,
 }
 
+
 def estimate_tokens(text: str, provider: str = "ollama") -> int:
     """Rough token count without a tokenizer: Claude averages ~4 chars/token, others ~3.5."""
     if not text:
@@ -298,6 +309,7 @@ EXIT_INFRA = 3
 
 log = logging.getLogger("query")
 
+
 def _resolve_db_abs(db_path: str, cmap: Dict[str, Chroma]) -> str:
     if db_path.strip():
         return os.path.abspath(db_path)
@@ -307,16 +319,21 @@ def _resolve_db_abs(db_path: str, cmap: Dict[str, Chroma]) -> str:
             return os.path.abspath(str(pd))
     return ""
 
+
+# _hybrid_candidate_cap → util.search_core (imported above)
+
 def _make_console(*, no_color: bool, file=None) -> Any:
     if not RICH_AVAILABLE or Console is None:
         return None
     return Console(no_color=no_color, file=file or sys.stdout)
+
 
 def _print_rich(console: Any, text: str, *, use_markdown: bool = True) -> None:
     if console and RICH_AVAILABLE and Markdown is not None and use_markdown:
         console.print(Markdown(text))
     else:
         print(text)
+
 
 def _status_spinner(console: Any, message: str) -> Any:
     if console and RICH_AVAILABLE:
@@ -331,6 +348,7 @@ def _status_spinner(console: Any, message: str) -> Any:
 
     return _NoOp()
 
+
 def _stream_chunk_text(chunk: Any) -> str:
     if chunk is None:
         return ""
@@ -343,12 +361,18 @@ def _stream_chunk_text(chunk: Any) -> str:
         return str(msg.get("content") or "")
     return str(getattr(msg, "content", None) or "")
 
+
+# embedding_model_from_db_path → util.chroma_client (imported above)
+
+# detect_embedding_model → util.chroma_client (imported above)
+
 def check_ollama(timeout: float = 3.0) -> bool:
     try:
         urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=timeout)
         return True
     except Exception:
         return False
+
 
 # Default chat LLM (STORY D). ``RAG_LLM_MODEL`` overrides when set in the environment.
 DEFAULT_CHAT_LLM = "gemma3:27b-it-qat"
@@ -362,12 +386,15 @@ CHAT_MODEL_FALLBACKS = [
     "mistral",
 ]
 
+
 def default_chat_llm_from_env() -> str:
     env = (os.environ.get("RAG_LLM_MODEL", "") or "").strip()
     return env or DEFAULT_CHAT_LLM
 
+
 def _ollama_base_url() -> str:
     return (os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")).rstrip("/")
+
 
 def _load_system_prompt(domain: str, _prompts_dir: Optional[Path] = None) -> str:
     """Load ``system_prompts/{domain}_engineer.md``; if missing, ``default.md`` (AC-5).
@@ -396,6 +423,7 @@ def _load_system_prompt(domain: str, _prompts_dir: Optional[Path] = None) -> str
             return ""
     return ""
 
+
 def _tag_matches_model(tag: str, want: str) -> bool:
     if not want or not tag:
         return False
@@ -405,11 +433,13 @@ def _tag_matches_model(tag: str, want: str) -> bool:
         return tag.split(":")[0] == want.split(":")[0]
     return False
 
+
 def _pick_ollama_model_tag(names: List[str], want: str) -> str:
     for n in names:
         if n and _tag_matches_model(n, want):
             return n
     return ""
+
 
 def _ollama_chat_model_names() -> List[str]:
     url = _ollama_base_url() + "/api/tags"
@@ -420,6 +450,7 @@ def _ollama_chat_model_names() -> List[str]:
         return []
     models = data.get("models") or []
     return [str(m.get("name") or "") for m in models if m.get("name")]
+
 
 def _check_model_available(model: str) -> str:
     """Return an Ollama tag that matches ``model`` if present; else first matching fallback tag."""
@@ -444,6 +475,7 @@ def _check_model_available(model: str) -> str:
     log.warning("No fallback model found in Ollama tags. Using %s anyway.", want)
     return want
 
+
 def _ollama_options_for_model(model_name: str) -> Dict[str, Any]:
     """Ollama ``options`` for chat; Gemma gets larger context and repeat_penalty (STORY D / AC-6)."""
     tag = (model_name or "").lower()
@@ -460,6 +492,9 @@ def _ollama_options_for_model(model_name: str) -> Dict[str, Any]:
         "top_p": 0.95,
     }
 
+
+# discover_collections → util.chroma_client (imported above)
+
 def connect_chroma_with_retry(
     db_path: str,
     model: str,
@@ -467,6 +502,25 @@ def connect_chroma_with_retry(
     """Thin wrapper preserving the (db_path, model) call signature used by this module."""
     from util.chroma_client import connect_chroma_with_retry as _ccwr
     return _ccwr(db_path, model)
+
+
+# _infer_source_type → util.formatting (imported above)
+
+# _fence_for → util.formatting (imported above)
+
+# _truncate_chunk → util.formatting (imported above)
+
+# format_result → util.formatting (imported above)
+
+# _domain_filter → util.search_core (imported above)
+
+# _select_collection_names → util.search_core (imported above)
+
+# SearchHit → util.search_core.SearchHit (imported above)
+
+# _shared_query_embedding → util.search_core (imported above)
+
+# _similarity_search_with_score_efficient → util.search_core (imported above)
 
 def _exact_chunk_name_hits(
     query_raw: str,
@@ -521,6 +575,7 @@ def _exact_chunk_name_hits(
                 SearchHit(content=text, score=0.0, source_type=st, metadata=meta, collection=name)
             )
     return exact
+
 
 def _sync_multi_search(
     query: str,
@@ -677,6 +732,9 @@ def _sync_multi_search(
         regular = [_to_rerank[idx] for idx, _score in _ranked]
     return exact_hits + regular
 
+
+# _parse_dependency_tokens → util.chunk_metadata (imported above)
+
 def _fused_docs_for_query_text(
     name: str,
     vs: Any,
@@ -756,6 +814,15 @@ def _fused_docs_for_query_text(
             break
     return out2
 
+
+# _depend_stems_from_results → util.chunk_metadata (imported above)
+
+# _dependencies_where_comma_token → util.chunk_metadata (imported above)
+
+# _sync_fetch_dependents → util.search_core (imported above)
+
+# _sync_fetch_callers → util.search_core (imported above)
+
 def _sync_multi_search_with_dependency_hop(
     query: str,
     k: int,
@@ -834,6 +901,7 @@ def _sync_multi_search_with_dependency_hop(
 
     return primary + extra
 
+
 def _effective_system_prompt(
     hits: List[SearchHit],
     search_type: str,
@@ -865,6 +933,7 @@ def _effective_system_prompt(
         return f"{dp}\n\n---\n\n{base}"
     return base
 
+
 def _concept_parts(concepts_field: str) -> List[str]:
     s = (concepts_field or "").strip()
     if not s:
@@ -872,6 +941,7 @@ def _concept_parts(concepts_field: str) -> List[str]:
     if s.startswith("|"):
         return [x.strip() for x in s.strip("|").split("|") if x.strip()]
     return [x.strip() for x in s.split(",") if x.strip()]
+
 
 def concept_search_hits(concept: str, domain: str, cmap: Dict[str, Chroma]) -> List[SearchHit]:
     concept = concept.strip()
@@ -918,9 +988,11 @@ def concept_search_hits(concept: str, domain: str, cmap: Dict[str, Chroma]) -> L
             logging.getLogger("query").warning("concept query failed on %s: %s", cname, exc)
     return hits
 
+
 def _safe_count(coll) -> int:  # noqa: D401
     """Alias to util.chroma_client.safe_collection_count."""
     return _safe_count_util(coll)
+
 
 def run_status(db_path: str) -> str:
     from collections import Counter
@@ -963,6 +1035,7 @@ def run_status(db_path: str) -> str:
         lines.append("Top concepts: " + ", ".join(f"{k}({v})" for k, v in top))
     return "\n".join(lines)
 
+
 def run_with_timeout(seconds: int, fn, *args, **kwargs):
     if seconds <= 0:
         return fn(*args, **kwargs)
@@ -979,6 +1052,15 @@ def run_with_timeout(seconds: int, fn, *args, **kwargs):
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old)
+
+
+# format_markdown → util.formatting (imported above)
+
+# format_concept_markdown → util.formatting (imported above)
+
+# format_json_output → util.formatting (imported above)
+
+# format_plain → util.formatting (imported above)
 
 def _build_context_blocks(hits: List[SearchHit], max_chars: Optional[int] = None) -> str:
     """Build the RAG context string for the LLM prompt.
@@ -1017,6 +1099,7 @@ def _build_context_blocks(hits: List[SearchHit], max_chars: Optional[int] = None
         blocks.append(block)
         total += len(block)
     return "\n\n---\n\n".join(blocks)
+
 
 def _collect_llm_answer(
     user_query: str,
@@ -1059,6 +1142,7 @@ def _collect_llm_answer(
         else:
             print(f"Error: LLM call failed: {exc}", file=sys.stderr)
         return ""
+
 
 def _stream_llm_answer(
     user_query: str,
@@ -1120,6 +1204,7 @@ def _stream_llm_answer(
         print("\n(generation interrupted)", file=sys.stderr)
     return "".join(parts)
 
+
 class ConversationMemory:
     def __init__(self, max_turns: int = 5) -> None:
         self.max_turns = max(1, max_turns)
@@ -1172,6 +1257,7 @@ class ConversationMemory:
                 out.append({"role": "assistant", "content": t["answer_summary"]})
         return out
 
+
 def reformulate_query(raw_query: str, memory: ConversationMemory, llm_model: str) -> str:
     if memory.is_empty():
         return raw_query
@@ -1206,6 +1292,7 @@ def reformulate_query(raw_query: str, memory: ConversationMemory, llm_model: str
     except Exception:
         pass
     return raw_query
+
 
 class SessionState:
     def __init__(self, ns: argparse.Namespace) -> None:
@@ -1277,6 +1364,7 @@ class SessionState:
             f"llm_model={self.llm_model!r} history_depth={self.history_depth}"
         )
 
+
 def _setup_readline() -> None:
     if readline is None:
         return
@@ -1287,6 +1375,7 @@ def _setup_readline() -> None:
         pass
     readline.set_history_length(500)
 
+
 def _save_history() -> None:
     if readline is None:
         return
@@ -1294,6 +1383,7 @@ def _save_history() -> None:
         readline.write_history_file(str(HISTORY_FILE))
     except OSError:
         pass
+
 
 def repl_loop(
     cmap: Dict[str, Chroma],
@@ -1488,6 +1578,7 @@ def repl_loop(
                 print(format_plain(hits))
     return EXIT_OK
 
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Query Universal Domain RAG (Chroma + Ollama).")
     p.add_argument("-q", "--query", default="", help="Search text (concept id in concept mode)")
@@ -1552,6 +1643,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("-v", "--verbose", action="store_true", help="Verbose logging on stderr")
     p.add_argument("--quiet", action="store_true", help="Suppress banners")
     return p.parse_args(argv)
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     ns = parse_args(argv)
@@ -1721,6 +1813,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         print(text)
     return EXIT_OK
+
 
 if __name__ == "__main__":
     try:
