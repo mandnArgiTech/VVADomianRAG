@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import query as q
+import util.formatting as util_formatting
 
 
 def test_parse_dependency_tokens_order_and_dedupe():
@@ -53,7 +54,7 @@ def test_truncate_chunk_short_unchanged():
 
 
 def test_truncate_chunk_prefers_newline_boundary(monkeypatch):
-    monkeypatch.setattr(q, "RESULT_CHUNK_MAX_CHARS", 100)
+    monkeypatch.setattr(util_formatting, "RESULT_CHUNK_MAX_CHARS", 100)
     body = "line0\n" + "x" * 200 + "\nline2"
     out = q._truncate_chunk(body)
     assert "truncated" in out
@@ -62,7 +63,7 @@ def test_truncate_chunk_prefers_newline_boundary(monkeypatch):
 
 
 def test_truncate_chunk_closes_odd_fence(monkeypatch):
-    monkeypatch.setattr(q, "RESULT_CHUNK_MAX_CHARS", 80)
+    monkeypatch.setattr(util_formatting, "RESULT_CHUNK_MAX_CHARS", 80)
     text = "```c\nint x = 1;\n" + "y" * 100
     out = q._truncate_chunk(text)
     assert out.rstrip().endswith("```") or "```" in out
@@ -127,8 +128,8 @@ def test_build_context_blocks_prefers_context_window():
 
 def test_format_result_prefers_context_window_for_markdown(monkeypatch):
     """Agent tool path uses format_markdown → format_result; body must come from context_window."""
-    monkeypatch.setattr(q, "RESULT_CHUNK_MAX_CHARS", 40)
-    monkeypatch.setattr(q, "RESULT_CONTEXT_WINDOW_MAX_CHARS", 500)
+    monkeypatch.setattr(util_formatting, "RESULT_CHUNK_MAX_CHARS", 40)
+    monkeypatch.setattr(util_formatting, "RESULT_CONTEXT_WINDOW_MAX_CHARS", 500)
     marker = "UNIQUE_CONTEXT_WINDOW_BODY_MARKER"
     meta = {
         "relative_path": "f.c",

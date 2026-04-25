@@ -45,6 +45,8 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("chromadb is required") from exc
 
+from util.chroma_client import safe_collection_count as _safe_count_util
+
 try:
     import requests
 except ImportError:  # pragma: no cover
@@ -577,13 +579,7 @@ def strip_html(text: str) -> str:
 
 
 def _safe_count(coll) -> int:
-    try:
-        return int(coll.count())
-    except Exception:  # pragma: no cover
-        try:  # pragma: no cover
-            return int(coll._collection.count())  # type: ignore[attr-defined]  # pragma: no cover
-        except Exception:  # pragma: no cover
-            return 0  # pragma: no cover
+    return _safe_count_util(coll)
 
 
 def parse_rally_filter(filter_str: Optional[str]) -> Dict[str, Any]:

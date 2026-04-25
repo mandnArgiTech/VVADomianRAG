@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 from pathlib import Path
 
 import ingest as ing
 import mcp_server as mcp
 import query as q
+import util.search_primitives as sp
 
 
 def _repo_root() -> Path:
@@ -134,5 +134,13 @@ def test_md19_studio_concept_registry_matches_root_for_story_domains():
         assert root[dom] == studio[dom]
 
 
-def test_md20_domain_filter_source_identical_query_and_mcp():
-    assert inspect.getsource(q._domain_filter).strip() == inspect.getsource(mcp._domain_filter).strip()
+def test_md20_domain_filter_unified_in_search_primitives():
+    """query and mcp re-export the same ``domain_filter`` (STORY M3); behavior matches md08–md11."""
+    assert q._domain_filter is mcp._domain_filter is sp.domain_filter
+    names = ["dart_code", "standard_code"]
+    assert q._domain_filter(names, "dart") == mcp._domain_filter(names, "dart") == ["dart_code"]
+    assert q._domain_filter(["dart_code"], "art") == []
+    assert q._domain_filter(["nav2_code"], "nav") == []
+    assert q._domain_filter(["nav2_code"], "nav2") == ["nav2_code"]
+    all_names = ["a_code", "b_domain"]
+    assert q._domain_filter(all_names, "") == q._domain_filter(all_names, "general") == all_names
