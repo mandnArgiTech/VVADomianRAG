@@ -1,7 +1,7 @@
 # STORY M3 — util/chunk_metadata.py + util/search_primitives.py
 
 **Branch:** `ngspice_rag`  
-**Status:** 🔲 TODO  
+**Status:** Done (verified)  
 **Depends on:** M1 (util/constants.py must exist first)
 
 ---
@@ -252,11 +252,11 @@ from query import (
 
 ## Acceptance Criteria
 
-- [ ] `util/chunk_metadata.py` exports: `metadata_pipe_or_comma_tokens`, `parse_dependency_tokens`, `depend_stems_from_results`, `dependencies_where_comma_token`, `iter_concept_ids`
-- [ ] `util/search_primitives.py` exports: `SearchHit`, `domain_filter`, `select_collection_names`, `hybrid_candidate_cap`, `shared_query_embedding`, `similarity_search_with_score`
-- [ ] `query.py`: no local `SearchHit`, `_domain_filter`, `_hybrid_candidate_cap`, `_select_collection_names`, `_depend_stems_from_results`, `_dependencies_where_comma_token`, `_shared_query_embedding`, `_similarity_search_with_score_efficient` bodies
-- [ ] `mcp_server.py`: no local `_domain_filter`, `_hybrid_candidate_cap`, `_select_collection_names`, `_depend_stems_from_results`, `_dependencies_where_comma_token` bodies
-- [ ] `mcp_server.py` no longer imports `SearchHit` from `query` — imports from `util.search_primitives`
-- [ ] `python3 -c "from util.search_primitives import SearchHit, domain_filter; print('OK')"` passes
-- [ ] `python3 -c "import ast; [ast.parse(open(f).read()) for f in ['query.py','mcp_server.py','util/chunk_metadata.py','util/search_primitives.py']]; print('ALL OK')"` passes
-- [ ] Neither util module imports from `query.py` or `mcp_server.py`
+- [x] `util/chunk_metadata.py` exports: `metadata_pipe_or_comma_tokens`, `parse_dependency_tokens`, `depend_stems_from_results`, `dependencies_where_comma_token`, `iter_concept_ids`
+- [x] `util/search_primitives.py` exports: `SearchHit`, `domain_filter`, `select_collection_names`, `hybrid_candidate_cap`, `shared_query_embedding`, `similarity_search_with_score`
+- [x] `query.py`: no local `SearchHit`, `_domain_filter`, `_hybrid_candidate_cap`, `_select_collection_names`, `_depend_stems_from_results`, `_dependencies_where_comma_token`, `_shared_query_embedding`, `_similarity_search_with_score_efficient` bodies
+- [x] `mcp_server.py`: no local `_domain_filter`, `_hybrid_candidate_cap`, `_select_collection_names`, `_depend_stems_from_results`, `_dependencies_where_comma_token` bodies
+- [x] `mcp_server.py` no longer imports `SearchHit` from `query` — imports from `util.search_primitives`
+- [x] `python3 -c "from util.search_primitives import SearchHit, domain_filter; print('OK')"` passes
+- [x] `python3 -c "import ast; [ast.parse(open(f).read()) for f in ['query.py','mcp_server.py','util/chunk_metadata.py','util/search_primitives.py']]; print('ALL OK')"` passes
+- [x] Neither util module imports from `query.py` or `mcp_server.py`

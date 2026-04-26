@@ -1,7 +1,7 @@
 # STORY M1 — util/constants.py + util/chroma_client.py
 
 **Branch:** `ngspice_rag`  
-**Status:** 🔲 TODO  
+**Status:** Done (verified)  
 **Depends on:** nothing (create from scratch)
 
 ---
@@ -213,11 +213,11 @@ def _safe_count(coll) -> int:
 
 ## Acceptance Criteria
 
-- [ ] `util/constants.py` exists, exports all 14 names listed above
-- [ ] `util/chroma_client.py` exists, exports 5 functions
-- [ ] `query.py`: no local `DIM_TO_MODEL`, `LANG_TAG`, or env-constant blocks; no `detect_embedding_model`/`discover_collections` bodies
-- [ ] `mcp_server.py`: no local `DIM_TO_MODEL`, `LANG_TAG`, or duplicated env-constant blocks; no `detect_embedding_model`/`discover_collections` bodies
-- [ ] `python3 -c "from util.constants import DIM_TO_MODEL, LANG_TAG; print('OK')"` passes
-- [ ] `python3 -c "from util.chroma_client import detect_embedding_model; print('OK')"` passes
-- [ ] `python3 -c "import ast; [ast.parse(open(f).read()) for f in ['query.py','mcp_server.py','ingest.py','util/constants.py','util/chroma_client.py']]; print('ALL OK')"` passes
-- [ ] No circular imports — util modules do NOT import from query.py or mcp_server.py
+- [x] `util/constants.py` exists, exports all 14 names listed above
+- [x] `util/chroma_client.py` exists, exports 5 functions
+- [x] `query.py`: no local `DIM_TO_MODEL`, `LANG_TAG`, or env-constant blocks; no `detect_embedding_model`/`discover_collections` bodies
+- [x] `mcp_server.py`: no local `DIM_TO_MODEL`, `LANG_TAG`, or duplicated env-constant blocks; no `detect_embedding_model`/`discover_collections` bodies
+- [x] `python3 -c "from util.constants import DIM_TO_MODEL, LANG_TAG; print('OK')"` passes
+- [x] `python3 -c "from util.chroma_client import detect_embedding_model; print('OK')"` passes
+- [x] `python3 -c "import ast; [ast.parse(open(f).read()) for f in ['query.py','mcp_server.py','ingest.py','util/constants.py','util/chroma_client.py']]; print('ALL OK')"` passes
+- [x] No circular imports — util modules do NOT import from query.py or mcp_server.py

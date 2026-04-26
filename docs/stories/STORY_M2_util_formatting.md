@@ -1,7 +1,7 @@
 # STORY M2 — util/formatting.py
 
 **Branch:** `ngspice_rag`  
-**Status:** 🔲 TODO  
+**Status:** Done (verified)  
 **Depends on:** M1 (util/constants.py must exist first)
 
 ---
@@ -208,11 +208,11 @@ from util.formatting import (
 
 ## Acceptance Criteria
 
-- [ ] `util/formatting.py` exists, exports: `infer_source_type`, `fence_for`, `truncate_chunk`, `format_result`, `format_markdown`, `format_concept_markdown`, `format_json_output`, `format_plain`
-- [ ] `format_result` handles source types: `callee`, `code`, `domain_doc`, `theory`, `wiki`, `rfc`, `rally`, `customer`, `mib`, `community`, fallback
-- [ ] `format_json_output(query, hits, mode, answer="")` — correct argument order
-- [ ] `query.py`: no local `_infer_source_type`, `_fence_for`, `_truncate_chunk`, `format_result`, `format_markdown`, `format_concept_markdown`, `format_json_output`, `format_plain` bodies
-- [ ] `mcp_server.py`: no local `_infer_source_type`, `_fence_for`, `_truncate_chunk`, `format_result` bodies
-- [ ] `python3 -c "from util.formatting import format_result, format_json_output; print('OK')"` passes
-- [ ] `python3 -c "import ast; [ast.parse(open(f).read()) for f in ['query.py','mcp_server.py','util/formatting.py']]; print('ALL OK')"` passes
-- [ ] `util/formatting.py` does NOT import from `query.py` or `mcp_server.py`
+- [x] `util/formatting.py` exists, exports: `infer_source_type`, `fence_for`, `truncate_chunk`, `format_result`, `format_markdown`, `format_concept_markdown`, `format_json_output`, `format_plain`
+- [x] `format_result` handles source types: `callee`, `code`, `domain_doc`, `theory`, `wiki`, `rfc`, `rally`, `customer`, `mib`, `community`, fallback
+- [x] `format_json_output(query, hits, mode, answer="")` — correct argument order
+- [x] `query.py`: no local `_infer_source_type`, `_fence_for`, `_truncate_chunk`, `format_result`, `format_markdown`, `format_concept_markdown`, `format_json_output`, `format_plain` bodies
+- [x] `mcp_server.py`: no local `_infer_source_type`, `_fence_for`, `_truncate_chunk`, `format_result` bodies
+- [x] `python3 -c "from util.formatting import format_result, format_json_output; print('OK')"` passes
+- [x] `python3 -c "import ast; [ast.parse(open(f).read()) for f in ['query.py','mcp_server.py','util/formatting.py']]; print('ALL OK')"` passes
+- [x] `util/formatting.py` does NOT import from `query.py` or `mcp_server.py`
