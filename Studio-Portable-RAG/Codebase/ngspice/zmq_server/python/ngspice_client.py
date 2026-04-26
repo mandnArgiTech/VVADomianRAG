@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
+import json
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import zmq
 
@@ -54,15 +56,16 @@ def _unpack_sim_result(data: bytes) -> SimResult:
 class NgspiceClient:
     """One-shot or context-managed REQ socket to ``ngspice-server``."""
 
-    def __init__(self, rep_url: str) -> None:
-        self._url = rep_url
+    def __init__(self, rep_url: Optional[str] = None) -> None:
+        self._url = rep_url or os.environ.get("NGSPICE_ZMQ_REP", "tcp://127.0.0.1:5555")
         self._ctx: Optional[zmq.Context] = None
         self._sock: Optional[zmq.Socket] = None
 
     def __enter__(self) -> NgspiceClient:
-        self._ctx = zmq.Context.instance()
-        self._sock = self._ctx.socket(zmq.REQ)
-        self._sock.connect(self._url)
+        if self._sock is None:
+            self._ctx = zmq.Context.instance()
+            self._sock = self._ctx.socket(zmq.REQ)
+            self._sock.connect(self._url)
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -85,14 +88,18 @@ class NgspiceClient:
         timeout_sec: float = 60.0,
         stream_diagnostics: bool = False,
         request_id: str = "",
+        raise_on_error: bool = True,
     ) -> SimResult:
+        own = False
         if self._sock is None:
-            raise NgspiceServerError("NgspiceClient not connected; use 'with NgspiceClient(url)'")
+            self.__enter__()
+            own = True
         req = SimRequest()
         req.netlist = netlist or ""
         req.analysis = (analysis or "op").strip().lower()
         req.stream_diagnostics = bool(stream_diagnostics)
         req.request_id = request_id or ""
+        assert self._sock is not None
         self._sock.setsockopt(zmq.RCVTIMEO, int(timeout_sec * 1000))
         try:
             self._sock.send(_pack_sim_request(req))
@@ -102,7 +109,121 @@ class NgspiceClient:
                 "no reply from ngspice-server within %.1fs (%s)"
                 % (timeout_sec, self._url)
             ) from e
-        return _unpack_sim_result(data)
+        finally:
+            if own:
+                self.close()
+        out = _unpack_sim_result(data)
+        if raise_on_error and out.error != SimResult.OK:
+            raise NgspiceServerError(SimResult.ErrorCode.Name(out.error))
+        return out
+
+    def simulate_batch(
+        self,
+        requests: Iterable[Union[SimRequest, Dict[str, Any]]],
+        *,
+        timeout_sec: float = 120.0,
+        return_timing: bool = False,
+    ) -> Union[List[SimResult], Tuple[List[SimResult], float]]:
+        t0 = time.time()
+        out: List[SimResult] = []
+        for req in requests:
+            if isinstance(req, SimRequest):
+                netlist = req.netlist
+                analysis = req.analysis or "op"
+                rid = req.request_id
+                stream_diag = bool(req.stream_diagnostics)
+            else:
+                netlist = str(req.get("netlist", ""))
+                analysis = str(req.get("analysis", "op"))
+                rid = str(req.get("request_id", ""))
+                stream_diag = bool(req.get("stream_diagnostics", False))
+            out.append(
+                self.simulate(
+                    netlist,
+                    analysis=analysis,
+                    timeout_sec=timeout_sec,
+                    stream_diagnostics=stream_diag,
+                    request_id=rid,
+                    raise_on_error=False,
+                )
+            )
+        if return_timing:
+            return out, (time.time() - t0) * 1000.0
+        return out
+
+
+def extract_vectors(result: SimResult) -> Dict[str, List[float]]:
+    out: Dict[str, List[float]] = {}
+    for vd in result.vectors:
+        name = (vd.name or "").strip()
+        if not name:
+            continue
+        out[name] = list(vd.real_values)
+        lower = name.lower()
+        if lower.startswith("v(") and lower.endswith(")") and len(name) > 3:
+            out[lower[2:-1]] = list(vd.real_values)
+        if vd.imag_values:
+            out[f"{name}_imag"] = list(vd.imag_values)
+            if lower.startswith("v(") and lower.endswith(")") and len(name) > 3:
+                out[f"{lower[2:-1]}_imag"] = list(vd.imag_values)
+    return out
+
+
+def compare_dc_op(
+    netlist: str,
+    expected: Dict[str, float],
+    *,
+    client: Optional[NgspiceClient] = None,
+    rel_tol: float = 1e-3,
+    abs_tol: float = 1e-6,
+) -> Dict[str, Dict[str, Any]]:
+    own = client is None
+    c = client if client is not None else NgspiceClient()
+    if own:
+        c.__enter__()
+    try:
+        res = c.simulate(netlist, analysis="op", raise_on_error=False)
+    finally:
+        if own:
+            c.close()
+    got = dict(getattr(res, "node_voltages", {}) or {})
+    out: Dict[str, Dict[str, Any]] = {}
+    for name, exp in expected.items():
+        val = got.get(name)
+        if val is None:
+            out[name] = {"expected": exp, "got": None, "match": False, "abs_error": None}
+            continue
+        err = abs(float(val) - float(exp))
+        tol = max(abs_tol, rel_tol * abs(float(exp)))
+        out[name] = {
+            "expected": float(exp),
+            "got": float(val),
+            "match": err <= tol,
+            "abs_error": err,
+        }
+    return out
+
+
+def load_benchmark_manifest(path: str) -> List[str]:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(data, list):
+        return [str(x) for x in data if str(x).strip()]
+    if isinstance(data, dict):
+        if isinstance(data.get("circuits"), list):
+            out: List[str] = []
+            for item in data["circuits"]:
+                if isinstance(item, str):
+                    s = item.strip()
+                    if s:
+                        out.append(s)
+                elif isinstance(item, dict):
+                    s = str(item.get("netlist", "")).strip()
+                    if s:
+                        out.append(s)
+            return out
+        if isinstance(data.get("netlists"), list):
+            return [str(x) for x in data["netlists"] if str(x).strip()]
+    return []
 
 
 def simulate_transient(
