@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import ingest as ing
+from ingest_kit.chunking import code_pipeline as code_pipeline_mod
+from ingest_kit import treesitter as treesitter_mod
 
 
 @pytest.fixture
@@ -45,13 +47,13 @@ def test_normalize_refcount_stem_empty_after_strip():
 def test_regex_code_split_empty_segments_use_generic(tmp_path: Path, monkeypatch):
     """Newline-only body: ^ matches every line start; stripped segments are empty → generic_split."""
     called: list[bool] = []
-    orig = ing.generic_split
+    orig = code_pipeline_mod.generic_split
 
     def wrapped(c: str, p: Path, n: int):
         called.append(True)
         return orig(c, p, n)
 
-    monkeypatch.setattr(ing, "generic_split", wrapped)
+    monkeypatch.setattr(code_pipeline_mod, "generic_split", wrapped)
     monkeypatch.setitem(ing._REGEX_CODE_PATTERNS, ".py", [r"^"])
     path = tmp_path / "x.py"
     path.write_text("", encoding="utf-8")
@@ -93,7 +95,7 @@ def test_ts_c_cpp_zero_chunks_routes_regex_before_language_split(monkeypatch, tm
     p = tmp_path / "fallback.c"
     p.write_text("void f(void) {}\n", encoding="utf-8")
     content = p.read_text(encoding="utf-8")
-    monkeypatch.setattr(ing, "_ts_extract_chunks", lambda *a, **k: [])
+    monkeypatch.setattr(code_pipeline_mod, "_ts_extract_chunks", lambda *a, **k: [])
     out = ing._ts_extract_chunks_or_language_split_c_cpp(
         p, content, "c", allow_language_split_fallback=True
     )
@@ -505,8 +507,8 @@ def test_ts_language_split_fallback_with_preamble(tmp_path: Path, monkeypatch):
     def no_ts(*a, **k):
         return None
 
-    monkeypatch.setattr(ing, "_ts_extract_chunks", no_ts)
-    monkeypatch.setattr(ing, "_ts_parser_for", lambda *a, **k: object())
+    monkeypatch.setattr(code_pipeline_mod, "_ts_extract_chunks", no_ts)
+    monkeypatch.setattr(treesitter_mod, "_ts_parser_for", lambda *a, **k: object())
     out = ing._ts_extract_chunks_or_language_split_c_cpp(
         p, p.read_text(encoding="utf-8"), "c", allow_language_split_fallback=True
     )

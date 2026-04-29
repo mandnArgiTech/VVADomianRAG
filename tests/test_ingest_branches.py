@@ -10,6 +10,7 @@ import chromadb
 import pytest
 
 import ingest as ing
+from ingest_kit import treesitter as treesitter_mod
 
 
 def _have_tree_sitter_cpp() -> bool:
@@ -410,7 +411,7 @@ def test_ts_extract_chunks_c_mocked(monkeypatch):
             root = TSNode("translation_unit", 0, len(data), [TSNode("function_definition", 0, min(12, len(data)))])
             return TSTree(root)
 
-    monkeypatch.setattr(ing, "_ts_parser_for", lambda _ln, _mn: TSParser())
+    monkeypatch.setattr(treesitter_mod, "_ts_parser_for", lambda _ln, _mn: TSParser())
     p = Path("t.c")
     content = "int main(){}"
     out = ing._ts_extract_chunks(p, content, "c")

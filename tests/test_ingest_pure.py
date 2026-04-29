@@ -9,6 +9,7 @@ import pytest
 from langchain_text_splitters import Language
 
 import ingest as ing
+from ingest_kit.chunking import code_pipeline as code_pipeline_mod
 
 
 def test_setup_logging_no_crash():
@@ -317,7 +318,7 @@ def test_ts_extract_chunks_mocked(tmp_path):
     p = tmp_path / "f.c"
     p.write_text("int main(){return 0;}", encoding="utf-8")
     fake = [("chunk", {"chunk_strategy": "ast_c", "chunk_type": "x", "chunk_name": "m", "chunk_index": "0"})]
-    with patch.object(ing, "_ts_extract_chunks", return_value=fake):
+    with patch.object(code_pipeline_mod, "_ts_extract_chunks", return_value=fake):
         st, fn, lim, _ov = ing.choose_strategy_for_path(p, "code")
         assert st == "code"
         assert _ov is None

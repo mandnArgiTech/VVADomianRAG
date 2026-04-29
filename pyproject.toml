@@ -5,13 +5,13 @@ pythonpath = [
     "Studio-Portable-RAG/Codebase/ngspice/zmq_server/tests",
 ]
 testpaths = ["tests", "Studio-Portable-RAG/Codebase/ngspice/zmq_server/tests"]
-addopts = "-q -p no:launch_testing -p pytest_cov -p pytest_timeout --cov=ingest --cov-report=term-missing --cov-fail-under=95 --timeout=120"
+addopts = "-q -p no:launch_testing -p pytest_cov --cov=ingest --cov=ingest_kit --cov-report=term-missing --cov-fail-under=95 --timeout=120"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
 
 [tool.coverage.run]
-source = ["ingest"]
+source = ["ingest", "ingest_kit"]
 omit = []
 
 [tool.coverage.report]
