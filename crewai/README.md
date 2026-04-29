@@ -11,7 +11,9 @@ Batch pipeline that turns a JSON **chapter ledger** and Ngspice C sources into M
 | `config.yaml` | Optional defaults (loaded automatically if present next to the entry script) |
 | `chapter_ledger.json` | Chapter titles, output filenames, relative paths into `source_root`, prompts |
 | `project_prompts_*.json` | Agent personas and task templates (Ngspice vs Kinematica variants) |
-| `oracle_*.json` | Alternate ledgers for other domains (e.g. kinematica) |
+| `oracle_kinematica.json` | ArduPilot / Rover chapter ledger |
+| `oracle_nav2.json` | ROS 2 Nav2 (`navigation2`) chapter ledger |
+| `oracle_*.json` | Other alternate ledgers as needed |
 
 ## Prerequisites
 
@@ -109,4 +111,4 @@ The book factory CLI runs these validators **before** filesystem source scans an
 
 - Long runs: `deepseek-reasoner` can pause for many minutes; the factory logs heartbeats so you can tell the process is alive.
 - Edit `chapter_ledger.json` to add or reorder chapters without Python changes.
-- Swap `chapter_ledger` / `project_prompts` in YAML (or use `oracle_kinematica.json` + `project_prompts_kinematica.json`) for non-Ngspice batches—adjust `source_root` and `output_dir` accordingly.
+- Swap `chapter_ledger` / `project_prompts` in YAML (e.g. `oracle_kinematica.json` + `project_prompts_kinematica.json`, or `oracle_nav2.json` with a Nav2 checkout) for non-Ngspice batches—adjust `source_root` and `output_dir` accordingly.

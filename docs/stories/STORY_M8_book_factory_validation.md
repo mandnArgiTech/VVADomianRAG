@@ -187,7 +187,7 @@ def main() -> int:
     targets = {
         "chapter_ledger.json": validate_oracle,
         "oracle_kinematica.json": validate_oracle,
-        "oracle_physics.json": validate_oracle,
+        "oracle_nav2.json": validate_oracle,
         "project_prompts_ngspice.json": validate_project_prompts,
         "project_prompts_kinematica.json": validate_project_prompts,
     }
@@ -305,7 +305,7 @@ def test_prompts_rejects_unknown_placeholder():
 def test_real_files_pass(tmp_path):
     """All 5 shipped JSON configs must validate after Stories M5-M7 land."""
     base = Path("crewai")
-    for name in ["chapter_ledger.json", "oracle_kinematica.json", "oracle_physics.json"]:
+    for name in ["chapter_ledger.json", "oracle_kinematica.json", "oracle_nav2.json"]:
         if not (base / name).exists():
             continue
         data = json.loads((base / name).read_text())

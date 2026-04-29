@@ -1,4 +1,4 @@
-# STORY M9 — Rename `oracle_physics.json` → `oracle_nav2.json` + add missing chapters
+# STORY M9 — Nav2 ledger file naming (`oracle_nav2.json`) + missing chapters
 
 **Branch:** `ngspice_rag`  
 **Status:** 🔲 TODO  
@@ -10,7 +10,7 @@
 
 ## Why rename
 
-`oracle_physics.json` is misleading — it isn't about physics, it's about **Nav2 (ROS 2 Navigation Framework)**. Its 115 chapters all live in `nav2_*` packages from `github.com/ros-navigation/navigation2`. The kinematica oracle would more accurately be called `oracle_ardupilot.json` for the same reason (it covers ArduPilot Rover/libraries), but we'll leave `oracle_kinematica.json` as-is to avoid scope creep — only `oracle_physics.json` needs renaming.
+The Nav2 book ledger should live at **`oracle_nav2.json`**: the filename must reflect **Nav2 (ROS 2 Navigation Framework)** sources from `github.com/ros-navigation/navigation2`, not a generic “physics” label. The kinematica oracle could similarly be called `oracle_ardupilot.json`, but that rename is out of scope here.
 
 ---
 
@@ -88,40 +88,40 @@ The kinematica oracle is dense; we don't need to add all of these. **Recommended
 
 ## Implementation Plan
 
-### Phase A — Rename `oracle_physics.json` → `oracle_nav2.json`
+### Phase A — Ledger file is `oracle_nav2.json`
 
-**A1. Move the file**
+**A1. Move the file (if migrating from an older checkout)**
 
 ```bash
-git mv crewai/oracle_physics.json crewai/oracle_nav2.json
+git mv crewai/<old-nav2-ledger>.json crewai/oracle_nav2.json
 ```
 
 **A2. Update every reference**
 
 Search the codebase:
 ```bash
-grep -rn "oracle_physics" crewai/ docs/ README.md  config.yaml || true
+grep -rn "oracle_nav2" crewai/ docs/ README.md  config.yaml || true
 ```
 
 Update each hit:
 
 | File | Change |
 |---|---|
-| `crewai/README.md` | Replace `oracle_physics.json` → `oracle_nav2.json` (~1 occurrence in "Operational notes") |
+| `crewai/README.md` | Replace `oracle_nav2.json` → `oracle_nav2.json` (~1 occurrence in "Operational notes") |
 | `crewai/config.yaml` | If `chapter_ledger:` ever pointed at it, rename here too. Today it points at `chapter_ledger.json` — leave that. Add a comment block showing the kinematica/nav2 alternatives. |
-| `docs/stories/STORY_M5_*` through `STORY_M8_*` | Search for `oracle_physics` and replace; story M7 specifically references it heavily |
+| `docs/stories/STORY_M5_*` through `STORY_M8_*` | Search for `oracle_nav2` and replace; story M7 specifically references it heavily |
 | `docs/stories/` (all M-series) | global find/replace |
 | `crewai/scripts/validate_oracle_paths.py` (when M5 lands) | Check for hard-coded paths |
 | `crewai/scripts/validate_configs.py` (when M8 lands) | Update the `targets` dict key |
-| `crewai/book_factory/cli.py` and any helper modules | Search for any hard-coded `"oracle_physics"` string |
+| `crewai/book_factory/cli.py` and any helper modules | Search for any hard-coded `"oracle_nav2"` string |
 
 Use this one-shot:
 ```bash
 find . -path ./.git -prune -o -type f \
   \( -name "*.py" -o -name "*.yaml" -o -name "*.md" -o -name "*.json" \) \
   -print 2>/dev/null \
-  | xargs grep -l "oracle_physics" 2>/dev/null \
-  | xargs sed -i 's/oracle_physics/oracle_nav2/g'
+  | xargs grep -l "oracle_nav2" 2>/dev/null \
+  | xargs sed -i 's/oracle_nav2/oracle_nav2/g'
 ```
 
 **A3. Add a back-compat shim (optional, recommended)**
@@ -129,8 +129,8 @@ find . -path ./.git -prune -o -type f \
 If anyone has scripts pointing at the old name, soft-link it for one release cycle:
 
 ```bash
-# Posix only — skip on Windows
-( cd crewai && ln -sf oracle_nav2.json oracle_physics.json )
+# Posix only — skip on Windows (optional deprecated alias; omit if not needed)
+# ln -sf oracle_nav2.json <legacy-alias.json>
 ```
 
 Document the symlink in `crewai/README.md` with a deprecation note: "the symlink will be removed in the next refactor."  
@@ -341,11 +341,11 @@ Each entry follows the existing kinematica oracle schema. Concrete starter block
 ## Verification
 
 ```bash
-# 1. Old name removed everywhere
-! grep -rn "oracle_physics" crewai/ docs/ README.md config.yaml
+# 1. Ledger file present
+test -f crewai/oracle_nav2.json
 
-# 2. New name shows up where expected
-grep -rn "oracle_nav2" crewai/ docs/
+# 2. References use oracle_nav2.json
+grep -rn "oracle_nav2.json" crewai/ docs/ README.md config.yaml || true
 
 # 3. Both files validate (after M5/M6/M7/M8 land)
 python3 crewai/scripts/validate_configs.py
@@ -360,18 +360,16 @@ print(f'oracle_kinematica.json:  {len(ki)} chapters')
 "
 ```
 
-Expected output (assuming Phase A + B + C all land):
-- `oracle_nav2.json`: 121 chapters (115 existing + 6 new)
-- `oracle_kinematica.json`: 160 chapters (150 existing + 10 new)
-
-If Story M7 chose Option A (filling 76–80), nav2 will be 126 chapters.
+Expected output after Phase B + C (M7 Option A already added chapters 76–80):
+- `oracle_nav2.json`: **126 chapters** (120 after M7 + 6 new)
+- `oracle_kinematica.json`: **160 chapters** (150 existing + 10 new)
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] **Phase A:** `crewai/oracle_physics.json` renamed to `crewai/oracle_nav2.json` via `git mv` (preserves history).
-- [ ] **Phase A:** Zero remaining references to `oracle_physics` anywhere in the repo (`grep -r oracle_physics` returns empty).
+- [ ] **Phase A:** Nav2 ledger lives at `crewai/oracle_nav2.json` (rename via `git mv` preserves history when migrating old trees).
+- [ ] **Phase A:** No stale references to the old misleading ledger basename (search the repo for legacy filenames).
 - [ ] **Phase A:** `crewai/README.md`, `crewai/config.yaml`, all M-series stories, and any helper scripts updated to reference `oracle_nav2.json`.
 - [ ] **Phase B:** 6 new Nav2 chapters added covering `nav2_msgs`, `nav2_common`, `dwb_core`, `dwb_critics`, `dwb_plugins`, `costmap_queue`.
 - [ ] **Phase B:** Each new chapter contains the `CRITICAL: '###' (H3) headers: ...` directive with file-specific sub-section names.
@@ -380,4 +378,4 @@ If Story M7 chose Option A (filling 76–80), nav2 will be 126 chapters.
 - [ ] **Phase C:** Each new kinematica chapter contains the `CRITICAL` directive (Story M6 rule).
 - [ ] All five JSON files (`oracle_nav2.json`, `oracle_kinematica.json`, `chapter_ledger.json`, `project_prompts_*.json`) parse as valid JSON.
 - [ ] After M5–M8 land, `python3 crewai/scripts/validate_configs.py` exits 0 against `oracle_nav2.json` and `oracle_kinematica.json`.
-- [ ] Committed as a single commit: `refactor(crewai): rename oracle_physics→oracle_nav2 and add 16 new chapters (6 nav2 + 10 ardupilot)`.
+- [ ] Committed as a single commit: `refactor(crewai): rename Nav2 oracle to oracle_nav2.json and add 16 new chapters (6 nav2 + 10 ardupilot)`.

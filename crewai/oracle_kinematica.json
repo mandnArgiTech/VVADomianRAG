@@ -1856,5 +1856,108 @@
       "Tools/ardupilotwaf/embed.py"
     ],
     "research_prompt": "Reverse-engineer the final firmware packing mechanism. Explain how `embed.py` in `Tools/ardupilotwaf` packs fonts, Lua scripts, and default parameter lists into C arrays embedded in the `.hex` binary, allowing `AP_ROMFS.cpp` to read assets without a physical SD card. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### ROMFS Embedded Header Generation (embed.py)', '### Compressed Asset Decoding (AP_ROMFS.cpp)', and '### Memory-Mapped ROMFS Access Path (AP_ROMFS.cpp)'."
+  },
+  "Chapter_151_Airspeed_Sensor_Backends_and_Pitot_Math.md": {
+    "chapter_title": "Airspeed Sensor Backends and Pitot-Static Math",
+    "files": [
+      "libraries/AP_Airspeed/AP_Airspeed.cpp",
+      "libraries/AP_Airspeed/AP_Airspeed_Backend.cpp",
+      "libraries/AP_Airspeed/AP_Airspeed_MS4525.cpp",
+      "libraries/AP_Airspeed/AP_Airspeed_SDP3X.cpp",
+      "libraries/AP_Airspeed/AP_Airspeed_analog.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the airspeed sensor frontend/backend architecture. Write a 'Pitot-Static Differential Pressure Math' section detailing how `AP_Airspeed.cpp` converts raw differential pressure into true airspeed using `sqrt(2 * delta_p / rho)` with on-the-fly air-density compensation from baro+temp. Write a 'Backend Plugin Hierarchy Analysis' covering MS4525/SDP3X/analog backends and the auto-zeroing routine that trims sensor offsets at startup. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Differential Pressure to Airspeed (AP_Airspeed.cpp)', '### MS4525 I2C Driver (AP_Airspeed_MS4525.cpp)', and '### SDP3X Auto-Zero Sequence (AP_Airspeed_SDP3X.cpp)'."
+  },
+  "Chapter_152_RangeFinder_Backends_and_Median_Filtering.md": {
+    "chapter_title": "RangeFinder Backends, ToF Drivers, and Median-Filter Math",
+    "files": [
+      "libraries/AP_RangeFinder/AP_RangeFinder.cpp",
+      "libraries/AP_RangeFinder/AP_RangeFinder_Backend.cpp",
+      "libraries/AP_RangeFinder/AP_RangeFinder_LightWareI2C.cpp",
+      "libraries/AP_RangeFinder/AP_RangeFinder_Benewake.cpp",
+      "libraries/AP_RangeFinder/AP_RangeFinder_Benewake_TFMiniPlus.cpp",
+      "libraries/AP_RangeFinder/AP_RangeFinder_LeddarOne.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the rangefinder driver hierarchy. Write a 'Median-Filter Smoothing Math' section detailing how `AP_RangeFinder.cpp` runs a multi-sample median filter to reject ToF outliers without introducing moving-average lag. Write a 'Backend Driver Hierarchy Analysis' covering LightWare I2C, Benewake UART/TFMini Plus, and LeddarOne backends, including boot-time detection scans. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Median Filter Pipeline (AP_RangeFinder.cpp)', '### LightWare I2C Driver (AP_RangeFinder_LightWareI2C.cpp)', and '### Benewake TFMini Plus UART Parser (AP_RangeFinder_Benewake_TFMiniPlus.cpp)'."
+  },
+  "Chapter_153_Optical_Flow_Backends_and_Feature_Tracking.md": {
+    "chapter_title": "Optical Flow Backends, PMW3901, and Feature-Tracking Quality",
+    "files": [
+      "libraries/AP_OpticalFlow/AP_OpticalFlow.cpp",
+      "libraries/AP_OpticalFlow/AP_OpticalFlow_PX4Flow.cpp",
+      "libraries/AP_OpticalFlow/AP_OpticalFlow_Pixart.cpp",
+      "libraries/AP_OpticalFlow/AP_OpticalFlow_HereFlow.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the optical-flow sensor stack. Write a 'Pixel Velocity to Body Velocity Formulation' detailing how `AP_OpticalFlow.cpp` converts raw pixel-shift measurements into body-frame velocity using altitude scaling and gyro derotation. Write a 'PMW3901 SPI Driver Analysis' covering configuration sequencing and surface-quality gating on low-texture terrain. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Pixel-Shift to Velocity Math (AP_OpticalFlow.cpp)', '### PMW3901 SPI Configuration (AP_OpticalFlow_Pixart.cpp)', and '### Surface Quality Threshold Gating (AP_OpticalFlow.cpp)'."
+  },
+  "Chapter_154_Beacon_Trilateration_and_UWB_Positioning.md": {
+    "chapter_title": "UWB Beacon Trilateration and Indoor Positioning Math",
+    "files": [
+      "libraries/AP_Beacon/AP_Beacon.cpp",
+      "libraries/AP_Beacon/AP_Beacon_Pozyx.cpp",
+      "libraries/AP_Beacon/AP_Beacon_Marvelmind.cpp",
+      "libraries/AP_Beacon/AP_Beacon_SITL.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the UWB beacon stack. Write a 'Multi-Beacon Trilateration Math' section detailing how `AP_Beacon.cpp` solves over-determined least-squares systems that convert beacon ranges into a position fix. Write a 'Pozyx I2C Protocol Analysis' covering frame formats and how Marvelmind's UART backend parses hedge positions. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Least-Squares Range Fusion (AP_Beacon.cpp)', '### Pozyx I2C Frame Format (AP_Beacon_Pozyx.cpp)', and '### Marvelmind UART Hedge Parser (AP_Beacon_Marvelmind.cpp)'."
+  },
+  "Chapter_155_Object_Avoidance_Path_Planning_BendyRuler.md": {
+    "chapter_title": "Object Avoidance Path Planner: BendyRuler and Dijkstra",
+    "files": [
+      "libraries/AC_Avoidance/AP_OAPathPlanner.cpp",
+      "libraries/AC_Avoidance/AP_OABendyRuler.cpp",
+      "libraries/AC_Avoidance/AP_OADijkstra.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the object-avoidance path planner. Write a 'BendyRuler Heuristic Formulation' detailing how `AP_OABendyRuler.cpp` evaluates candidate bearings for lookahead clearance. Write a 'Dijkstra Polygon Avoidance Analysis' covering how `AP_OADijkstra.cpp` searches a visibility graph around polygon obstacles. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### BendyRuler Bearing Offset Search (AP_OABendyRuler.cpp)', '### Visibility Graph Shortest Path (AP_OADijkstra.cpp)', and '### Path Replan Trigger Logic (AP_OAPathPlanner.cpp)'."
+  },
+  "Chapter_156_Camera_Mount_Gimbal_Stabilization.md": {
+    "chapter_title": "Camera Mount Plugins: Storm32, Solo, Servo, Alexmos",
+    "files": [
+      "libraries/AP_Mount/AP_Mount.cpp",
+      "libraries/AP_Mount/AP_Mount_Backend.cpp",
+      "libraries/AP_Mount/AP_Mount_Servo.cpp",
+      "libraries/AP_Mount/AP_Mount_SToRM32_serial.cpp",
+      "libraries/AP_Mount/AP_Mount_SoloGimbal.cpp",
+      "libraries/AP_Mount/AP_Mount_Alexmos.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the camera-gimbal mount stack. Write an 'Earth-Frame to Gimbal-Frame Math' section detailing how `AP_Mount.cpp` converts target vectors into roll/pitch/yaw demands using AHRS attitude. Write a 'Backend Protocol Analysis' covering Storm32 serial, Solo Gimbal, servo PWM, and Alexmos backends. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Geo-Pointing Vector Math (AP_Mount.cpp)', '### Storm32 Serial Frame Format (AP_Mount_SToRM32_serial.cpp)', and '### Alexmos Stabilizer Protocol (AP_Mount_Alexmos.cpp)'."
+  },
+  "Chapter_157_Notify_LED_Buzzer_State_Machine.md": {
+    "chapter_title": "Notify Subsystem: LED Patterns and Audible Alarm State Machine",
+    "files": [
+      "libraries/AP_Notify/AP_Notify.cpp",
+      "libraries/AP_Notify/RGBLed.cpp",
+      "libraries/AP_Notify/Buzzer.cpp",
+      "libraries/AP_Notify/ToshibaLED_I2C.cpp",
+      "libraries/AP_Notify/NeoPixel.cpp",
+      "libraries/AP_Notify/Display.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the operator-notification subsystem. Write a 'Flight-Mode to Blink Pattern Map' detailing the state machine in `AP_Notify.cpp` that translates modes, EKF status, and arming state into RGB patterns and buzzer cadences. Write a 'NeoPixel Timing Analysis' covering WS2812 bit timing in `NeoPixel.cpp`. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Flight-Mode to RGB State Table (AP_Notify.cpp)', '### Buzzer Tone Sequencer (Buzzer.cpp)', and '### NeoPixel WS2812 Timing (NeoPixel.cpp)'."
+  },
+  "Chapter_158_AP_Vehicle_Common_Base_Class_and_Loop.md": {
+    "chapter_title": "AP_Vehicle Common Base Class and Shared Loop Infrastructure",
+    "files": [
+      "libraries/AP_Vehicle/AP_Vehicle.cpp",
+      "libraries/AP_Vehicle/AP_Vehicle.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the `AP_Vehicle` base class shared by Rover, Plane, and Copter. Write a 'Common Loop Scheduling Architecture' detailing how `AP_Vehicle.cpp` provides unified setup/loop lifecycle hooks and standardized arming-check plumbing. Write a 'Sensor Bootstrap Analysis' covering shared dependency wiring for AHRS, EKF, and logging. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Common Setup and Loop Lifecycle (AP_Vehicle.cpp)', '### Vehicle-Wide Initialization Ordering (AP_Vehicle.cpp)', and '### Virtual Arming Check Hook (AP_Vehicle.h)'."
+  },
+  "Chapter_159_Frsky_SmartPort_Telemetry.md": {
+    "chapter_title": "FrSky S.Port and D-Port Telemetry Bridges",
+    "files": [
+      "libraries/AP_Frsky_Telem/AP_Frsky_Telem.cpp",
+      "libraries/AP_Frsky_Telem/AP_Frsky_SPort.cpp",
+      "libraries/AP_Frsky_Telem/AP_Frsky_SPort_Passthrough.cpp",
+      "libraries/AP_Frsky_Telem/AP_Frsky_D.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the FrSky telemetry stack. Write a 'S.Port Frame Encoding Math' section detailing byte-framed sensor packing in `AP_Frsky_SPort.cpp` for GPS, battery, and status streams. Write a 'Passthrough Protocol Analysis' covering how `AP_Frsky_SPort_Passthrough.cpp` maps ArduPilot-specific IDs into FrSky slots. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### S.Port Encoder Pipeline (AP_Frsky_SPort.cpp)', '### AP Passthrough Frame Map (AP_Frsky_SPort_Passthrough.cpp)', and '### Legacy D-Port Sensor Hub Format (AP_Frsky_D.cpp)'."
+  },
+  "Chapter_160_DroneCAN_UAVCAN_Stack_and_DNA_Server.md": {
+    "chapter_title": "DroneCAN Protocol Stack in AP_UAVCAN (DNA and Interfaces)",
+    "files": [
+      "libraries/AP_UAVCAN/AP_UAVCAN.cpp",
+      "libraries/AP_UAVCAN/AP_UAVCAN_DNA_Server.cpp",
+      "libraries/AP_UAVCAN/AP_UAVCAN_IfaceMgr.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of ArduPilot's DroneCAN implementation built on `AP_UAVCAN`. Write a 'Dynamic Node Allocation (DNA) Math' section detailing how `AP_UAVCAN_DNA_Server.cpp` resolves anonymous nodes into stable IDs. Write an 'Interface Manager Analysis' covering how `AP_UAVCAN_IfaceMgr.cpp` multiplexes CAN interfaces for redundant buses. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### DNA Handshake and Node ID Assignment (AP_UAVCAN_DNA_Server.cpp)', '### CAN Frame Routing (AP_UAVCAN.cpp)', and '### Interface Manager Selection (AP_UAVCAN_IfaceMgr.cpp)'."
   }
 }

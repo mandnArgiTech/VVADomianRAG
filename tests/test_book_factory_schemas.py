@@ -90,7 +90,7 @@ def test_prompts_rejects_unknown_placeholder():
 def test_real_files_pass():
     """Shipped JSON configs must validate (oracle gaps allowed only as non-hard per legacy test)."""
     base = Path(__file__).resolve().parents[1] / "crewai"
-    for name in ["chapter_ledger.json", "oracle_kinematica.json", "oracle_physics.json"]:
+    for name in ["chapter_ledger.json", "oracle_kinematica.json", "oracle_nav2.json"]:
         path = base / name
         if not path.exists():
             continue

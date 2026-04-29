@@ -18,7 +18,7 @@ def main() -> int:
     targets = {
         "chapter_ledger.json": validate_oracle,
         "oracle_kinematica.json": validate_oracle,
-        "oracle_physics.json": validate_oracle,
+        "oracle_nav2.json": validate_oracle,
         "project_prompts_ngspice.json": validate_project_prompts,
         "project_prompts_kinematica.json": validate_project_prompts,
     }

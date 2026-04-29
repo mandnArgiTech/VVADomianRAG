@@ -1,4 +1,4 @@
-# STORY M7 — Resolve missing chapter numbers 76–80 in oracle_physics.json
+# STORY M7 — Resolve missing chapter numbers 76–80 in `oracle_nav2.json` (Nav2 ledger)
 
 **Branch:** `ngspice_rag`  
 **Status:** 🔲 TODO  
@@ -8,7 +8,7 @@
 
 ## Problem
 
-`oracle_physics.json` declares 115 chapters but uses chapter numbers 1–120 with **5 missing**: there are no entries for chapter numbers **76, 77, 78, 79, 80**.
+`oracle_nav2.json` declares 115 chapters but uses chapter numbers 1–120 with **5 missing**: there are no entries for chapter numbers **76, 77, 78, 79, 80**.
 
 The pipeline iterates `data.values()` and produces output filenames from the JSON keys, so the book will render `Chapter_075_*.md` then `Chapter_081_*.md` — a visible gap in the table of contents.
 
@@ -65,7 +65,7 @@ Before adding chapters, confirm the candidate topics are not already covered:
 ```bash
 python3 -c "
 import json
-d = json.load(open('crewai/oracle_physics.json'))
+d = json.load(open('crewai/oracle_nav2.json'))
 search_terms = ['behavior_tree', 'bt_navigator', 'smoother', 'velocity_smoother', 'collision_monitor']
 for term in search_terms:
     hits = [k for k, v in d.items() if any(term in f for f in v.get('files', []))]
@@ -77,7 +77,7 @@ If a candidate topic already has a chapter, pick a different topic.
 
 ### Step 2 — Add the 5 chapter entries
 
-Insert into `oracle_physics.json` at the correct alphabetical position (between `Chapter_075` and `Chapter_081`). Each new entry must:
+Insert into `oracle_nav2.json` at the correct alphabetical position (between `Chapter_075` and `Chapter_081`). Each new entry must:
 
 - Use the existing schema (`chapter_title`, `files`, `research_prompt`).
 - Include the `CRITICAL: ... '###' (H3) headers: ...` directive (matching the rest of the file — 100% of physics chapters already include this).
@@ -88,7 +88,7 @@ Insert into `oracle_physics.json` at the correct alphabetical position (between 
 ```bash
 python3 -c "
 import json, re
-d = json.load(open('crewai/oracle_physics.json'))
+d = json.load(open('crewai/oracle_nav2.json'))
 nums = sorted([int(re.match(r'Chapter_(\d+)_', k).group(1)) for k in d.keys()])
 assert len(nums) == len(set(nums)), 'Duplicate chapter numbers'
 assert nums == list(range(1, len(nums)+1)), f'Non-sequential: missing {set(range(1, max(nums)+1)) - set(nums)}'
@@ -102,7 +102,7 @@ print(f'OK — {len(nums)} chapters, sequential 1-{max(nums)}, all have CRITICAL
 If a Nav2 checkout is available, run the validator from Story M5:
 
 ```bash
-python3 crewai/scripts/validate_oracle_paths.py crewai/oracle_physics.json /path/to/navigation2
+python3 crewai/scripts/validate_oracle_paths.py crewai/oracle_nav2.json /path/to/navigation2
 ```
 
 ---
@@ -112,5 +112,5 @@ python3 crewai/scripts/validate_oracle_paths.py crewai/oracle_physics.json /path
 - [ ] **One of:** (A) 5 new chapters added at numbers 76–80, OR (B) chapters 81–120 renumbered to 76–115, OR (C) gap documented in `crewai/README.md`.
 - [ ] If Option A: all 5 new chapters reference real Nav2 source files and contain `CRITICAL: ... '###' (H3) headers: ...`.
 - [ ] If Option A or B: integrity check (Step 3) reports `OK — 120 chapters, sequential 1-120` (A) or `OK — 115 chapters, sequential 1-115` (B).
-- [ ] `oracle_physics.json` remains valid JSON.
+- [ ] `oracle_nav2.json` remains valid JSON.
 - [ ] Committed with message reflecting the chosen option, e.g. `fix(crewai): fill nav2 oracle gap with 5 missing chapters (76-80)`.
