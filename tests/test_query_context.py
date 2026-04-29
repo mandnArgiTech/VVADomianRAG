@@ -144,11 +144,12 @@ def test_format_result_prefers_context_window_for_markdown(monkeypatch):
     assert "### Code" in out
 
 
-@patch.object(q, "_sync_multi_search", return_value=[])
+@patch("query_kit.search.sync_multi_search", return_value=[])
 def test_dependency_hop_delegates_to_primary_when_disabled(mock_sync, monkeypatch):
+    # Thresholds are read from ``util.constants`` inside ``query_kit.search`` (not ``query``).
     monkeypatch.setenv("QUERY_DEP_MAX_HITS", "0")
-    monkeypatch.setattr(q, "QUERY_DEP_MAX_HITS", 0)
-    monkeypatch.setattr(q, "QUERY_DEP_MAX_TOKENS", 16)
+    monkeypatch.setattr("util.constants.QUERY_DEP_MAX_HITS", 0)
+    monkeypatch.setattr("util.constants.QUERY_DEP_MAX_TOKENS", 16)
     cmap = {}
     out = q._sync_multi_search_with_dependency_hop("q", 5, "code", "", "", cmap, "")
     assert out == []

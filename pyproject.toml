@@ -1,3 +1,5 @@
+# If pytest fails during collection with ROS launch_testing_ros (unknown hook on Jazzy), run:
+#   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest
 [tool.pytest.ini_options]
 pythonpath = [
     ".",
