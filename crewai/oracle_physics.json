@@ -706,6 +706,55 @@
     "research_prompt": "Reverse-engineer the lightweight simulation architecture. Write a 'Kinematic Loopback Formulation' detailing exactly how `loopback_simulator.cpp` bypasses heavy physics engines like Gazebo. Mathematically explain how it intercepts `cmd_vel` requests and instantly perfectly integrates them into `odom` TF broadcasts, simulating a 'perfect' robot with zero friction or slip. Detail the synchronization mechanism in `clock_publisher.cpp` used to publish steady `/clock` updates so timers, TF extrapolation, and ROS callbacks advance deterministically during desktop or CI runs without a full physics sim. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### cmd_vel Loopback and Odometry Integration (loopback_simulator.cpp)', '### Frictionless Kinematic State Integration (loopback_simulator.cpp)', and '### Simulation Clock Publication and Stepping (clock_publisher.cpp)'."
   },
 
+  "Chapter_076_Nav2_Action_IDL_Contracts_and_Server_Binding.md": {
+    "chapter_title": "Nav2 Action IDL Contracts and ROS 2 Server Binding",
+    "files": [
+      "nav2_msgs/action/NavigateToPose.action",
+      "nav2_msgs/action/ComputePathToPose.action",
+      "nav2_msgs/action/FollowPath.action"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Nav2 action surface area. Write an 'IDL Goal Contract Formulation' detailing how `NavigateToPose.action` defines pose tolerances, Behavior Tree identifiers, and recovery metadata carried across BT Navigator servers. Write a 'Planner–Controller Handshake Analysis' explaining how `ComputePathToPose.action` bridges global planner plugins and path-quality feedback, and how `FollowPath.action` specifies trajectory-tracking semantics consumed by controller servers. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### NavigateToPose Goal and Feedback Fields (NavigateToPose.action)', '### ComputePathToPose Planning Semantics (ComputePathToPose.action)', and '### FollowPath Trajectory Tracking Contract (FollowPath.action)'."
+  },
+
+  "Chapter_077_Planner_Benchmarking_Toolchain_and_Metrics.md": {
+    "chapter_title": "Planner Benchmarking Toolchain and Metrics",
+    "files": [
+      "tools/planner_benchmarking/planning_benchmark_bringup.py",
+      "tools/planner_benchmarking/metrics.py",
+      "tools/planner_benchmarking/process_data.py"
+    ],
+    "research_prompt": "Extract the offline planner evaluation harness shipped with Nav2. Write a 'Benchmark Bringup Formulation' detailing how `planning_benchmark_bringup.py` launches isolated planner pipelines with repeatable seeds and maps. Write a 'Metric Aggregation Analysis' explaining how `metrics.py` computes success rates, path length, and clearance statistics, and how `process_data.py` serializes runs for regression comparisons across planner releases. CRITICAL: In the 'Python Implementation' section, use '###' (H3) headers: '### Benchmark Launch and Scenario Wiring (planning_benchmark_bringup.py)', '### Path Quality and Success Metrics (metrics.py)', and '### Results Batch Processing and Reporting (process_data.py)'."
+  },
+
+  "Chapter_078_Smoother_Benchmarking_Toolchain_and_Metrics.md": {
+    "chapter_title": "Smoother Benchmarking Toolchain and Metrics",
+    "files": [
+      "tools/smoother_benchmarking/smoother_benchmark_bringup.py",
+      "tools/smoother_benchmarking/metrics.py",
+      "tools/smoother_benchmarking/process_data.py"
+    ],
+    "research_prompt": "Reverse-engineer the smoother regression bench used by maintainers. Write a 'Smoother Harness Formulation' detailing how `smoother_benchmark_bringup.py` feeds noisy planner polylines into smoother plugins under controlled timing. Explain how `metrics.py` quantifies curvature continuity, maximum deviation from the input path, and computational cost, and how `process_data.py` aggregates CSV-style logs for CI dashboards. CRITICAL: In the 'Python Implementation' section, use '###' (H3) headers: '### Smoother Benchmark Orchestration (smoother_benchmark_bringup.py)', '### Smoothness and Fidelity Metrics (metrics.py)', and '### Dataset Post-Processing Pipelines (process_data.py)'."
+  },
+
+  "Chapter_079_Behavior_Tree_XML_Node_Catalog_and_bt2img_Tooling.md": {
+    "chapter_title": "Behavior Tree XML Node Catalog and bt2img Tooling",
+    "files": [
+      "tools/bt2img.py",
+      "nav2_behavior_tree/nav2_tree_nodes.xml"
+    ],
+    "research_prompt": "Extract the documentation-facing BT tooling. Write a 'Node Registration Catalog Formulation' detailing how `nav2_tree_nodes.xml` enumerates custom BT nodes, their ports, and plugin class names for BehaviorTree.CPP factories. Write a 'Diagram Export Analysis' explaining how `bt2img.py` parses Nav2 XML trees into static images for design reviews and regression diffs. CRITICAL: In the 'Python Implementation' section, use '###' (H3) headers: '### XML Node Metadata and Port Declarations (nav2_tree_nodes.xml)', '### BT XML Parsing and Layout (bt2img.py)', and '### Rasterized Tree Export for Documentation (bt2img.py)'."
+  },
+
+  "Chapter_080_Advanced_Goal_Checkers_and_Feasible_Path_Handlers.md": {
+    "chapter_title": "Advanced Goal Checkers, Pose Progress, and Feasible Path Handlers",
+    "files": [
+      "nav2_controller/plugins/axis_goal_checker.cpp",
+      "nav2_controller/plugins/position_goal_checker.cpp",
+      "nav2_controller/plugins/feasible_path_handler.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the extended validation plugins beyond simple geometric tolerances. Write an 'Axis-Separated Arrival Formulation' detailing how `axis_goal_checker.cpp` independently thresholds longitudinal vs lateral error. Write a 'Global Position Lock Analysis' explaining how `position_goal_checker.cpp` validates pure $(x,y)$ settling without enforcing final heading, and how `feasible_path_handler.cpp` rejects controller trajectories that violate kinematic or obstacle feasibility near the goal. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Per-Axis Error Budgeting (axis_goal_checker.cpp)', '### Position-Only Goal Satisfaction (position_goal_checker.cpp)', and '### Local Feasibility Guards Near the Goal (feasible_path_handler.cpp)'."
+  },
+
   "Chapter_081_Nav2_Util_Array_Parsers_and_String_Casting.md": {
     "chapter_title": "Nav2 Util: Array Parsers and String Casting",
     "files": [
