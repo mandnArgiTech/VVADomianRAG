@@ -1,4 +1,4 @@
-﻿"""Targeted tests to raise ingest.py coverage toward the 95% gate."""
+"""Targeted tests to raise ingest.py coverage toward the 95% gate."""
 from __future__ import annotations
 
 import asyncio
