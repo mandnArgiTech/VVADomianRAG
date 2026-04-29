@@ -1703,7 +1703,7 @@
       "Rover/sailboat.cpp",
       "libraries/AP_WindVane/AP_WindVane.cpp"
     ],
-    "research_prompt": "Extract the wind-powered marine architecture. Write a 'Wind Triangle Formulation' detailing how `AP_WindVane.cpp` calculates apparent vs. true wind vectors, and explain the state-machine in `sailboat.cpp` that overrides standard motor throttles to control a main-sail winch, mathematically calculating the optimal tacking angles to sail upwind without stalling."
+    "research_prompt": "Extract the wind-powered marine architecture. Write a 'Wind Triangle Formulation' detailing how `AP_WindVane.cpp` calculates apparent vs. true wind vectors, and explain the state-machine in `sailboat.cpp` that overrides standard motor throttles to control a main-sail winch, mathematically calculating the optimal tacking angles to sail upwind without stalling. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Apparent vs True Wind Vector Math (AP_WindVane.cpp)', '### Tack/Gybe State Machine (sailboat.cpp)', and '### Mainsail Winch Servo Mapping (sailboat.cpp)'."
   },
   "Chapter_132_BalanceBots_and_Inverted_Pendulum_Kinematics.md": {
     "chapter_title": "BalanceBots and Inverted Pendulum Kinematics",
@@ -1711,7 +1711,7 @@
       "Rover/balance_bot.cpp",
       "libraries/AR_Motors/AP_MotorsUGV.cpp"
     ],
-    "research_prompt": "Reverse-engineer the self-balancing rover logic. Detail how `balance_bot.cpp` fuses EKF pitch data with wheel encoders to run an ultra-fast inverted pendulum PID loop, overriding the standard navigation speed requests to physically accelerate the chassis forward or backward just to keep the mast from hitting the ground."
+    "research_prompt": "Reverse-engineer the self-balancing rover logic. Detail how `balance_bot.cpp` fuses EKF pitch data with wheel encoders to run an ultra-fast inverted pendulum PID loop, overriding the standard navigation speed requests to physically accelerate the chassis forward or backward just to keep the mast from hitting the ground. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Inverted Pendulum PID Loop (balance_bot.cpp)', '### EKF Pitch Fusion with Wheel Encoders (balance_bot.cpp)', and '### UGV Mixer Overrides for Balance Recovery (AP_MotorsUGV.cpp)'."
   },
   "Chapter_133_Machine_Learning_Cruise_Throttle_Optimization.md": {
     "chapter_title": "Machine Learning and Cruise Throttle Optimization",
@@ -1719,7 +1719,7 @@
       "Rover/cruise_learn.cpp",
       "libraries/APM_Control/AR_AttitudeControl.cpp"
     ],
-    "research_prompt": "Extract the onboard self-learning algorithms. Explain how `cruise_learn.cpp` continuously analyzes the delta between requested speed and actual GPS velocity, dynamically rewriting the base throttle parameters in real-time so the rover learns to maintain exactly 2 m/s regardless of payload weight or tire degradation."
+    "research_prompt": "Extract the onboard self-learning algorithms. Explain how `cruise_learn.cpp` continuously analyzes the delta between requested speed and actual GPS velocity, dynamically rewriting the base throttle parameters in real-time so the rover learns to maintain exactly 2 m/s regardless of payload weight or tire degradation. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Cruise Speed Delta Sampling (cruise_learn.cpp)', '### Real-Time Throttle Parameter Rewrite (cruise_learn.cpp)', and '### Attitude PID Interaction with Learned Cruise Trim (AR_AttitudeControl.cpp)'."
   },
   "Chapter_134_Omnidirectional_Mecanum_Rover_Matrix_Mixing.md": {
     "chapter_title": "Omnidirectional Mecanum Rover Matrix Mixing",
@@ -1727,7 +1727,7 @@
       "libraries/AR_Motors/AP_MotorsUGV.cpp",
       "libraries/AR_WPNav/AR_WPNav.cpp"
     ],
-    "research_prompt": "Detail the lateral strafing mathematics. Explain the specific matrix mixing in `AP_MotorsUGV.cpp` used to drive 4 independent Mecanum wheels, allowing the `AR_WPNav` controller to issue true omnidirectional vectors (e.g., strafing perfectly sideways without changing yaw) for complex industrial inspections."
+    "research_prompt": "Detail the lateral strafing mathematics. Explain the specific matrix mixing in `AP_MotorsUGV.cpp` used to drive 4 independent Mecanum wheels, allowing the `AR_WPNav` controller to issue true omnidirectional vectors (e.g., strafing perfectly sideways without changing yaw) for complex industrial inspections. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Mecanum 4-Wheel Mixing Matrix (AP_MotorsUGV.cpp)', '### Strafe Vector Decomposition (AP_MotorsUGV.cpp)', and '### Yaw-Independent Translation Demands (AR_WPNav.cpp)'."
   },
   "Chapter_135_Torqeedo_Marine_Drives_and_IC_Engine_Generators.md": {
     "chapter_title": "Torqeedo Marine Drives and Internal Combustion Generators",
@@ -1735,7 +1735,7 @@
       "libraries/AP_Torqeedo/AP_Torqeedo.cpp",
       "libraries/AP_Generator/AP_Generator.cpp"
     ],
-    "research_prompt": "Extract the industrial powertrain protocols. Detail how `AP_Torqeedo.cpp` handles proprietary CAN bus handshakes with high-voltage marine outboards, and how `AP_Generator.cpp` manages starter-motor sequencing and RPM governors for hybrid gas-electric rovers."
+    "research_prompt": "Extract the industrial powertrain protocols. Detail how `AP_Torqeedo.cpp` handles proprietary CAN bus handshakes with high-voltage marine outboards, and how `AP_Generator.cpp` manages starter-motor sequencing and RPM governors for hybrid gas-electric rovers. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Torqeedo CAN Handshake Protocol (AP_Torqeedo.cpp)', '### Generator Starter Sequencing (AP_Generator.cpp)', and '### RPM Governor and Hybrid Arbitration (AP_Generator.cpp)'."
   },
   "Chapter_136_Swarming_AP_Follow_and_Target_Offset_Math.md": {
     "chapter_title": "Swarming, AP_Follow, and Target Offset Math",
@@ -1743,7 +1743,7 @@
       "libraries/AP_Follow/AP_Follow.cpp",
       "Rover/mode_follow.cpp"
     ],
-    "research_prompt": "Extract the multi-vehicle swarming architecture. Detail how `AP_Follow.cpp` intercepts MAVLink GLOBAL_POSITION_INT packets from a lead vehicle, calculating an offset 3D vector and injecting it into `mode_follow.cpp` so a fleet of rovers can maintain a strict geometric formation at 50Hz."
+    "research_prompt": "Extract the multi-vehicle swarming architecture. Detail how `AP_Follow.cpp` intercepts MAVLink GLOBAL_POSITION_INT packets from a lead vehicle, calculating an offset 3D vector and injecting it into `mode_follow.cpp` so a fleet of rovers can maintain a strict geometric formation at 50Hz. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### MAVLink GLOBAL_POSITION_INT Ingestion (AP_Follow.cpp)', '### 3D Offset Vector Calculation (AP_Follow.cpp)', and '### 50Hz Formation Update Loop (mode_follow.cpp)'."
   },
   "Chapter_137_Visual_Odometry_VIO_and_External_Pose_Ingestion.md": {
     "chapter_title": "Visual Odometry (VIO) and External Pose Ingestion",
@@ -1751,7 +1751,7 @@
       "libraries/AP_VisualOdom/AP_VisualOdom.cpp",
       "libraries/AP_NavEKF3/AP_NavEKF3_core.cpp"
     ],
-    "research_prompt": "Detail the integration of companion computer vision. Explain how `AP_VisualOdom.cpp` unpacks 6-DOF pose arrays from Intel T265 cameras or ROS 2 nodes, and how the NavEKF3 consumes this purely optical data to navigate GPS-denied environments like underground mines."
+    "research_prompt": "Detail the integration of companion computer vision. Explain how `AP_VisualOdom.cpp` unpacks 6-DOF pose arrays from Intel T265 cameras or ROS 2 nodes, and how the NavEKF3 consumes this purely optical data to navigate GPS-denied environments like underground mines. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### 6-DOF Pose Unpacking (AP_VisualOdom.cpp)', '### Intel T265 Coordinate Frame Transform (AP_VisualOdom.cpp)', and '### NavEKF3 Fusion of External Vision State (AP_NavEKF3_core.cpp)'."
   },
   "Chapter_138_MultiWii_Serial_Protocol_MSP_and_Digital_OSD.md": {
     "chapter_title": "MultiWii Serial Protocol (MSP) and Digital OSD",
@@ -1759,7 +1759,7 @@
       "libraries/AP_MSP/AP_MSP.cpp",
       "libraries/AP_OSD/AP_OSD.cpp"
     ],
-    "research_prompt": "Reverse-engineer the FPV display systems. Detail how `AP_MSP.cpp` tricks DJI or Walksnail digital video transmitters into thinking they are connected to Betaflight, formatting ArduPilot's complex EKF telemetry into lightweight DisplayPort canvases driven by `AP_OSD.cpp`."
+    "research_prompt": "Reverse-engineer the FPV display systems. Detail how `AP_MSP.cpp` tricks DJI or Walksnail digital video transmitters into thinking they are connected to Betaflight, formatting ArduPilot's complex EKF telemetry into lightweight DisplayPort canvases driven by `AP_OSD.cpp`. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### MSP Frame Format and Betaflight Spoofing (AP_MSP.cpp)', '### EKF Telemetry to MSP Translation (AP_MSP.cpp)', and '### DisplayPort Canvas Rendering (AP_OSD.cpp)'."
   },
   "Chapter_139_Crossfire_CRSF_and_High_Speed_RC_Telemetry.md": {
     "chapter_title": "Crossfire (CRSF) and High-Speed RC Telemetry",
@@ -1767,7 +1767,7 @@
       "libraries/AP_RCProtocol/AP_RCProtocol_CRSF.cpp",
       "libraries/AP_RCTelemetry/AP_RCTelemetry.cpp"
     ],
-    "research_prompt": "Extract the low-latency radio control link. Explain the UART parsing engine in `AP_RCProtocol_CRSF.cpp` capable of 150Hz stick updates, and how `AP_RCTelemetry.cpp` interleaves flight mode and battery data back into the transmitter's downlink."
+    "research_prompt": "Extract the low-latency radio control link. Explain the UART parsing engine in `AP_RCProtocol_CRSF.cpp` capable of 150Hz stick updates, and how `AP_RCTelemetry.cpp` interleaves flight mode and battery data back into the transmitter's downlink. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### CRSF UART Frame Parser (AP_RCProtocol_CRSF.cpp)', '### 150Hz Stick Update Loop (AP_RCProtocol_CRSF.cpp)', and '### Telemetry Downlink Interleaving (AP_RCTelemetry.cpp)'."
   },
   "Chapter_140_Precision_Landing_IRLock_and_Companion_Targeting.md": {
     "chapter_title": "Precision Landing, IRLock, and Companion Targeting",
@@ -1775,7 +1775,7 @@
       "libraries/AP_IRLock/IRLock.cpp",
       "libraries/AC_PrecLand/AC_PrecLand.cpp"
     ],
-    "research_prompt": "Detail the optical targeting matrices. Explain how `AP_IRLock.cpp` communicates over I2C to read high-speed infrared beacon pixel coordinates, and how `AC_PrecLand.cpp` translates those 2D pixels into 3D navigation vectors to precisely dock a vehicle."
+    "research_prompt": "Detail the optical targeting matrices. Explain how `AP_IRLock.cpp` communicates over I2C to read high-speed infrared beacon pixel coordinates, and how `AC_PrecLand.cpp` translates those 2D pixels into 3D navigation vectors to precisely dock a vehicle. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### IRLock I2C Pixel Read (IRLock.cpp)', '### 2D Pixel to 3D Vector Math (AC_PrecLand.cpp)', and '### Final Approach Velocity Damping (AC_PrecLand.cpp)'."
   },
   "Chapter_141_DroneCAN_Actuator_Arbitration_and_Node_Mapping.md": {
     "chapter_title": "DroneCAN Actuator Arbitration and Node Mapping",
@@ -1783,7 +1783,7 @@
       "libraries/AP_UAVCAN/AP_UAVCAN.cpp",
       "libraries/AP_CANManager/AP_CANManager.cpp"
     ],
-    "research_prompt": "Extract the DroneCAN infrastructure. Explain how `AP_CANManager.cpp` allocates thread priorities for bus polling, and how `AP_UAVCAN.cpp` dynamically maps logical servo outputs to physical CAN node IDs, allowing for infinitely expandable, decentralized hardware architectures."
+    "research_prompt": "Extract the DroneCAN infrastructure. Explain how `AP_CANManager.cpp` allocates thread priorities for bus polling, and how `AP_UAVCAN.cpp` dynamically maps logical servo outputs to physical CAN node IDs, allowing for infinitely expandable, decentralized hardware architectures. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### CAN Bus Thread Priority Allocation (AP_CANManager.cpp)', '### Servo to Node ID Mapping (AP_UAVCAN.cpp)', and '### Dynamic Hardware Discovery (AP_UAVCAN.cpp)'."
   },
   "Chapter_142_Onboard_Lua_Applets_and_Peripheral_Sandboxing.md": {
     "chapter_title": "Onboard Lua Applets and Peripheral Sandboxing",
@@ -1791,7 +1791,7 @@
       "libraries/AP_Scripting/AP_Scripting.cpp",
       "libraries/AP_Scripting/applets/MissionSelector.lua"
     ],
-    "research_prompt": "Deep dive into the edge-computing engine. Detail how Lua scripts loaded via `AP_Scripting.cpp` can interface directly with the CAN bus or I2C lines to parse proprietary sensors on the fly, without requiring a custom C++ firmware compilation."
+    "research_prompt": "Deep dive into the edge-computing engine. Detail how Lua scripts loaded via `AP_Scripting.cpp` can interface directly with the CAN bus or I2C lines to parse proprietary sensors on the fly, without requiring a custom C++ firmware compilation. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Lua Script Loader and Sandbox (AP_Scripting.cpp)', '### CAN/I2C C++ Bindings (AP_Scripting.cpp)', and '### Mission Logic via Applets (MissionSelector.lua)'."
   },
   "Chapter_143_MAVLink_FTP_and_Onboard_Filesystem_Management.md": {
     "chapter_title": "MAVLink FTP and Onboard Filesystem Management",
@@ -1799,7 +1799,7 @@
       "libraries/GCS_MAVLink/GCS_FTP.cpp",
       "libraries/AP_Filesystem/AP_Filesystem.cpp"
     ],
-    "research_prompt": "Extract the remote administration layer. Explain how `GCS_FTP.cpp` implements burst-reads and CRC checks over MAVLink, allowing a Ground Station to browse, download logs, and upload Lua scripts to the SD card via `AP_Filesystem.cpp` while the vehicle is in flight."
+    "research_prompt": "Extract the remote administration layer. Explain how `GCS_FTP.cpp` implements burst-reads and CRC checks over MAVLink, allowing a Ground Station to browse, download logs, and upload Lua scripts to the SD card via `AP_Filesystem.cpp` while the vehicle is in flight. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### MAVLink FTP Burst-Read Protocol (GCS_FTP.cpp)', '### CRC and Resume Semantics (GCS_FTP.cpp)', and '### SD Card Filesystem Abstraction (AP_Filesystem.cpp)'."
   },
   "Chapter_144_NMEA_Output_and_Marine_Chartplotter_Integration.md": {
     "chapter_title": "NMEA Output and Marine Chartplotter Integration",
@@ -1807,7 +1807,7 @@
       "libraries/AP_NMEA_Output/AP_NMEA_Output.cpp",
       "libraries/AP_SerialManager/AP_SerialManager.cpp"
     ],
-    "research_prompt": "Detail the legacy marine hardware integrations. Explain how `AP_NMEA_Output.cpp` translates the EKF's global coordinates back into standard NMEA 0183 sentences (like GGA and RMC) to feed physical depth sounders and commercial chartplotters mounted on boats."
+    "research_prompt": "Detail the legacy marine hardware integrations. Explain how `AP_NMEA_Output.cpp` translates the EKF's global coordinates back into standard NMEA 0183 sentences (like GGA and RMC) to feed physical depth sounders and commercial chartplotters mounted on boats. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### NMEA 0183 Sentence Encoding (AP_NMEA_Output.cpp)', '### EKF Global Position to GGA/RMC (AP_NMEA_Output.cpp)', and '### Serial Port Routing for Marine Peripherals (AP_SerialManager.cpp)'."
   },
   "Chapter_145_Multi_Zone_Temperature_Calibration_and_IMU_Drift.md": {
     "chapter_title": "Multi-Zone Temperature Calibration and IMU Drift",
@@ -1815,7 +1815,7 @@
       "libraries/AP_TempCalibration/AP_TempCalibration.cpp",
       "libraries/AP_InertialSensor/AP_InertialSensor_tempcal.cpp"
     ],
-    "research_prompt": "Reverse-engineer the extreme-environment physics. Explain how `AP_TempCalibration.cpp` utilizes offline 3rd-order polynomial curves to correct raw gyroscope and accelerometer drift across a -40C to +85C temperature gradient."
+    "research_prompt": "Reverse-engineer the extreme-environment physics. Explain how `AP_TempCalibration.cpp` utilizes offline 3rd-order polynomial curves to correct raw gyroscope and accelerometer drift across a -40C to +85C temperature gradient. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### 3rd-Order Polynomial Bias Curve Math (AP_TempCalibration.cpp)', '### Per-Sensor Calibration Storage (AP_TempCalibration.cpp)', and '### Runtime IMU Temp Correction Pipeline (AP_InertialSensor_tempcal.cpp)'."
   },
   "Chapter_146_Advanced_Failsafe_State_Machines_and_Geo_Sequences.md": {
     "chapter_title": "Advanced Failsafe State Machines and Geo-Sequences",
@@ -1823,7 +1823,7 @@
       "libraries/AP_AdvancedFailsafe/AP_AdvancedFailsafe.cpp",
       "Rover/failsafe.cpp"
     ],
-    "research_prompt": "Extract the industrial failsafe architecture. Detail how `AP_AdvancedFailsafe.cpp` moves beyond simple 'Return to Launch', executing complex, programmable geometric sequences (like pulling parachutes, killing engines, or driving to designated safe-zones) when critical subsystems fail."
+    "research_prompt": "Extract the industrial failsafe architecture. Detail how `AP_AdvancedFailsafe.cpp` moves beyond simple 'Return to Launch', executing complex, programmable geometric sequences (like pulling parachutes, killing engines, or driving to designated safe-zones) when critical subsystems fail. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Programmable Geo-Sequence Parser (AP_AdvancedFailsafe.cpp)', '### Critical Subsystem Watchdog Hooks (AP_AdvancedFailsafe.cpp)', and '### Rover-Specific Failsafe Dispatch (failsafe.cpp)'."
   },
   "Chapter_147_Crash_Detection_Tip_Over_and_EKF_Variance_Watchdogs.md": {
     "chapter_title": "Crash Detection, Tip-Over, and EKF Variance Watchdogs",
@@ -1831,7 +1831,7 @@
       "Rover/crash_check.cpp",
       "Rover/ekf_check.cpp"
     ],
-    "research_prompt": "Detail the kinematic death-sensors. Explain the mathematics in `crash_check.cpp` that detects prolonged physical inversions without corresponding RC inputs (confirming a rover roll-over), and how `ekf_check.cpp` monitors compass variance to trigger emergency manual-fallback modes."
+    "research_prompt": "Detail the kinematic death-sensors. Explain the mathematics in `crash_check.cpp` that detects prolonged physical inversions without corresponding RC inputs (confirming a rover roll-over), and how `ekf_check.cpp` monitors compass variance to trigger emergency manual-fallback modes. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Inversion Detection Math (crash_check.cpp)', '### EKF Compass Variance Monitor (ekf_check.cpp)', and '### Manual-Fallback Trigger Logic (crash_check.cpp)'."
   },
   "Chapter_148_DataFlash_Log_Structure_and_High_Bandwidth_Ring_Buffers.md": {
     "chapter_title": "DataFlash Log Structure and High-Bandwidth Ring Buffers",
@@ -1839,7 +1839,7 @@
       "libraries/AP_Logger/AP_Logger.cpp",
       "libraries/AP_Logger/LogStructure.h"
     ],
-    "research_prompt": "Extract the forensic logging engine. Detail how `AP_Logger.cpp` utilizes non-blocking circular DMA buffers to flush megabytes of high-speed PID and EKF structs (`LogStructure.h`) to the SD card, guaranteeing data recovery even if the main CPU completely hard-faults mid-flight."
+    "research_prompt": "Extract the forensic logging engine. Detail how `AP_Logger.cpp` utilizes non-blocking circular DMA buffers to flush megabytes of high-speed PID and EKF structs (`LogStructure.h`) to the SD card, guaranteeing data recovery even if the main CPU completely hard-faults mid-flight. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Non-Blocking DMA Ring Buffer (AP_Logger.cpp)', '### LogStructure Packing and Versioning (LogStructure.h)', and '### Hard-Fault Recovery Guarantees (AP_Logger.cpp)'."
   },
   "Chapter_149_ROS_2_DDS_Integration_and_Micro_XRCE_Offloading.md": {
     "chapter_title": "ROS 2 DDS Integration and Micro XRCE Offloading",
@@ -1847,7 +1847,7 @@
       "libraries/AP_UAVCAN/AP_UAVCAN.cpp",
       "modules/mavlink/message_definitions/v1.0/common.xml"
     ],
-    "research_prompt": "Extract the modern enterprise API. Detail the implementation of the Data Distribution Service (DDS), explaining how `AP_DDS_Client.cpp` translates ArduPilot’s internal state directly into ROS 2 topics, allowing Nvidia Jetson companion computers to execute complex AI navigation loops over Ethernet."
+    "research_prompt": "Extract companion-bus integration patterns relevant to ROS-style offload. Explain how `AP_UAVCAN.cpp` exposes decentralized actuator and sensor services over CAN, and how the MAVLink `common.xml` schema defines cross-language message contracts that ground stations and companion computers use alongside DDS-like middleware on Jetson-class hardware. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### UAVCAN Transport and Companion Bus Integration (AP_UAVCAN.cpp)', '### MAVLink Message Definitions as Interop Schema (common.xml)', and '### Decentralized Node Services and Routing (AP_UAVCAN.cpp)'."
   },
   "Chapter_150_The_ArduPilot_Compile_Time_ROMFS_and_Memory_Map.md": {
     "chapter_title": "The ArduPilot Compile-Time ROMFS and Memory Map",
@@ -1855,6 +1855,6 @@
       "libraries/AP_ROMFS/AP_ROMFS.cpp",
       "Tools/ardupilotwaf/embed.py"
     ],
-    "research_prompt": "Reverse-engineer the final firmware packing mechanism. Explain how `romfs.py` intercepts font files, Lua scripts, and default parameter lists, compiling them directly into a compressed C-array embedded in the `.hex` binary, allowing `AP_ROMFS.cpp` to read files without a physical SD card."
+    "research_prompt": "Reverse-engineer the final firmware packing mechanism. Explain how `embed.py` in `Tools/ardupilotwaf` packs fonts, Lua scripts, and default parameter lists into C arrays embedded in the `.hex` binary, allowing `AP_ROMFS.cpp` to read assets without a physical SD card. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### ROMFS Embedded Header Generation (embed.py)', '### Compressed Asset Decoding (AP_ROMFS.cpp)', and '### Memory-Mapped ROMFS Access Path (AP_ROMFS.cpp)'."
   }
 }
