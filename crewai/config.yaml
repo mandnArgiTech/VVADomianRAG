@@ -1,0 +1,29 @@
+# Ngspice Book Factory — default configuration (crewai/config.yaml)
+#
+# Run from the crewai/ directory so imports resolve:
+#   cd crewai && python ngspice_book_factory.py
+#
+# Or from repo root (PYTHONPATH must include crewai/):
+#   PYTHONPATH=crewai python crewai/ngspice_book_factory.py
+#
+# Paths may be absolute or relative to this YAML file's directory.
+#
+# Merge order (later wins for paths): defaults < YAML < environment < CLI.
+#   Env: NGSPICE_BOOK_SOURCE_ROOT, NGSPICE_BOOK_OUTPUT_DIR, NGSPICE_BOOK_LEDGER,
+#        NGSPICE_BOOK_PROJECT_PROMPTS, NGSPICE_BOOK_LOG_FILE, NGSPICE_BOOK_LOG_LEVEL
+# API key: never commit real keys — use DEEPSEEK_API_KEY / OPENAI_API_KEY or --deepseek-api-key.
+#
+# Only documented keys are allowed at the top level (typos are rejected). Aliases:
+#   ngspice_root / source_directory / ngspice_directory → source_root
+#   output_directory → output_dir ; ledger / chapter_ledger_json → chapter_ledger
+#   project_prompts_json / prompts_file → project_prompts ; log_path → log_file
+#   api_key / deepseek_key → deepseek_api_key
+
+source_root: ../Studio-Portable-RAG/Codebase/ngspice
+output_dir: ../Studio-Portable-RAG/DomainDocs/ngspice_book
+chapter_ledger: ./chapter_ledger.json
+project_prompts: ./project_prompts_ngspice.json
+
+# Optional file log (UTF-8 append). Omit or set null to disable file logging.
+log_file: ./logs/ngspice_book_factory.log
+log_level: INFO

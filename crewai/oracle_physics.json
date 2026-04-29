@@ -1,0 +1,1069 @@
+{
+  "Chapter_001_Lifecycle_Management_and_Node_Orchestration.md": {
+    "chapter_title": "Lifecycle Management, Bond Watchdogs, and Node Orchestration",
+    "files": [
+      "nav2_lifecycle_manager/src/lifecycle_manager.cpp",
+      "nav2_lifecycle_manager/src/lifecycle_manager_client.cpp",
+      "nav2_ros_common/include/nav2_ros_common/lifecycle_node.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Nav2 Lifecycle Manager. Write a 'State Transition Formulation' detailing exactly how `lifecycle_manager.cpp` coordinates the strict bringup, configuration, and activation ordering of dozens of independent ROS 2 servers. Write a 'Bond Watchdog Analysis' explaining the heartbeat mechanism used to detect if a critical server (like the planner) crashes mid-navigation, triggering a cascading deactivation of the entire stack to ensure the robot safely stops. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Managed Node Transition Ordering (lifecycle_manager.cpp)', '### Bond Heartbeat and Failure Cascades (lifecycle_manager.cpp)', and '### The LifecycleNode Base Wrapper (lifecycle_node.hpp)'."
+  },
+
+  "Chapter_002_Core_Pluginlib_Interfaces_and_Action_Servers.md": {
+    "chapter_title": "Core Pluginlib Interfaces, Action Servers, and ROS Utilities",
+    "files": [
+      "nav2_core/include/nav2_core/controller.hpp",
+      "nav2_core/include/nav2_core/global_planner.hpp",
+      "nav2_ros_common/include/nav2_ros_common/simple_action_server.hpp",
+      "nav2_util/src/lifecycle_service_client.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the master C++ contracts that define the Nav2 plugin architecture. Write an 'Abstract Class Formulation' detailing the exact virtual methods mandated by `controller.hpp` and `global_planner.hpp` that external vendors must implement to inject custom algorithms via `pluginlib`. Write a 'Threaded Action Server Analysis' mathematically explaining how `simple_action_server.hpp` safely manages ROS 2 action goals, preemptions, and asynchronous background execution threads without triggering race conditions. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Nav2 Core Pluginlib Contracts (controller.hpp / global_planner.hpp)', '### Asynchronous Action Goal Preemption (simple_action_server.hpp)', and '### Synchronous Service Client Wrappers (lifecycle_service_client.cpp)'."
+  },
+
+  "Chapter_003_Costmap2D_Master_Abstraction_and_Layered_Grids.md": {
+    "chapter_title": "Costmap2D Master Abstraction, Layered Grids, and ROS Wrappers",
+    "files": [
+      "nav2_costmap_2d/src/layered_costmap.cpp",
+      "nav2_costmap_2d/src/costmap_2d.cpp",
+      "nav2_costmap_2d/src/costmap_2d_ros.cpp",
+      "nav2_costmap_2d/src/layer.cpp"
+    ],
+    "research_prompt": "Extract the core world-representation architecture. Write a 'Layered Grid Aggregation Formulation' detailing how `layered_costmap.cpp` manages an array of independent `layer.cpp` plugins (e.g., static, obstacle, inflation), sequentially calling their `updateCosts()` methods to mathematically fuse multiple occupancy values into a single master 1D byte array. Write a 'TF2 Synchronization Analysis' explaining how `costmap_2d_ros.cpp` handles the temporal synchronization between incoming sensor data and the robot's `base_link` transform, guaranteeing that the local costmap accurately tracks the robot's dynamic footprint. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Master Grid Byte Array Mathematics (costmap_2d.cpp)', '### Layered Bounding Box Updates and Cost Fusion (layered_costmap.cpp)', and '### Costmap2DROS TF Synchronization (costmap_2d_ros.cpp)'."
+  },
+
+  "Chapter_004_Static_Mapping_and_Map_Server_IO.md": {
+    "chapter_title": "Static Mapping, Map Server IO, and Map Saving",
+    "files": [
+      "nav2_map_server/src/map_server/map_server.cpp",
+      "nav2_map_server/src/map_io.cpp",
+      "nav2_costmap_2d/src/plugins/static_layer.cpp",
+      "nav2_map_server/src/map_saver/map_saver.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the static map parsing and publishing pipeline. Write an 'Occupancy Grid IO Formulation' detailing how `map_io.cpp` translates pixel intensity values from physical PGM/PNG image files into ROS 2 `OccupancyGrid` messages (LETHAL, FREE, UNKNOWN) using YAML-defined thresholds. Write a 'Static Layer Ingestion Analysis' explaining how `static_layer.cpp` subscribes to this grid, resolving resolution mismatches and mapping the static walls into the master costmap. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Pixel-to-Occupancy Transformation Math (map_io.cpp)', '### Static Map Subscription and Grid Resizing (static_layer.cpp)', and '### Map Saver Continuous Serialization (map_saver.cpp)'."
+  },
+
+  "Chapter_005_Obstacle_Observation_Buffers_and_Raytracing.md": {
+    "chapter_title": "Obstacle Observation Buffers, Sensor Raytracing, and Clearing",
+    "files": [
+      "nav2_costmap_2d/src/plugins/obstacle_layer.cpp",
+      "nav2_costmap_2d/src/observation_buffer.cpp",
+      "nav2_costmap_2d/src/costmap_math.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the dynamic obstacle tracking architecture. Write a 'Sensor Data Buffering Formulation' detailing how `observation_buffer.cpp` ingests highly dense PointCloud2 and LaserScan messages, transforming them into the global frame and caching them based on observation lifespans. Write a 'Bresenham Raytracing Analysis' mathematically explaining how `obstacle_layer.cpp` calculates lines from the sensor origin to the detected hit-point, marking the hit-point as LETHAL while explicitly clearing all grid cells along the ray to dynamically remove 'ghost' obstacles when people walk away. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### TF PointCloud Transformation Buffers (observation_buffer.cpp)', '### Bresenham Line Raytracing for Cost Clearing (obstacle_layer.cpp)', and '### LETHAL Cost Marking Mathematics (obstacle_layer.cpp)'."
+  },
+
+  "Chapter_006_Costmap_Inflation_Distance_Transforms_and_Heuristics.md": {
+    "chapter_title": "Costmap Inflation, Distance Transforms, and Danger Heuristics",
+    "files": [
+      "nav2_costmap_2d/src/plugins/inflation_layer.cpp",
+      "nav2_costmap_2d/src/plugins/legacy_inflation_layer.cpp"
+    ],
+    "research_prompt": "Extract the mathematical safety buffers of the costmap. Write a 'Cost Inflation Formulation' detailing the exact exponential decay algorithms in `inflation_layer.cpp` used to propagate LETHAL obstacle costs outward into adjacent cells, creating a gradient of 'danger' that forces local controllers to steer clear of walls. Detail the use of the priority queue to perform a highly optimized dynamic programming expansion, minimizing CPU cycles during map updates. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Priority Queue Distance Expansion (inflation_layer.cpp)', '### Exponential Cost Decay Mathematics (inflation_layer.cpp)', and '### Bounding Box Update Optimizations (inflation_layer.cpp)'."
+  },
+
+  "Chapter_007_Voxel_Grids_3D_Occupancy_and_Bitwise_Operations.md": {
+    "chapter_title": "Voxel Grids, 3D Occupancy, and High-Speed Bitwise Operations",
+    "files": [
+      "nav2_voxel_grid/src/voxel_grid.cpp",
+      "nav2_costmap_2d/src/plugins/voxel_layer.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the 3D spatial awareness layer. Write a 'Bitwise Voxel Packing Formulation' detailing exactly how `voxel_grid.cpp` compresses an entire Z-column of 3D space (up to 32 voxels high) into a single 32-bit integer, utilizing ultra-fast bitwise AND/OR operations to check for occupancy without expanding the memory footprint. Write a '3D Raytracing Analysis' explaining how `voxel_layer.cpp` performs raytracing in true 3D to clear overhanging obstacles (like tables), before flattening the 3D voxel grid down into a 2D costmap projection for the planners to consume. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### 32-Bit Integer Voxel Column Compression (voxel_grid.cpp)', '### 3D Bresenham Raytracing and Clearing (voxel_grid.cpp)', and '### 3D to 2D Costmap Flattening Projection (voxel_layer.cpp)'."
+  },
+
+  "Chapter_008_Costmap_Filters_Keepout_Zones_and_Speed_Limits.md": {
+    "chapter_title": "Costmap Filters, Keepout Zones, and Speed Limit Arbitration",
+    "files": [
+      "nav2_costmap_2d/src/plugins/costmap_filters/costmap_filter.cpp",
+      "nav2_costmap_2d/src/plugins/costmap_filters/keepout_filter.cpp",
+      "nav2_costmap_2d/src/plugins/costmap_filters/speed_filter.cpp",
+      "nav2_map_server/src/costmap_filter_info/costmap_filter_info_server.cpp"
+    ],
+    "research_prompt": "Extract the programmatic restriction of navigable space. Write a 'Filter Mask Ingestion Formulation' detailing how `costmap_filter_info_server.cpp` loads secondary map files (masks) and publishes them as filter metadata. Write a 'Mask-to-Cost Translation Analysis' mathematically explaining how `keepout_filter.cpp` translates mask pixel intensities directly into hard LETHAL barriers, and how `speed_filter.cpp` publishes `SpeedLimit` messages based on the mask, dynamically capping the local controller's maximum velocity in warehouse 'slow zones'. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Filter Mask Metadata Publishing (costmap_filter_info_server.cpp)', '### Keepout Zone Absolute LETHAL Injection (keepout_filter.cpp)', and '### Dynamic Speed Limit Parameter Modulation (speed_filter.cpp)'."
+  },
+
+  "Chapter_009_Robot_Footprints_and_Collision_Checking_Mathematics.md": {
+    "chapter_title": "Robot Footprints, Polygons, and Collision Checking Mathematics",
+    "files": [
+      "nav2_costmap_2d/src/footprint.cpp",
+      "nav2_costmap_2d/src/footprint_collision_checker.cpp",
+      "nav2_util/src/robot_utils.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the physical vehicle modeling constraints. Write a 'Polygon Rasterization Formulation' detailing how `footprint.cpp` translates an array of 2D coordinates (the robot's shape) into an oriented polygon in the map frame. Write a 'Line-Sweep Collision Analysis' mathematically explaining how `footprint_collision_checker.cpp` iterates along the edges of that polygon, checking the underlying costmap cells to strictly guarantee that no part of the robot's physical chassis intersects with a LETHAL obstacle during a planned trajectory. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Oriented Polygon Rasterization (footprint.cpp)', '### Polygon Edge Line-Checking Algorithms (footprint_collision_checker.cpp)', and '### Padding and Inscribed Radius Math (footprint.cpp)'."
+  },
+
+  "Chapter_010_Range_Sensor_Layers_and_Sonar_Probabilistic_Models.md": {
+    "chapter_title": "Range Sensor Layers, Sonar Cones, and Probabilistic Models",
+    "files": [
+      "nav2_costmap_2d/src/plugins/range_sensor_layer.cpp"
+    ],
+    "research_prompt": "Extract the specific costmap layer designed for ultrasonics and IR arrays. Write a 'Probabilistic Range Formulation' detailing exactly how `range_sensor_layer.cpp` handles wide-FOV sensors (like sonar cones) differently than lasers. Explain the mathematical probability model used to assign varying weights to the arc of the sensor sweep, accounting for the uncertainty of exactly *where* within the cone the object actually is, to prevent false-positive path blocking. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Wide-FOV Sensor Cone Projection Math (range_sensor_layer.cpp)', '### Probabilistic Hit-Point Weighting (range_sensor_layer.cpp)', and '### Range-Based Free-Space Clearing (range_sensor_layer.cpp)'."
+  },
+
+  "Chapter_011_AMCL_Core_Particle_Filter_and_K_D_Trees.md": {
+    "chapter_title": "AMCL Core Particle Filter Mathematics and K-D Trees",
+    "files": [
+      "nav2_amcl/src/pf/pf.c",
+      "nav2_amcl/src/pf/pf_kdtree.c",
+      "nav2_amcl/src/pf/pf_pdf.c"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Adaptive Monte Carlo Localization (AMCL) core engine. Write a 'Particle Resampling Formulation' detailing the exact C-struct algorithms in `pf.c` used to maintain a swarm of hypothesis particles, utilizing KLD-sampling to dynamically reduce the number of particles (and save CPU) when the robot's pose confidence is high. Write a 'K-D Tree Spatial Clustering Analysis' mathematically explaining how `pf_kdtree.c` efficiently clusters particles in 3D space (x, y, theta) to quickly determine the density and bounds of the particle cloud during the resampling phase. CRITICAL: In the 'C/C++ Implementation' section, use '###' (H3) headers: '### Adaptive KLD-Sampling Mathematics (pf.c)', '### 3D Pose K-D Tree Clustering (pf_kdtree.c)', and '### Gaussian PDF Randomization (pf_pdf.c)'."
+  },
+
+  "Chapter_012_AMCL_Motion_Models_Odometry_and_Kinematics.md": {
+    "chapter_title": "AMCL Motion Models, Odometry Noise, and Kinematics",
+    "files": [
+      "nav2_amcl/src/motion_model/differential_motion_model.cpp",
+      "nav2_amcl/src/motion_model/omni_motion_model.cpp"
+    ],
+    "research_prompt": "Extract the odometry-driven prediction phase of the AMCL algorithm. Write a 'Kinematic Noise Injection Formulation' detailing how `differential_motion_model.cpp` mathematically translates raw wheel odometry (`odom` frame delta) into a probabilistic shift of every particle in the filter. Detail the specific alpha parameters ($\\alpha_1$ through $\\alpha_4$) used to inject translation-to-translation, translation-to-rotation, and rotation-to-rotation Gaussian noise into the particles, accounting for wheel slip. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Differential Odometry Delta Math (differential_motion_model.cpp)', '### Alpha-Parameter Gaussian Noise Injection (differential_motion_model.cpp)', and '### Omnidirectional Kinematic Modeling (omni_motion_model.cpp)'."
+  },
+
+  "Chapter_013_AMCL_Laser_Likelihood_Fields_and_Sensor_Models.md": {
+    "chapter_title": "AMCL Laser Likelihood Fields and Sensor Measurement Models",
+    "files": [
+      "nav2_amcl/src/sensors/laser/likelihood_field_model.cpp",
+      "nav2_amcl/src/sensors/laser/beam_model.cpp",
+      "nav2_amcl/src/sensors/laser/laser.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the sensor update phase of the AMCL algorithm. Write a 'Likelihood Field Formulation' detailing how `likelihood_field_model.cpp` compares the incoming LaserScan against the known static map, computing the distance from the endpoint of a simulated laser beam (for every particle) to the nearest known wall. Explain how this distance is mathematically converted into a weight/probability score for that specific particle using hit/random/max components ($z_{hit}$, $z_{rand}$, $z_{max}$). CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Laser Scan Endpoint Projection Math (likelihood_field_model.cpp)', '### Distance-to-Nearest-Obstacle Scoring (likelihood_field_model.cpp)', and '### Particle Weight Update Formulas (laser.cpp)'."
+  },
+
+  "Chapter_014_AMCL_ROS_Node_TF_Broadcasting_and_Global_Localization.md": {
+    "chapter_title": "AMCL ROS Node Integration, TF Broadcasting, and Global Localization",
+    "files": [
+      "nav2_amcl/src/amcl_node.cpp",
+      "nav2_amcl/include/nav2_amcl/amcl_node.hpp"
+    ],
+    "research_prompt": "Extract the integration of the pure C particle filter into the ROS 2 ecosystem. Write a 'Map-to-Odom TF Publishing Formulation' detailing exactly how `amcl_node.cpp` averages the highest-weighted cluster of particles to determine the most likely pose, and subsequently calculates and broadcasts the corrective `map -> odom` TF tree transform. Write a 'Global Localization Dispersion Analysis' explaining the logic triggered when the node receives a 'Global Localization' service call, completely randomizing the particle cloud across all FREE space in the static map to recover a completely lost robot. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Particle Cloud Clustering and Pose Extraction (amcl_node.cpp)', '### The map->odom Transform Derivation (amcl_node.cpp)', and '### Global Localization Random Dispersion (amcl_node.cpp)'."
+  },
+
+  "Chapter_015_Collision_Monitor_Node_Safety_Zones_and_Velocity_Scaling.md": {
+    "chapter_title": "Collision Monitor Node, Safety Zones, and Velocity Scaling",
+    "files": [
+      "nav2_collision_monitor/src/collision_monitor_node.cpp",
+      "nav2_collision_monitor/src/polygon.cpp",
+      "nav2_collision_monitor/src/source.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the independent safety-override architecture. Write a 'Velocity-Scaled Polygon Formulation' detailing how `collision_monitor_node.cpp` operates entirely outside the main Nav2 planners to intercept `cmd_vel` requests. Explain how it utilizes `polygon.cpp` to draw dynamic, speed-dependent safety envelopes around the robot (e.g., drawing a longer bounding box when moving fast), and triggers hard-stops or velocity-scaling if raw PointCloud data from `source.cpp` penetrates these envelopes. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The cmd_vel Interception and Override Loop (collision_monitor_node.cpp)', '### Dynamic Velocity-Scaled Polygon Generation (polygon.cpp)', and '### Raw PointCloud Intersection Checking (source.cpp)'."
+  },
+
+  "Chapter_016_Collision_Monitor_Kinematics_and_State_Projection.md": {
+    "chapter_title": "Collision Monitor Kinematics, Time-to-Collision, and State Projection",
+    "files": [
+      "nav2_collision_monitor/src/kinematics.cpp",
+      "nav2_collision_monitor/src/velocity_polygon.cpp"
+    ],
+    "research_prompt": "Extract the predictive physics within the Collision Monitor. Write a 'Time-to-Collision Formulation' detailing the algorithms in `kinematics.cpp` used to project the robot's current linear and angular velocity forward in time, calculating exactly how many seconds until a physical impact with an incoming laser scan point. Detail how `velocity_polygon.cpp` utilizes this kinematic projection to shape the safety boundaries based on stopping distance and deceleration limits. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Forward State Projection Mathematics (kinematics.cpp)', '### Time-to-Collision Impact Prediction (kinematics.cpp)', and '### Deceleration-Bound Polygon Shaping (velocity_polygon.cpp)'."
+  },
+
+  "Chapter_017_Velocity_Smoother_Jerk_Limits_and_Command_Shaping.md": {
+    "chapter_title": "Velocity Smoother, Jerk Limits, and Output Command Shaping",
+    "files": [
+      "nav2_velocity_smoother/src/velocity_smoother.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the final output-shaping stage of the stack. Write an 'Acceleration and Jerk Limiting Formulation' detailing exactly how `velocity_smoother.cpp` intercepts raw velocity commands from the local controllers (like MPPI or DWB) and applies strict kinematic limits. Mathematically explain how it calculates the delta between current odometry and the requested velocity, capping the acceleration and jerk ($m/s^3$) to ensure heavy robots do not strip gears or physically tip over due to instantaneous control spikes. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Open-Loop vs Closed-Loop Velocity Tracking (velocity_smoother.cpp)', '### Acceleration and Jerk Limiting Mathematics (velocity_smoother.cpp)', and '### Deadband and Zero-Crossing Smoothing (velocity_smoother.cpp)'."
+  },
+
+  "Chapter_018_Nav2_Utilities_Geometry_and_Odometry_Helpers.md": {
+    "chapter_title": "Nav2 Core Utilities, Geometry Math, and Odometry Helpers",
+    "files": [
+      "nav2_util/src/geometry_utils.cpp",
+      "nav2_util/src/odometry_utils.cpp",
+      "nav2_util/src/robot_utils.cpp"
+    ],
+    "research_prompt": "Extract the foundational utility libraries shared across the entire stack. Write a 'Transform and Odometry Smoothing Formulation' detailing the helpers in `odometry_utils.cpp` used to safely extract filtered velocity from the `odom` topic. Explain the spatial math in `geometry_utils.cpp` (e.g., quaternion-to-yaw conversions, euclidean distances) and `robot_utils.cpp` (TF buffer lookups for `base_link` to `map`), detailing how these strict standardized functions prevent individual server plugins from writing erroneous transform logic. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Quaternion/Euler Geometry Conversions (geometry_utils.hpp)', '### TF Buffer Lookup and Pose Extraction (robot_utils.cpp)', and '### Odometry Velocity Filtering (odometry_utils.cpp)'."
+  },
+
+  "Chapter_019_The_Planner_Server_and_Path_Validation.md": {
+    "chapter_title": "The Planner Server, Action API, and Path Validation",
+    "files": [
+      "nav2_planner/src/planner_server.cpp",
+      "nav2_planner/src/parameter_handler.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the global planning host node. Write an 'Action Goal Arbitration Formulation' detailing how `planner_server.cpp` hosts the `ComputePathToPose` and `ComputePathThroughPoses` action servers, dynamically loading requested global planning plugins (e.g., 'GridBased') via the action request. Explain the `IsPathValid` service implementation, detailing how the server can verify if an older, cached path is still collision-free against the current `global_costmap` without recalculating the entire route. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### ComputePathToPose Action Execution Thread (planner_server.cpp)', '### Dynamic Plugin Routing via Goal ID (planner_server.cpp)', and '### IsPathValid Costmap Traversal (planner_server.cpp)'."
+  },
+
+  "Chapter_020_NavFn_Planner_Dijkstra_and_A_Star_Grid_Expansion.md": {
+    "chapter_title": "NavFn Planner, Dijkstra, and A* Grid Expansion",
+    "files": [
+      "nav2_navfn_planner/src/navfn.cpp",
+      "nav2_navfn_planner/src/navfn_planner.cpp"
+    ],
+    "research_prompt": "Extract the standard gradient-based global planner. Write a 'Potential Field Expansion Formulation' detailing the exact Dijkstra and A* array-propagation algorithms in `navfn.cpp`. Mathematically explain how the planner builds a potential field outward from the goal across the `global_costmap`, and how `navfn_planner.cpp` performs gradient descent from the robot's start position, following the lowest-cost vectors to generate a continuous path to the target. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Dijkstra/A* Cost Array Expansion Math (navfn.cpp)', '### Potential Field Gradient Descent (navfn_planner.cpp)', and '### Path Interpolation and Smoothing (navfn_planner.cpp)'."
+  },
+
+  "Chapter_021_Smac_2D_A_Star_Engine_and_Node_Expansions.md": {
+    "chapter_title": "Smac 2D, A* Search Engine, and Node Expansions",
+    "files": [
+      "nav2_smac_planner/src/smac_planner_2d.cpp",
+      "nav2_smac_planner/src/a_star.cpp",
+      "nav2_smac_planner/src/node_2d.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Smac 2D planner architecture. Write a 'Grid Expansion Formulation' detailing how `smac_planner_2d.cpp` utilizes the highly optimized `a_star.cpp` engine to traverse the costmap. Mathematically explain the 4-connected vs 8-connected neighborhood expansion in `node_2d.cpp`, and detail how the `robin_hood` hash map is used to achieve ultra-fast $O(1)$ lookups for visited nodes during high-speed path queries. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Optimized A* Priority Queue Expansion (a_star.cpp)', '### 8-Connected Grid Node Traversal (node_2d.cpp)', and '### Robin Hood Hashing for Visited Node Caching (a_star.cpp)'."
+  },
+
+  "Chapter_022_Smac_Hybrid_A_Star_and_Ackermann_Kinematics.md": {
+    "chapter_title": "Smac Hybrid-A* and Ackermann Kinematics",
+    "files": [
+      "nav2_smac_planner/src/smac_planner_hybrid.cpp",
+      "nav2_smac_planner/src/node_hybrid.cpp"
+    ],
+    "research_prompt": "Extract the kinematically constrained Hybrid-A* algorithms used for non-holonomic robots (like cars or Ackermann steering rovers). Write a 'Continuous State-Space Formulation' detailing exactly how `node_hybrid.cpp` projects discrete grid cells into continuous $(x, y, \\theta)$ space, mathematically calculating minimum turning radii and reversing penalties. Explain how `smac_planner_hybrid.cpp` integrates these constraints to guarantee that the resulting global path is physically drivable without lateral slipping. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Minimum Turning Radius Kinematic Math (node_hybrid.cpp)', '### Continuous-to-Discrete State Mapping (node_hybrid.cpp)', and '### Directional Penalty Optimization (smac_planner_hybrid.cpp)'."
+  },
+
+  "Chapter_023_Smac_State_Lattice_and_Precomputed_Motion_Primitives.md": {
+    "chapter_title": "Smac State Lattice and Precomputed Motion Primitives",
+    "files": [
+      "nav2_smac_planner/src/smac_planner_lattice.cpp",
+      "nav2_smac_planner/src/node_lattice.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the State Lattice planner designed for custom kinematic profiles (like omnidirectional or differential robots). Write a 'Motion Primitive Ingestion Formulation' detailing how `smac_planner_lattice.cpp` loads pre-compiled sets of physically valid trajectories (primitives). Explain the math in `node_lattice.cpp` that concatenates these specific, curved primitives together at grid boundaries to search for a path, rather than searching adjacent grid cells, guaranteeing 100% kinematic compliance. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Offline Trajectory Primitive Loading (smac_planner_lattice.cpp)', '### Lattice Node Expansion and Concatenation (node_lattice.cpp)', and '### Kinematically Guaranteed Path Construction (node_lattice.cpp)'."
+  },
+
+  "Chapter_024_Smac_Heuristics_Distance_and_Obstacle_Avoidance_Math.md": {
+    "chapter_title": "Smac Heuristics: Distance and Obstacle Avoidance Mathematics",
+    "files": [
+      "nav2_smac_planner/src/distance_heuristic.cpp",
+      "nav2_smac_planner/src/obstacle_heuristic.cpp"
+    ],
+    "research_prompt": "Extract the heuristic functions that drive the Smac A* engine toward the goal at high speed. Write a 'Dual-Heuristic Formulation' detailing how `distance_heuristic.cpp` calculates purely geometric Euclidean/Manhattan bounds, while `obstacle_heuristic.cpp` calculates a dynamic programming costmap (using Dijkstra's) from the goal outward. Explain how Smac dynamically selects the maximum of these two heuristics to violently pull the A* search away from dead-ends (like U-shaped rooms). CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Dynamic Programming Obstacle Heuristic (obstacle_heuristic.cpp)', '### Euclidean vs Manhattan Cost Metrics (distance_heuristic.cpp)', and '### Heuristic Dominance Arbitration (obstacle_heuristic.cpp)'."
+  },
+
+  "Chapter_025_Smac_Analytic_Expansions_Reeds_Shepp_and_Dubins.md": {
+    "chapter_title": "Smac Analytic Expansions, Reeds-Shepp, and Dubins Curves",
+    "files": [
+      "nav2_smac_planner/src/analytic_expansion.cpp",
+      "nav2_smac_planner/include/nav2_smac_planner/analytic_expansion.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the analytic boundary-value problem solvers. Write a 'Reeds-Shepp/Dubins Curve Formulation' detailing exactly how `analytic_expansion.cpp` attempts to 'short-circuit' the slow A* grid search. Mathematically explain how it dynamically calculates a mathematically perfect, collision-free spline (allowing forward and reverse gears for Reeds-Shepp) directly from the current node to the goal coordinate, skipping thousands of intermediate grid calculations if clear space exists. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Reeds-Shepp Reversing Curve Mathematics (analytic_expansion.cpp)', '### Dubins Forward-Only Spline Calculation (analytic_expansion.cpp)', and '### Obstacle-Free Verification and Search Short-Circuiting (analytic_expansion.cpp)'."
+  },
+
+  "Chapter_026_Smac_Collision_Checking_and_Costmap_Downsampling.md": {
+    "chapter_title": "Smac Collision Checking and Costmap Downsampling",
+    "files": [
+      "nav2_smac_planner/src/collision_checker.cpp",
+      "nav2_smac_planner/src/costmap_downsampler.cpp"
+    ],
+    "research_prompt": "Extract the optimization mechanisms that make Smac fast enough for real-time 30Hz control. Write a 'Grid Resolution Decimation Formulation' detailing how `costmap_downsampler.cpp` mathematically shrinks a 5cm/pixel grid into a 10cm or 20cm/pixel grid, aggregating the maximum LETHAL values to preserve safety while cutting the search space by a factor of 4. Explain how `collision_checker.cpp` rapidly iterates the robot's footprint across this downsampled space. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Max-Pooling Costmap Downsampling (costmap_downsampler.cpp)', '### High-Speed Footprint Collision Iteration (collision_checker.cpp)', and '### Multi-Resolution Search Architecture (collision_checker.cpp)'."
+  },
+
+  "Chapter_027_Theta_Star_Any_Angle_Pathfinding_Algorithms.md": {
+    "chapter_title": "Theta* Any-Angle Pathfinding Algorithms",
+    "files": [
+      "nav2_theta_star_planner/src/theta_star.cpp",
+      "nav2_theta_star_planner/src/theta_star_planner.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the Theta* global planner. Write an 'Any-Angle Line-of-Sight Formulation' detailing exactly how `theta_star.cpp` differs from standard A*. Mathematically explain how it performs line-of-sight checks (using Bresenham algorithms) back to the parent's parent node during expansion, creating highly optimal, non-grid-aligned (diagonal/off-axis) vectors that eliminate the jagged 'stair-step' paths typical of basic Dijkstra planners. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Line-of-Sight Parent Rewiring (theta_star.cpp)', '### Bresenham Collision Checking on Diagonals (theta_star.cpp)', and '### Any-Angle Cost Function Mathematics (theta_star.cpp)'."
+  },
+
+  "Chapter_028_Route_Server_GeoJSON_Graphs_and_Spatial_Trees.md": {
+    "chapter_title": "Route Server, GeoJSON Graphs, and Spatial Trees",
+    "files": [
+      "nav2_route/src/route_server.cpp",
+      "nav2_route/src/graph_loader.cpp",
+      "nav2_route/src/node_spatial_tree.cpp",
+      "nav2_route/src/plugins/graph_file_loaders/geojson_graph_file_loader.cpp"
+    ],
+    "research_prompt": "Extract the master architecture of the Nav2 Route Server (OpenNav Route). Write a 'GeoJSON Graph Ingestion Formulation' detailing how `geojson_graph_file_loader.cpp` parses external road-network maps into in-memory vertices and edges. Write a 'Nearest-Neighbor Spatial Search Analysis' explaining how `node_spatial_tree.cpp` implements R-trees or K-D trees to instantly find the closest graph node to the robot's current $(x, y)$ coordinate without looping through thousands of waypoints. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### GeoJSON Semantic Graph Parsing (geojson_graph_file_loader.cpp)', '### Spatial Tree Nearest-Neighbor Lookups (node_spatial_tree.cpp)', and '### The RouteServer Action Interface (route_server.cpp)'."
+  },
+
+  "Chapter_029_Route_Edge_Scorers_and_Multi_Metric_Optimization.md": {
+    "chapter_title": "Route Edge Scorers and Multi-Metric Graph Optimization",
+    "files": [
+      "nav2_route/src/edge_scorer.cpp",
+      "nav2_route/src/plugins/edge_cost_functions/distance_scorer.cpp",
+      "nav2_route/src/plugins/edge_cost_functions/costmap_scorer.cpp",
+      "nav2_route/src/plugins/edge_cost_functions/time_scorer.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the graph routing cost functions. Write a 'Multi-Factor Edge Weight Formulation' detailing how `edge_scorer.cpp` aggregates multiple cost function plugins. Explain the math in `distance_scorer.cpp` vs `time_scorer.cpp`, and specifically how `costmap_scorer.cpp` samples underlying Nav2 costmaps to dynamically penalize (or sever) a graph edge if a forklift is currently parked on that specific route segment. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Edge Distance and Time Weighting (distance_scorer.cpp / time_scorer.cpp)', '### Dynamic Costmap Overlay Penalties (costmap_scorer.cpp)', and '### Multi-Scorer Aggregation Architecture (edge_scorer.cpp)'."
+  },
+
+  "Chapter_030_Route_Goal_Intents_and_Path_Conversion.md": {
+    "chapter_title": "Route Goal Intents and Path Conversion",
+    "files": [
+      "nav2_route/src/goal_intent_extractor.cpp",
+      "nav2_route/src/path_converter.cpp"
+    ],
+    "research_prompt": "Extract the semantic goal resolution logic from the Route Server. Write a 'Semantic Intent Resolution Formulation' detailing how `goal_intent_extractor.cpp` allows a user to send a vague request like 'go to a charging station', traversing the graph metadata to find the optimal specific $(x, y)$ node that fulfills that intent. Explain how `path_converter.cpp` takes the resulting graph-based route and translates it into a standard `nav_msgs::Path` that standard local controllers can follow. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Semantic Metadata Search and Resolution (goal_intent_extractor.cpp)', '### Graph-Node to Continuous Path Translation (path_converter.cpp)', and '### Spline/Corner Smoothing during Conversion (path_converter.cpp)'."
+  },
+
+  "Chapter_031_Route_Operations_Manager_and_Dynamic_Speed_Limits.md": {
+    "chapter_title": "Route Operations Manager and Dynamic Edge Triggers",
+    "files": [
+      "nav2_route/src/operations_manager.cpp",
+      "nav2_route/src/plugins/route_operations/adjust_speed_limit.cpp",
+      "nav2_route/src/plugins/route_operations/trigger_event.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the Route Operations system. Write a 'Metadata Trigger Formulation' detailing how `operations_manager.cpp` monitors the robot's progression along the route graph. Explain how `adjust_speed_limit.cpp` mathematically calculates when to publish a new `SpeedLimit` message as the robot crosses a semantic graph boundary (e.g., entering a hallway), and how `trigger_event.cpp` fires external ROS services to open automated doors automatically. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Real-Time Graph Progression Monitoring (operations_manager.cpp)', '### Dynamic Speed Limit Adjustment Injection (adjust_speed_limit.cpp)', and '### Semantic Service Triggers (trigger_event.cpp)'."
+  },
+
+  "Chapter_032_Route_Tracking_and_Real_Time_Rerouting_Services.md": {
+    "chapter_title": "Route Tracking and Real-Time Rerouting Services",
+    "files": [
+      "nav2_route/src/route_tracker.cpp",
+      "nav2_route/src/plugins/route_operations/rerouting_service.cpp"
+    ],
+    "research_prompt": "Extract the Route Tracker and failover mechanisms. Write a 'Deviation Tracking Formulation' detailing how `route_tracker.cpp` continuously measures the orthogonal distance between the robot's current EKF pose and the active route edge. Explain the logic in `rerouting_service.cpp` that triggers a complete graph recalculation if the robot deviates too far, or if a downstream edge becomes completely blocked by dynamic obstacles. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Orthogonal Path Deviation Mathematics (route_tracker.cpp)', '### Edge Blockage Detection (route_tracker.cpp)', and '### Dynamic Graph Rerouting Triggers (rerouting_service.cpp)'."
+  },
+
+  "Chapter_033_Smoother_Server_and_Savitzky_Golay_Path_Filtering.md": {
+    "chapter_title": "Smoother Server and Savitzky-Golay Path Filtering",
+    "files": [
+      "nav2_smoother/src/nav2_smoother.cpp",
+      "nav2_smoother/src/savitzky_golay_smoother.cpp",
+      "nav2_smoother/src/simple_smoother.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the post-planning path refinement layer. Write a 'Convolution Filtering Formulation' detailing how the `nav2_smoother.cpp` action server manages plugins. Mathematically explain the `savitzky_golay_smoother.cpp` algorithm, showing how it uses localized polynomial regression (least squares) across a sliding window of waypoints to aggressively eliminate jagged noise from A* planners without fundamentally altering the kinematic shape of the curve. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The Smoother Action Server Interface (nav2_smoother.cpp)', '### Savitzky-Golay Polynomial Convolution Math (savitzky_golay_smoother.cpp)', and '### Simple Iterative Relaxation Smoothing (simple_smoother.cpp)'."
+  },
+
+  "Chapter_034_Ceres_Constrained_Smoothing_and_Cost_Functions.md": {
+    "chapter_title": "Ceres Constrained Smoothing and Kinematic Cost Functions",
+    "files": [
+      "nav2_constrained_smoother/src/constrained_smoother.cpp",
+      "nav2_constrained_smoother/include/nav2_constrained_smoother/smoother_cost_function.hpp"
+    ],
+    "research_prompt": "Extract the advanced optimization-based path smoother. Write a 'Non-Linear Least Squares Formulation' detailing how `constrained_smoother.cpp` utilizes the Google Ceres Solver to morph a jagged path. Mathematically explain the cost functions defined in `smoother_cost_function.hpp`, specifically breaking down how curvature constraints, obstacle repulsion, and distance-to-original-path are balanced mathematically to generate an optimal, kinematically flawless spline. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Google Ceres Optimization Setup (constrained_smoother.cpp)', '### Kinematic Curvature Cost Mathematics (smoother_cost_function.hpp)', and '### Obstacle Repulsion Penalty Math (smoother_cost_function.hpp)'."
+  },
+
+  "Chapter_035_Rotation_Shim_Controller_and_In_Place_Alignment.md": {
+    "chapter_title": "Rotation Shim Controller and In-Place Alignment",
+    "files": [
+      "nav2_rotation_shim_controller/src/nav2_rotation_shim_controller.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the wrapper controller designed for differentially driven robots. Write an 'In-Place Rotation Formulation' detailing exactly how `nav2_rotation_shim_controller.cpp` intercepts commands before they reach the primary controller. Explain the math used to calculate the angular error between the robot's current heading and the initial path vector, publishing pure yaw commands (`cmd_vel`) to rotate the robot in place until it perfectly faces the path, preventing wide, dangerous sweeping arcs upon takeoff. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Angular Error Calculation (nav2_rotation_shim_controller.cpp)', '### In-Place Yaw `cmd_vel` Output (nav2_rotation_shim_controller.cpp)', and '### Primary Controller Delegation Handoff (nav2_rotation_shim_controller.cpp)'."
+  },
+
+  "Chapter_036_Controller_Server_Asynchronous_Execution_and_Preemption.md": {
+    "chapter_title": "Controller Server, Asynchronous Execution, and Preemption",
+    "files": [
+      "nav2_controller/src/controller_server.cpp"
+    ],
+    "research_prompt": "Extract the master host node for local trajectory execution. Write a 'High-Speed Control Loop Formulation' detailing how `controller_server.cpp` runs an asynchronous thread at a strict frequency (e.g., 20Hz), polling the loaded controller plugin (like MPPI or DWB) for updated `cmd_vel` matrices. Detail the goal-preemption logic, explaining exactly how the server safely hot-swaps to a newly computed global path mid-execution without causing the robot to stutter. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The High-Frequency Control Loop Thread (controller_server.cpp)', '### Dynamic Goal Preemption and Path Handoff (controller_server.cpp)', and '### Exception Handling and Failsafe Stops (controller_server.cpp)'."
+  },
+
+  "Chapter_037_Goal_Checkers_and_Progress_Validation_Plugins.md": {
+    "chapter_title": "Goal Checkers, Progress Validation, and Stop Arbitration",
+    "files": [
+      "nav2_controller/src/plugins/simple_goal_checker.cpp",
+      "nav2_controller/src/plugins/stopped_goal_checker.cpp",
+      "nav2_controller/src/plugins/simple_progress_checker.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the completion validation system. Write an 'Arrival Tolerance Formulation' detailing how `simple_goal_checker.cpp` calculates purely geometric ($x, y, \\theta$) tolerances to declare a task complete. Explain the critical difference in `stopped_goal_checker.cpp`, mathematically detailing how it verifies both geometric arrival AND that the robot's physical velocity has dropped below a specific threshold (e.g., actually stopped), and how `simple_progress_checker.cpp` detects if the robot has stalled against a wall. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Geometric Arrival Tolerance Math (simple_goal_checker.cpp)', '### Velocity-Bound Stop Validation (stopped_goal_checker.cpp)', and '### Minimum Distance-Traveled Stalling Detection (simple_progress_checker.cpp)'."
+  },
+
+  "Chapter_038_Regulated_Pure_Pursuit_Lookahead_and_Curvature_Math.md": {
+    "chapter_title": "Regulated Pure Pursuit (RPP): Lookahead and Curvature Mathematics",
+    "files": [
+      "nav2_regulated_pure_pursuit_controller/src/regulated_pure_pursuit_controller.cpp",
+      "nav2_regulated_pure_pursuit_controller/include/nav2_regulated_pure_pursuit_controller/regulation_functions.hpp"
+    ],
+    "research_prompt": "Extract the core mathematical engine of the Regulated Pure Pursuit (RPP) controller. Write a 'Dynamic Lookahead Formulation' detailing how `regulated_pure_pursuit_controller.cpp` calculates a target point on the global path based on current speed. Mathematically explain the pure pursuit arc calculation used to derive the required angular velocity to hit that target, and how `regulation_functions.hpp` dynamically caps that velocity (slowing the robot down) when approaching sharp corners or high-curvature segments. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Velocity-Scaled Lookahead Distance Math (regulated_pure_pursuit_controller.cpp)', '### Pure Pursuit Arc Derivation (regulated_pure_pursuit_controller.cpp)', and '### Curvature-Based Velocity Regulation (regulation_functions.hpp)'."
+  },
+
+  "Chapter_039_RPP_Collision_Checking_and_Dynamic_Window_Functions.md": {
+    "chapter_title": "RPP Collision Checking and Dynamic Window Constraints",
+    "files": [
+      "nav2_regulated_pure_pursuit_controller/src/collision_checker.cpp",
+      "nav2_regulated_pure_pursuit_controller/include/nav2_regulated_pure_pursuit_controller/dynamic_window_pure_pursuit_functions.hpp"
+    ],
+    "research_prompt": "Reverse-engineer the safety guardrails within the RPP controller. Write a 'Trajectory Collision Projection Formulation' detailing how `collision_checker.cpp` iterates along the calculated pure pursuit arc, verifying against the local costmap to ensure the resulting curved trajectory does not clip an obstacle. Explain how `dynamic_window_pure_pursuit_functions.hpp` projects the robot's current acceleration limits into a 'Dynamic Window' to ensure the requested `cmd_vel` is actually physically achievable in the next time step. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Forward Arc Trajectory Costmap Validation (collision_checker.cpp)', '### Dynamic Window Acceleration Bounding (dynamic_window_pure_pursuit_functions.hpp)', and '### Emergency Stop Collision Triggers (collision_checker.cpp)'."
+  },
+
+  "Chapter_040_Graceful_Controller_Polar_Coordinates_and_Slowing.md": {
+    "chapter_title": "Graceful Controller: Polar Coordinates and Smooth Deceleration",
+    "files": [
+      "nav2_graceful_controller/src/graceful_controller.cpp",
+      "nav2_graceful_controller/src/smooth_control_law.cpp",
+      "nav2_graceful_controller/include/nav2_graceful_controller/ego_polar_coords.hpp"
+    ],
+    "research_prompt": "Extract the advanced polar-coordinate tracking controller. Write a 'Polar Control Law Formulation' detailing the mathematics in `ego_polar_coords.hpp` used to convert standard Cartesian errors into a polar state $(r, \\phi, \\delta)$. Explain the Lyapunov-stable control laws defined in `smooth_control_law.cpp` that guarantee the robot will converge smoothly on the target pose without oscillating or overshooting, specifically engineered for ultra-smooth docking or highly precise final positioning. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Cartesian to Ego-Polar Transformation Math (ego_polar_coords.hpp)', '### Lyapunov-Stable Smooth Control Laws (smooth_control_law.cpp)', and '### Curvature Convergence Limits (graceful_controller.cpp)'."
+  },
+
+  "Chapter_041_MPPI_Core_Optimizer_and_Predictive_Rollouts.md": {
+    "chapter_title": "MPPI Core Optimizer and Predictive Rollouts",
+    "files": [
+      "nav2_mppi_controller/src/controller.cpp",
+      "nav2_mppi_controller/src/optimizer.cpp",
+      "nav2_mppi_controller/include/nav2_mppi_controller/optimizer.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Model Predictive Path Integral (MPPI) core optimizer. Write a 'Stochastic Rollout Formulation' detailing how `optimizer.cpp` generates thousands of potential future trajectories simultaneously using GPU/CPU parallelization. Mathematically explain the cost-weighted averaging algorithm used to collapse these thousands of noisy trajectory rollouts into a single, highly optimized, optimal velocity command that perfectly balances path-tracking with obstacle avoidance. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Parallelized Trajectory Rollout Generation (optimizer.cpp)', '### Cost-Weighted Averaging Mathematics (optimizer.cpp)', and '### The MPPI Controller Plugin Interface (controller.cpp)'."
+  },
+
+  "Chapter_042_MPPI_Motion_Models_and_Gaussian_Noise_Generation.md": {
+    "chapter_title": "MPPI Motion Models and Gaussian Noise Generation",
+    "files": [
+      "nav2_mppi_controller/include/nav2_mppi_controller/motion_models.hpp",
+      "nav2_mppi_controller/src/noise_generator.cpp"
+    ],
+    "research_prompt": "Extract the kinematic modeling and noise injection mechanisms of the MPPI controller. Write a 'Kinematic State Propagation Formulation' detailing the differential, Ackermann, and omnidirectional motion models defined in `motion_models.hpp`. Explain how `noise_generator.cpp` utilizes high-speed pseudo-random number generators to inject normally distributed (Gaussian) control noise into the simulated rollouts, allowing the optimizer to explore the physical state-space around the robot efficiently. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Differential and Ackermann State Propagation (motion_models.hpp)', '### Gaussian Noise Distribution and Tensor Math (noise_generator.cpp)', and '### Bounded Velocity and Acceleration Clipping (motion_models.hpp)'."
+  },
+
+  "Chapter_043_MPPI_Critic_Manager_and_Cost_Scoring.md": {
+    "chapter_title": "MPPI Critic Manager and Trajectory Cost Scoring",
+    "files": [
+      "nav2_mppi_controller/src/critic_manager.cpp",
+      "nav2_mppi_controller/src/critics/cost_critic.cpp",
+      "nav2_mppi_controller/src/critics/goal_critic.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the MPPI scoring architecture. Write a 'Multi-Critic Optimization Formulation' detailing how `critic_manager.cpp` aggregates scores from multiple independent heuristic functions to evaluate a generated trajectory. Explain the specific math in `cost_critic.cpp` (which scores trajectories based on local costmap cell inflation values) and `goal_critic.cpp` (which drives the trajectory toward the final geometric target), detailing the weighting mechanisms used to balance safety versus progression. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The Multi-Critic Evaluation Loop (critic_manager.cpp)', '### Local Costmap Footprint Scoring (cost_critic.cpp)', and '### Goal Progression and Distance Minimization (goal_critic.cpp)'."
+  },
+
+  "Chapter_044_MPPI_Advanced_Critics_Obstacles_and_Path_Alignment.md": {
+    "chapter_title": "MPPI Advanced Critics: Obstacles, Path Alignment, and Twirling",
+    "files": [
+      "nav2_mppi_controller/src/critics/obstacles_critic.cpp",
+      "nav2_mppi_controller/src/critics/path_align_critic.cpp",
+      "nav2_mppi_controller/src/critics/twirling_critic.cpp"
+    ],
+    "research_prompt": "Extract the specialized penalty heuristics of the MPPI controller. Write an 'Obstacle and Kinematic Penalty Formulation' detailing how `obstacles_critic.cpp` mathematically detects collisions within a simulated rollout and applies infinite (or massive) costs to instantly invalidate dangerous paths. Explain how `path_align_critic.cpp` penalizes trajectories that deviate laterally from the global plan, and how `twirling_critic.cpp` penalizes unnecessary holonomic rotation (spinning while moving) for omnidirectional bases. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Predictive Collision Invalidation (obstacles_critic.cpp)', '### Global Path Cross-Track Error Penalty (path_align_critic.cpp)', and '### Holonomic Twirling/Spinning Penalties (twirling_critic.cpp)'."
+  },
+
+  "Chapter_045_DWB_Core_and_Standard_Trajectory_Generation.md": {
+    "chapter_title": "DWB Core, Dynamic Windows, and Standard Trajectory Generation",
+    "files": [
+      "nav2_dwb_controller/dwb_core/src/dwb_local_planner.cpp",
+      "nav2_dwb_controller/dwb_plugins/src/standard_traj_generator.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Dynamic Window Approach (DWB) base planner. Write a 'Velocity Space Discretization Formulation' detailing how `standard_traj_generator.cpp` discretizes the physically reachable velocity space $(v_x, v_y, v_\\theta)$ into a matrix of testable commands. Mathematically explain how `dwb_local_planner.cpp` projects these discrete velocity commands forward in time to generate simple circular/arc trajectories for the critics to evaluate. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Discrete Velocity Space Matrix Generation (standard_traj_generator.cpp)', '### Forward Trajectory Kinematic Projection (dwb_local_planner.cpp)', and '### The DWB Controller Plugin Handoff (dwb_local_planner.cpp)'."
+  },
+
+  "Chapter_046_DWB_Kinematic_Limits_and_Acceleration_Constraints.md": {
+    "chapter_title": "DWB Kinematic Limits and Acceleration Constraints",
+    "files": [
+      "nav2_dwb_controller/dwb_plugins/src/limited_accel_generator.cpp",
+      "nav2_dwb_controller/dwb_plugins/src/kinematic_parameters.cpp"
+    ],
+    "research_prompt": "Extract the physical boundary mathematics of the DWB controller. Write a 'Dynamic Window Bounding Formulation' detailing how `limited_accel_generator.cpp` restricts the search space of the trajectory generator. Explain the kinematic mathematics utilizing variables from `kinematic_parameters.cpp` to calculate exactly how much the robot's velocity can change in a single $\\Delta t$ control loop, strictly discarding any trajectories that require physically impossible acceleration. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Kinematic Constraint Configuration (kinematic_parameters.cpp)', '### Acceleration-Bounded Velocity Truncation (limited_accel_generator.cpp)', and '### The Dynamic Window Iteration Loop (limited_accel_generator.cpp)'."
+  },
+
+  "Chapter_047_DWB_Critics_Obstacle_Footprints_and_Oscillation.md": {
+    "chapter_title": "DWB Critics: Obstacle Footprints and Oscillation Prevention",
+    "files": [
+      "nav2_dwb_controller/dwb_critics/src/obstacle_footprint.cpp",
+      "nav2_dwb_controller/dwb_critics/src/oscillation.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the heuristic evaluation of DWB trajectories. Write a 'Footprint Collision Scoring Formulation' detailing how `obstacle_footprint.cpp` iterates the robot's specific polygonal footprint along the generated trajectory arcs, polling the underlying costmap and assigning massive penalties to paths that touch obstacles. Explain the state-tracking math in `oscillation.cpp` used to detect if the controller is violently flipping between opposing velocity commands (e.g., left, right, left, right), forcibly penalizing those trajectories to break the harmonic lock. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Polygon Footprint Trajectory Sweeping (obstacle_footprint.cpp)', '### Oscillation State Tracking and Penalty Flags (oscillation.cpp)', and '### LETHAL Cost Invalidation (obstacle_footprint.cpp)'."
+  },
+
+  "Chapter_048_DWB_Path_Alignment_and_Goal_Distance_Critics.md": {
+    "chapter_title": "DWB Path Alignment, Goal Distance, and Prefer Forward",
+    "files": [
+      "nav2_dwb_controller/dwb_critics/src/path_align.cpp",
+      "nav2_dwb_controller/dwb_critics/src/goal_dist.cpp",
+      "nav2_dwb_controller/dwb_critics/src/prefer_forward.cpp"
+    ],
+    "research_prompt": "Extract the DWB progression and orientation heuristics. Write a 'Global Path Tracking Formulation' detailing how `path_align.cpp` scores trajectories based on their angular and lateral alignment with the global plan provided by the Nav2 planner. Explain the progression math in `goal_dist.cpp`, and how `prefer_forward.cpp` mathematically penalizes reverse-driving trajectories for differential robots that lack rear-facing sensors. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Angular and Lateral Path Error Mathematics (path_align.cpp)', '### Local Goal Distance Progression (goal_dist.cpp)', and '### Directional Velocity Penalties (prefer_forward.cpp)'."
+  },
+
+  "Chapter_049_Behavior_Tree_Engine_and_XML_Execution.md": {
+    "chapter_title": "Behavior Tree Engine, XML Execution, and BT.CPP",
+    "files": [
+      "nav2_behavior_tree/src/behavior_tree_engine.cpp",
+      "nav2_behavior_tree/include/nav2_behavior_tree/behavior_tree_engine.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master orchestration engine. Write a 'Tree Execution and Tick Formulation' detailing exactly how `behavior_tree_engine.cpp` loads XML definitions, binds C++ plugin classes to the XML tags, and executes the asynchronous 'tick' loop across the root node. Explain how the engine manages the Blackboard (shared memory) passing data (like paths, poses, and error codes) between completely independent action nodes. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### BT.CPP XML Parsing and Factory Registration (behavior_tree_engine.cpp)', '### The Asynchronous Tree Ticking Thread (behavior_tree_engine.cpp)', and '### Blackboard Port Mapping and Memory Sharing (behavior_tree_engine.cpp)'."
+  },
+
+  "Chapter_050_BT_Action_Nodes_and_ROS_2_Server_Hooks.md": {
+    "chapter_title": "BT Action Nodes, ROS 2 Action Clients, and Cancellation",
+    "files": [
+      "nav2_behavior_tree/include/nav2_behavior_tree/bt_action_node.hpp",
+      "nav2_behavior_tree/include/nav2_behavior_tree/bt_cancel_action_node.hpp"
+    ],
+    "research_prompt": "Extract the abstraction layer connecting the synchronous BT to asynchronous ROS 2 servers. Write a 'Non-Blocking Action Client Formulation' detailing how the templated `bt_action_node.hpp` wraps standard ROS 2 Action Clients. Explain the state-machine logic that allows the node to send a goal (e.g., to the Planner), return a `RUNNING` status to the tree, and seamlessly process ROS 2 callbacks in the background without freezing the execution of the entire Behavior Tree. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Templated ROS 2 Action Client Integration (bt_action_node.hpp)', '### RUNNING State and Asynchronous Callbacks (bt_action_node.hpp)', and '### Goal Preemption and Tree-Driven Cancellation (bt_cancel_action_node.hpp)'."
+  },
+
+  "Chapter_051_BT_Navigation_Actions_Compute_Follow_and_Navigate.md": {
+    "chapter_title": "BT Navigation Actions: Compute, Follow, and Navigate",
+    "files": [
+      "nav2_behavior_tree/plugins/action/compute_path_to_pose_action.cpp",
+      "nav2_behavior_tree/plugins/action/follow_path_action.cpp",
+      "nav2_behavior_tree/plugins/action/navigate_to_pose_action.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the primary movement leaves of the Nav2 behavior tree. Write a 'Navigation Request Formulation' detailing how `compute_path_to_pose_action.cpp` constructs a goal message, extracts the result, and writes the `nav_msgs::Path` directly to the BT Blackboard. Explain how `follow_path_action.cpp` immediately pulls that path from the Blackboard and streams it to the Controller Server, executing the physical movement. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Planner Action Invocation and Blackboard Output (compute_path_to_pose_action.cpp)', '### Blackboard Path Ingestion and Controller Execution (follow_path_action.cpp)', and '### High-Level NavigateToPose Abstraction (navigate_to_pose_action.cpp)'."
+  },
+
+  "Chapter_052_BT_Control_Nodes_Pipelines_and_Recovery_Logic.md": {
+    "chapter_title": "BT Control Nodes: Pipelines, Sequences, and Recovery Logic",
+    "files": [
+      "nav2_behavior_tree/plugins/control/pipeline_sequence.cpp",
+      "nav2_behavior_tree/plugins/control/recovery_node.cpp",
+      "nav2_behavior_tree/plugins/control/round_robin_node.cpp"
+    ],
+    "research_prompt": "Extract the flow-control architecture of the Nav2 BT. Write a 'Pipeline Concurrency Formulation' detailing exactly how `pipeline_sequence.cpp` differs from a standard sequence, explaining how it continuously re-ticks previous children (e.g., recalculating the global path) while a later child (the controller) is currently `RUNNING`. Write a 'Failure Handling Analysis' explaining the exact logic in `recovery_node.cpp` that catches `FAILURE` states from the primary navigation branch and immediately routes execution to an emergency recovery branch (e.g., spinning or clearing costmaps). CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Continuous Re-Ticking and Pipelined Execution (pipeline_sequence.cpp)', '### Exception Catching and Recovery Branch Routing (recovery_node.cpp)', and '### Round-Robin Multi-Behavior Alternation (round_robin_node.cpp)'."
+  },
+
+  "Chapter_053_BT_Decorators_Rate_Controllers_and_Speed_Limits.md": {
+    "chapter_title": "BT Decorators: Rate Controllers, Goal Updates, and Speed Limits",
+    "files": [
+      "nav2_behavior_tree/plugins/decorator/rate_controller.cpp",
+      "nav2_behavior_tree/plugins/decorator/speed_controller.cpp",
+      "nav2_behavior_tree/plugins/decorator/goal_updater_node.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the BT execution modifiers. Write a 'Temporal and Spatial Throttling Formulation' detailing how `rate_controller.cpp` mathematically throttles the execution of its child node (preventing a 100Hz tree from overloading the planner with 100Hz path requests). Explain how `goal_updater_node.cpp` intercepts topic updates to dynamically shift the final target coordinate on the Blackboard while the robot is actively moving, enabling dynamic target tracking. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Time-Delta Execution Throttling (rate_controller.cpp)', '### Dynamic Goal Tracking via Topic Interception (goal_updater_node.cpp)', and '### Speed Limit Injection Decorators (speed_controller.cpp)'."
+  },
+
+  "Chapter_054_BT_Conditions_Goal_Validation_and_Diagnostics.md": {
+    "chapter_title": "BT Conditions: Goal Validation, Odometry, and Diagnostics",
+    "files": [
+      "nav2_behavior_tree/plugins/condition/goal_reached_condition.cpp",
+      "nav2_behavior_tree/plugins/condition/is_stuck_condition.cpp",
+      "nav2_behavior_tree/plugins/condition/is_battery_low_condition.cpp"
+    ],
+    "research_prompt": "Extract the sensory and state-checking nodes of the Behavior Tree. Write a 'State Polling Formulation' detailing how `is_stuck_condition.cpp` monitors physical odometry history via the TF tree to detect if the robot has failed to move despite active `cmd_vel` outputs (e.g., wheels slipping or pinned against a wall). Explain how `goal_reached_condition.cpp` short-circuits the entire navigation tree if the robot is already within the tolerance threshold. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Kinematic Stalling and Odometry Checks (is_stuck_condition.cpp)', '### Geometric Goal Proximity Validation (goal_reached_condition.cpp)', and '### Battery Diagnostics and Hardware Polling (is_battery_low_condition.cpp)'."
+  },
+
+  "Chapter_055_Behavior_Server_and_Timed_Motion_Primitives.md": {
+    "chapter_title": "Behavior Server and Timed Motion Primitives",
+    "files": [
+      "nav2_behaviors/src/behavior_server.cpp",
+      "nav2_behaviors/include/nav2_behaviors/timed_behavior.hpp"
+    ],
+    "research_prompt": "Reverse-engineer the host node for emergency and utility behaviors. Write a 'Behavior Lifecycle Formulation' detailing how `behavior_server.cpp` dynamically loads plugins and hosts their respective action servers. Mathematically explain the abstraction in `timed_behavior.hpp` that governs open-loop, time-bound movement commands, safely ramping velocities and strictly halting motion if the behavior times out or is preempted. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Behavior Plugin Registration and Action Routing (behavior_server.cpp)', '### Open-Loop Timed Motion Base Class (timed_behavior.hpp)', and '### Collision Checker Integration during Behaviors (timed_behavior.hpp)'."
+  },
+
+  "Chapter_056_Recovery_Behaviors_Spin_BackUp_and_DriveOnHeading.md": {
+    "chapter_title": "Recovery Behaviors: Spin, BackUp, and Drive On Heading",
+    "files": [
+      "nav2_behaviors/plugins/spin.cpp",
+      "nav2_behaviors/plugins/back_up.cpp",
+      "nav2_behaviors/plugins/drive_on_heading.cpp"
+    ],
+    "research_prompt": "Extract the specific emergency recovery algorithms. Write an 'Open-Loop Escape Formulation' detailing the exact kinematic math in `spin.cpp` used to rotate the robot in place to clear local costmap artifacts. Explain how `back_up.cpp` and `drive_on_heading.cpp` generate raw linear velocity commands, incorporating collision checking to ensure the blind escape maneuver doesn't back the robot directly into a physical wall. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### In-Place Yaw Extrication Mathematics (spin.cpp)', '### Linear Escape Velocity Generation (back_up.cpp)', and '### Predictive Collision Sweeps during Recoveries (drive_on_heading.cpp)'."
+  },
+
+  "Chapter_057_Assisted_Teleop_and_Human_in_the_Loop_Overrides.md": {
+    "chapter_title": "Assisted Teleop and Human-in-the-Loop Overrides",
+    "files": [
+      "nav2_behaviors/plugins/assisted_teleop.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the semi-autonomous teleoperation layer. Write a 'Joystick Command Arbitration Formulation' detailing how `assisted_teleop.cpp` intercepts raw joystick velocity commands. Mathematically explain how it utilizes the local costmap to project these user-demanded velocities forward in time, actively throttling or stopping the robot to prevent a human operator from accidentally driving into a wall. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Raw Teleop Velocity Interception (assisted_teleop.cpp)', '### Forward Trajectory Costmap Projection (assisted_teleop.cpp)', and '### User Input Throttling and Collision Prevention (assisted_teleop.cpp)'."
+  },
+
+  "Chapter_058_Waypoint_Follower_Server_and_Task_Execution.md": {
+    "chapter_title": "Waypoint Follower Server and Task Execution",
+    "files": [
+      "nav2_waypoint_follower/src/waypoint_follower.cpp",
+      "nav2_waypoint_follower/include/nav2_waypoint_follower/waypoint_follower.hpp",
+      "nav2_core/include/nav2_core/waypoint_task_executor.hpp"
+    ],
+    "research_prompt": "Extract the multi-stop mission management architecture. Write a 'Waypoint Routing Formulation' detailing how `waypoint_follower.cpp` ingests an array of GPS or local coordinate waypoints, iterating through them by dispatching individual `MapsToPose` actions to the BT Navigator. Explain the plugin architecture defined by `waypoint_task_executor.hpp`, detailing how the server triggers specific C++ tasks upon physical arrival at a waypoint. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Multi-Coordinate Action Dispatch Loop (waypoint_follower.cpp)', '### Action Goal Preemption and Failure Handling (waypoint_follower.cpp)', and '### The Task Executor Plugin Interface (waypoint_task_executor.hpp)'."
+  },
+
+  "Chapter_059_Waypoint_Plugins_Wait_Photo_and_Input.md": {
+    "chapter_title": "Waypoint Plugins: Wait, Photo, and User Input",
+    "files": [
+      "nav2_waypoint_follower/plugins/wait_at_waypoint.cpp",
+      "nav2_waypoint_follower/plugins/photo_at_waypoint.cpp",
+      "nav2_waypoint_follower/plugins/input_at_waypoint.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the specific task executions at mission waypoints. Write a 'Node Blocking and Action Execution Formulation' detailing how `wait_at_waypoint.cpp` suspends progression to the next waypoint using asynchronous timers. Explain how `photo_at_waypoint.cpp` interfaces with external camera services, and how `input_at_waypoint.cpp` safely halts the robot indefinitely until a human operator provides explicit MAVLink or ROS 2 terminal clearance to proceed. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Asynchronous Thread Suspension (wait_at_waypoint.cpp)', '### External Service Invocation (photo_at_waypoint.cpp)', and '### Human-in-the-Loop Clearance Verification (input_at_waypoint.cpp)'."
+  },
+
+  "Chapter_060_BT_Navigator_Core_and_Navigator_Plugins.md": {
+    "chapter_title": "BT Navigator Core and Navigator Plugins",
+    "files": [
+      "nav2_bt_navigator/src/bt_navigator.cpp",
+      "nav2_bt_navigator/src/navigators/navigate_to_pose.cpp",
+      "nav2_bt_navigator/src/navigators/navigate_through_poses.cpp"
+    ],
+    "research_prompt": "Extract the highest-level orchestrator of the entire Nav2 stack. Write a 'Mode-Specific Tree Initialization Formulation' detailing how `bt_navigator.cpp` acts as the primary action server for the outside world, dynamically loading entirely different BT XML files based on the requested action (`MapsToPose` vs `MapsThroughPoses`). Detail the logic in `Maps_through_poses.cpp` that specifically structures the Blackboard array of waypoints to ensure the Behavior Tree seamlessly transitions through via-points without stopping. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### BT Navigator Action Server Endpoints (bt_navigator.cpp)', '### Dynamic XML Tree Loading and Handoff (bt_navigator.cpp)', and '### NavigateThroughPoses Array Population (navigate_through_poses.cpp)'."
+  },
+
+  "Chapter_061_Docking_Core_Interfaces_and_Charging_Abstraction.md": {
+    "chapter_title": "Docking Core Interfaces and Charging Abstraction",
+    "files": [
+      "nav2_docking/opennav_docking_core/include/opennav_docking_core/charging_dock.hpp",
+      "nav2_docking/opennav_docking_core/include/opennav_docking_core/non_charging_dock.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the OpenNav Docking core architecture. Write a 'Hardware Abstraction Formulation' detailing the exact pure virtual methods mandated by `charging_dock.hpp` and `non_charging_dock.hpp`. Explain how this plugin interface decouples the geometric navigation problem of docking from the physical hardware handshakes (e.g., IR beacons, contact pins, or wireless charging induction), allowing vendors to implement custom charging logic without altering the navigation matrices. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The ChargingDock Plugin Interface (charging_dock.hpp)', '### Non-Charging vs Charging Base Classes (non_charging_dock.hpp)', and '### Docking State and Error Exception Handling (docking_exceptions.hpp)'."
+  },
+
+  "Chapter_062_Docking_Server_and_Approach_Controller.md": {
+    "chapter_title": "Docking Server and the Approach Controller",
+    "files": [
+      "nav2_docking/opennav_docking/src/docking_server.cpp",
+      "nav2_docking/opennav_docking/src/controller.cpp"
+    ],
+    "research_prompt": "Extract the master host node for automated charging algorithms. Write a 'Docking Execution State Machine Formulation' detailing how `docking_server.cpp` manages the multi-stage transition from global navigation to blind, perception-driven docking. Mathematically explain the logic in `controller.cpp`, detailing how the server takes over direct `cmd_vel` publishing during the final centimeter-level approach, overriding the standard MPPI/DWB controllers to guarantee precise physical contact with the charging pins. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The DockRobot Action Server Pipeline (docking_server.cpp)', '### Terminal Approach Command Velocity (controller.cpp)', and '### Handoff Between Global Nav and Terminal Docking (docking_server.cpp)'."
+  },
+
+  "Chapter_063_Dock_Database_and_Pose_Filtering_Mathematics.md": {
+    "chapter_title": "Dock Database and Perception Pose Filtering Mathematics",
+    "files": [
+      "nav2_docking/opennav_docking/src/dock_database.cpp",
+      "nav2_docking/opennav_docking/src/pose_filter.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the spatial awareness and perception smoothing of the Docking Server. Write a 'Semantic Dock Registry Formulation' detailing how `dock_database.cpp` stores and retrieves multiple dock instances by ID or geometric proximity. Explain the mathematics in `pose_filter.cpp`, detailing how it utilizes moving-average or low-pass filters to smooth noisy 6-DOF pose estimates coming from external computer vision nodes (like ArUco markers or LiDAR feature extractors) before feeding those coordinates to the approach controller. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### In-Memory Dock Proximity Lookups (dock_database.cpp)', '### Visual Perception Noise Filtering (pose_filter.cpp)', and '### TF Tree Target Frame Extrapolation (pose_filter.cpp)'."
+  },
+
+  "Chapter_064_Simple_Dock_Plugins_and_Undocking_Kinematics.md": {
+    "chapter_title": "Simple Dock Plugins and Undocking Kinematics",
+    "files": [
+      "nav2_docking/opennav_docking/src/simple_charging_dock.cpp",
+      "nav2_docking/opennav_docking/src/navigator.cpp"
+    ],
+    "research_prompt": "Extract the standard reference implementations for robot docking. Write a 'Geometric Approach Staging Formulation' detailing how `simple_charging_dock.cpp` calculates a mathematically perfect staging pose (e.g., 1 meter directly in front of the dock) to align the robot before final contact. Explain the reverse-kinematics managed by `navigator.cpp` during the `UndockRobot` action, detailing how it safely extracts the robot from physical constraints before returning control to the standard global planner. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Staging Pose Geometric Calculation (simple_charging_dock.cpp)', '### Contact Verification and Charging Handshakes (simple_charging_dock.cpp)', and '### Linear Reverse Undocking Trajectories (navigator.cpp)'."
+  },
+
+  "Chapter_065_Docking_BT_Nodes_and_Action_Client_Wrappers.md": {
+    "chapter_title": "Docking Behavior Tree Nodes and Action Client Wrappers",
+    "files": [
+      "nav2_docking/opennav_docking_bt/src/dock_robot.cpp",
+      "nav2_docking/opennav_docking_bt/src/undock_robot.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Behavior Tree integration for the Docking Server. Write a 'BT Docking Integration Formulation' detailing how `dock_robot.cpp` and `undock_robot.cpp` wrap the `DockRobot` ROS 2 actions into synchronous BT.CPP nodes. Explain how these nodes handle target-ID resolution from the Blackboard and manage `RUNNING` state suspension while the robot is actively executing the terminal docking sequence. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Dock ID String and Blackboard Resolution (dock_robot.cpp)', '### Action Goal Dispatch and Status Polling (dock_robot.cpp)', and '### The Undock Action Tree Node (undock_robot.cpp)'."
+  },
+
+  "Chapter_066_Dynamic_Object_Following_Server_and_Logic.md": {
+    "chapter_title": "Dynamic Object Following Server and Pursuit Logic",
+    "files": [
+      "nav2_following/opennav_following/src/following_server.cpp",
+      "nav2_following/opennav_following/src/parameter_handler.cpp"
+    ],
+    "research_prompt": "Extract the master host node for dynamic target pursuit. Write a 'Dynamic Pursuit Target Tracking Formulation' detailing how `following_server.cpp` continuously ingests moving `PoseStamped` data from an external detector (like a person-tracker). Explain how it calculates a safe follow-distance offset and dynamically streams updated goal coordinates to the Nav2 planner and controller, ensuring the robot maintains visual contact without colliding with the target. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The FollowObject Action Server (following_server.cpp)', '### Dynamic Target Offset and Safe Distance Math (following_server.cpp)', and '### Continuous Goal Re-publishing Loop (following_server.cpp)'."
+  },
+
+  "Chapter_067_Map_Server_Vector_Objects_and_Semantic_Shapes.md": {
+    "chapter_title": "Map Server Vector Objects and Semantic Shapes",
+    "files": [
+      "nav2_map_server/src/vo_server/vector_object_server.cpp",
+      "nav2_map_server/src/vo_server/vector_object_shapes.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the semantic mapping capabilities of the Nav2 Map Server. Write a 'Vector Annotation Formulation' detailing how `vector_object_server.cpp` loads YAML/JSON files containing abstract geometric shapes (polygons, circles) rather than pixel grids. Explain the geometry math in `vector_object_shapes.cpp` used to mathematically define and publish these annotations (e.g., bounding boxes for 'No Go Zones' or semantic tags for 'Kitchen') directly to the ROS 2 ecosystem. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Semantic Vector Database Loading (vector_object_server.cpp)', '### Circle and Polygon Geometric Representations (vector_object_shapes.cpp)', and '### The GetShapes Service Interface (vector_object_server.cpp)'."
+  },
+
+  "Chapter_068_Costmap_Denoising_and_Image_Processing_Filters.md": {
+    "chapter_title": "Costmap Denoising and Image Processing Filters",
+    "files": [
+      "nav2_costmap_2d/src/plugins/denoise_layer.cpp",
+      "nav2_costmap_2d/include/nav2_costmap_2d/denoise/image_processing.hpp"
+    ],
+    "research_prompt": "Extract the computer vision algorithms embedded directly into the costmap pipeline. Write a 'Grid Convolution Denoising Formulation' detailing how `denoise_layer.cpp` treats the 2D costmap as an image. Mathematically explain the connected-component labeling and morphological operations (erosion/dilation) defined in `image_processing.hpp`, detailing how these algorithms sweep the costmap to identify and erase isolated 'salt-and-pepper' noise caused by cheap LiDAR sensors before the path planner sees it. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Image Processing Morphological Filters (image_processing.hpp)', '### Connected-Component LETHAL Noise Eradication (denoise_layer.cpp)', and '### Sub-Grid Bounding Box Isolation (denoise_layer.cpp)'."
+  },
+
+  "Chapter_069_Plugin_Container_Layers_and_Dynamic_Reconfiguration.md": {
+    "chapter_title": "Plugin Container Layers and Dynamic Reconfiguration",
+    "files": [
+      "nav2_costmap_2d/src/plugins/plugin_container_layer.cpp",
+      "nav2_costmap_2d/src/layer.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the modular costmap architecture. Write a 'Hierarchical Grid Aggregation Formulation' detailing how `plugin_container_layer.cpp` allows developers to nest multiple costmap layers into grouped containers. Explain the recursive `updateCosts` execution model and how `layer.cpp` supports dynamic reconfiguration during runtime, allowing operators to disable or enable entire blocks of sensory input (like turning off all 3D sensors) via ROS 2 parameter callbacks mid-flight. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Recursive Layer Container Mathematics (plugin_container_layer.cpp)', '### Dynamic Parameter Callbacks and Layer Toggling (layer.cpp)', and '### Bounding Box Aggregation Optimization (plugin_container_layer.cpp)'."
+  },
+
+  "Chapter_070_Collision_Detector_Node_and_Safety_Polygons.md": {
+    "chapter_title": "Collision Detector Node and Static Safety Polygons",
+    "files": [
+      "nav2_collision_monitor/src/collision_detector_node.cpp",
+      "nav2_collision_monitor/src/pointcloud.cpp",
+      "nav2_collision_monitor/src/scan.cpp"
+    ],
+    "research_prompt": "Extract the dedicated obstacle detection node logic. Write a 'Raw Sensor Interception Formulation' detailing how `collision_detector_node.cpp` differs from the collision monitor by acting purely as a state publisher (publishing `CollisionDetectorState`) rather than actively throttling `cmd_vel`. Explain the high-speed spatial parsing in `scan.cpp` and `pointcloud.cpp`, detailing how the node translates millions of unorganized laser points into the robot's base frame to check for intersections with statically defined warning polygons. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### State Publishing vs Velocity Override (collision_detector_node.cpp)', '### Fast LaserScan Frame Projections (scan.cpp)', and '### Unorganized PointCloud2 Spatial Parsing (pointcloud.cpp)'."
+  },
+
+  "Chapter_071_RViz2_Nav2_Panel_and_Action_Client_UI.md": {
+    "chapter_title": "RViz2 Nav2 Panel and Action Client UI Integration",
+    "files": [
+      "nav2_rviz_plugins/src/nav2_panel.cpp",
+      "nav2_rviz_plugins/src/goal_tool.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the primary Graphical User Interface for Nav2. Write a 'Qt Interface and Action Client Formulation' detailing how `nav2_panel.cpp` constructs a QWidget panel inside RViz2, binding GUI buttons directly to the `MapsToPose` and `LifecycleManager` ROS 2 action/service clients. Explain how `goal_tool.cpp` captures user mouse-clicks on the 3D canvas, performing 2D-to-3D viewport unprojection to calculate exact $(x, y, \\theta)$ coordinates to send to the BT Navigator. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Qt QWidget Binding to ROS 2 Actions (nav2_panel.cpp)', '### Viewport Mouse-Click Unprojection Math (goal_tool.cpp)', and '### Lifecycle State Machine Visualization (nav2_panel.cpp)'."
+  },
+
+  "Chapter_072_RViz2_Particle_Cloud_Display_and_Flat_Arrows.md": {
+    "chapter_title": "RViz2 Particle Cloud Display and Flat Arrows Visualization",
+    "files": [
+      "nav2_rviz_plugins/src/particle_cloud_display/particle_cloud_display.cpp",
+      "nav2_rviz_plugins/src/particle_cloud_display/flat_weighted_arrows_array.cpp"
+    ],
+    "research_prompt": "Extract the advanced 3D rendering plugins for AMCL visualization. Write a 'High-Performance Cloud Rendering Formulation' detailing how `particle_cloud_display.cpp` subscribes to the massively dense `ParticleCloud` message from AMCL. Explain the OpenGL/Ogre optimization mathematics in `flat_weighted_arrows_array.cpp` used to batch-render thousands of directional arrows on the screen simultaneously—scaling their color and opacity based on particle weight—without destroying the RViz2 framerate. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### ParticleCloud Message Ingestion (particle_cloud_display.cpp)', '### Ogre3D Batch Rendering Optimization (flat_weighted_arrows_array.cpp)', and '### Weight-to-Color/Opacity Gradient Mapping (particle_cloud_display.cpp)'."
+  },
+
+  "Chapter_073_RViz2_Route_Tool_and_Costmap_Analysis_Plugins.md": {
+    "chapter_title": "RViz2 Route Tool and Costmap Analysis Plugins",
+    "files": [
+      "nav2_rviz_plugins/src/route_tool.cpp",
+      "nav2_rviz_plugins/src/costmap_cost_tool.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the navigation debugging UI tools. Write an 'Interactive Graph Waypoint Formulation' detailing how `route_tool.cpp` allows operators to visually click and chain multiple waypoints together on the RViz canvas, generating a single `ComputeRoute` request for the Route Server. Explain how `costmap_cost_tool.cpp` performs reverse-lookups on the underlying Costmap2D data, allowing an engineer to click anywhere on the visual map and instantly read the exact mathematical inflation cost (0-255) at that memory address. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Visual Waypoint Chaining and Action Dispatch (route_tool.cpp)', '### Viewport-to-Costmap Memory Reverse Lookup (costmap_cost_tool.cpp)', and '### Graph Edge Visualization Mathematics (route_tool.cpp)'."
+  },
+
+  "Chapter_074_Simple_Commander_Python_API_and_Autonomy_Scripts.md": {
+    "chapter_title": "Simple Commander Python API and Autonomy Scripts",
+    "files": [
+      "nav2_simple_commander/nav2_simple_commander/robot_navigator.py",
+      "nav2_simple_commander/nav2_simple_commander/occupancy_grid.py"
+    ],
+    "research_prompt": "Extract the high-level Python application wrapper. Write an 'Asynchronous Autonomy Abstraction Formulation' detailing how `robot_navigator.py` encapsulates all the complex ROS 2 Action Clients (NavigateToPose, FollowWaypoints, Spin) into simple Python methods. Explain how it manages action timeouts, preemption, and feedback polling, allowing developers to write fleet-management logic in 20 lines of Python. Detail the parsing logic in `occupancy_grid.py` used to pull costmap data directly into Numpy arrays for custom Python analysis. CRITICAL: In the 'Python Implementation' section, use '###' (H3) headers: '### The BasicNavigator Action Wrapper Class (robot_navigator.py)', '### Threaded Feedback Polling and Preemption (robot_navigator.py)', and '### Costmap to Numpy Array Ingestion (occupancy_grid.py)'."
+  },
+
+  "Chapter_075_Loopback_Simulator_and_Physics_Free_Testing.md": {
+    "chapter_title": "Loopback Simulator and Physics-Free Testing",
+    "files": [
+      "nav2_loopback_sim/src/loopback_simulator.cpp",
+      "nav2_loopback_sim/src/clock_publisher.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the lightweight simulation architecture. Write a 'Kinematic Loopback Formulation' detailing exactly how `loopback_simulator.cpp` bypasses heavy physics engines like Gazebo. Mathematically explain how it intercepts `cmd_vel` requests and instantly perfectly integrates them into `odom` TF broadcasts, simulating a 'perfect' robot with zero friction or slip. Detail the synchronization mechanism in `clock_publisher.cpp` used to publish steady `/clock` updates so timers, TF extrapolation, and ROS callbacks advance deterministically during desktop or CI runs without a full physics sim. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### cmd_vel Loopback and Odometry Integration (loopback_simulator.cpp)', '### Frictionless Kinematic State Integration (loopback_simulator.cpp)', and '### Simulation Clock Publication and Stepping (clock_publisher.cpp)'."
+  },
+
+  "Chapter_081_Nav2_Util_Array_Parsers_and_String_Casting.md": {
+    "chapter_title": "Nav2 Util: Array Parsers and String Casting",
+    "files": [
+      "nav2_util/src/array_parser.cpp",
+      "nav2_util/src/string_utils.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core string manipulation utilities. Write a 'Parameter Array Parsing Formulation' detailing how `array_parser.cpp` ingests complex, nested string representations of vectors (e.g., robot footprints defined in YAML as `[[-0.5, -0.5], [0.5, -0.5], ...]`) and mathematically casts them into native C++ `std::vector` floating-point structs. Explain the fault-tolerant casting in `string_utils.cpp` that prevents the stack from crashing if a user provides malformed configuration files. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### YAML-to-Vector String Tokenization (array_parser.cpp)', '### Type-Safe Float Casting Math (array_parser.cpp)', and '### Fault-Tolerant String Stripping (string_utils.cpp)'."
+  },
+
+  "Chapter_082_Nav2_Util_Occupancy_Grid_Math_and_Costmap_Helpers.md": {
+    "chapter_title": "Nav2 Util: Occupancy Grid Math and Costmap Helpers",
+    "files": [
+      "nav2_util/src/costmap.cpp",
+      "nav2_util/src/occ_grid_utils.cpp",
+      "nav2_util/include/nav2_util/occ_grid_values.hpp"
+    ],
+    "research_prompt": "Extract the low-level mathematical helpers used across all costmap plugins. Write a '1D-to-2D Matrix Transformation Formulation' detailing how `costmap.cpp` and `occ_grid_utils.cpp` translate a flat 1D byte array into a 2D Cartesian grid. Mathematically explain the coordinate conversions required to map a physical $(x, y)$ world coordinate in meters to a specific integer index in the array, using the `occ_grid_values.hpp` definitions (0-254) to ensure absolute uniformity across the stack. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Flat Array to 2D Cartesian Indexing (costmap.cpp)', '### World $(x,y)$ to Map Cell $(i,j)$ Transformations (occ_grid_utils.cpp)', and '### ROS 2 LETHAL vs FREE Byte Definitions (occ_grid_values.hpp)'."
+  },
+
+  "Chapter_083_Nav2_Util_Execution_Timers_and_Thread_Profiling.md": {
+    "chapter_title": "Nav2 Util: Execution Timers and Thread Profiling",
+    "files": [
+      "nav2_util/include/nav2_util/execution_timer.hpp",
+      "nav2_ros_common/include/nav2_ros_common/node_thread.hpp"
+    ],
+    "research_prompt": "Reverse-engineer the performance profiling tools embedded in the Nav2 libraries. Write a 'Microsecond Profiling Formulation' detailing how the RAII-based `execution_timer.hpp` is injected into high-frequency loops (like MPPI or A* expansions) to precisely track CPU cycle execution times, warning the developers if a specific plugin is causing the 30Hz control loop to slip. Explain the asynchronous threading architecture managed by `node_thread.hpp`. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### RAII Microsecond Timer Implementation (execution_timer.hpp)', '### High-Frequency Loop Slip Detection (execution_timer.hpp)', and '### Asynchronous Node Thread Execution (node_thread.hpp)'."
+  },
+
+  "Chapter_084_Nav2_Util_Twist_Publishers_and_Controller_Utils.md": {
+    "chapter_title": "Nav2 Util: Twist Publishers and Controller Utilities",
+    "files": [
+      "nav2_util/include/nav2_util/twist_publisher.hpp",
+      "nav2_util/include/nav2_util/twist_subscriber.hpp",
+      "nav2_util/src/controller_utils.cpp"
+    ],
+    "research_prompt": "Extract the normalized kinematic IO layer. Write a 'Thread-Safe Velocity Formulation' detailing how `twist_publisher.hpp` and `twist_subscriber.hpp` wrap standard ROS 2 `cmd_vel` publishers/subscribers with mutexes and lifecycle-aware state checks. Explain the math in `controller_utils.cpp`, detailing the exact quaternion-to-yaw transformations used by local controllers to calculate the angular delta between the robot's current heading and the target path. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Thread-Safe cmd_vel Mutex Arbitration (twist_publisher.hpp)', '### Lifecycle-Aware Subscription Polling (twist_subscriber.hpp)', and '### Target Heading Angular Delta Mathematics (controller_utils.cpp)'."
+  },
+
+  "Chapter_085_Nav2_Util_Line_Iterators_and_Bresenham_Raytracing.md": {
+    "chapter_title": "Nav2 Util: Line Iterators and Bresenham Raytracing",
+    "files": [
+      "nav2_util/include/nav2_util/line_iterator.hpp",
+      "nav2_util/include/nav2_util/raytrace_line_2d.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core raytracing mathematics used throughout Nav2. Write a 'Bresenham Grid Iteration Formulation' detailing exactly how `line_iterator.hpp` calculates a mathematically perfect line across a discretized grid without utilizing floating-point arithmetic. Explain how `raytrace_line_2d.hpp` utilizes this algorithm to perform ultra-fast line-of-sight checks for the Theta* planner and clearing operations for the Obstacle Costmap layer. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Integer-Only Bresenham Line Generation Math (line_iterator.hpp)', '### Multi-Cell Grid Iteration (line_iterator.hpp)', and '### Line-of-Sight Raytracing Implementation (raytrace_line_2d.hpp)'."
+  },
+
+  "Chapter_086_ROS_Common_Action_Client_Abstractions.md": {
+    "chapter_title": "ROS Common: Action Client Abstractions",
+    "files": [
+      "nav2_ros_common/include/nav2_ros_common/action_client.hpp"
+    ],
+    "research_prompt": "Extract the internal wrapper for ROS 2 Action Clients. Write a 'Synchronous/Asynchronous Polling Formulation' detailing how `action_client.hpp` abstracts away the boilerplate of the `rclcpp_action` library. Explain the specific threading models used to allow Nav2 components to send goals, wait for results asynchronously, or block the thread entirely until a result is achieved without deadlocking the ROS 2 executor. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Thread-Safe Action Goal Dispatch (action_client.hpp)', '### Result Future Polling and Executor Arbitration (action_client.hpp)', and '### Goal Cancellation and Preemption States (action_client.hpp)'."
+  },
+
+  "Chapter_087_ROS_Common_QoS_Profiles_and_Reliable_Subscriptions.md": {
+    "chapter_title": "ROS Common: QoS Profiles and Reliable Subscriptions",
+    "files": [
+      "nav2_ros_common/include/nav2_ros_common/qos_profiles.hpp",
+      "nav2_ros_common/include/nav2_ros_common/subscription.hpp",
+      "nav2_ros_common/include/nav2_ros_common/publisher.hpp"
+    ],
+    "research_prompt": "Reverse-engineer the Quality of Service (QoS) configurations tailored for autonomous navigation. Write a 'QoS Reliability Formulation' detailing how `qos_profiles.hpp` configures the underlying DDS middleware. Explain why specific topics (like the global costmap) use `TransientLocal`/`Reliable` policies to ensure late-joiners receive the full map, while high-frequency topics (like `cmd_vel` or LiDAR scans) use `Volatile`/`BestEffort` policies to prioritize low-latency over guaranteed delivery. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### DDS Transient Local and Reliable Profiles (qos_profiles.hpp)', '### Volatile Best-Effort Configuration for Sensors (qos_profiles.hpp)', and '### Templated QoS-Aware Subscribers (subscription.hpp)'."
+  },
+
+  "Chapter_088_ROS_Common_Interface_Factories_and_Validation.md": {
+    "chapter_title": "ROS Common: Interface Factories and Message Validation",
+    "files": [
+      "nav2_ros_common/include/nav2_ros_common/interface_factories.hpp",
+      "nav2_ros_common/include/nav2_ros_common/validate_messages.hpp"
+    ],
+    "research_prompt": "Extract the memory instantiation and safety boundaries of the ROS wrappers. Write a 'Memory Allocation Formulation' detailing how `interface_factories.hpp` utilizes factory patterns to dynamically generate shared pointers for publishers and subscribers based on node configuration. Explain the critical safety checks in `validate_messages.hpp` used to mathematically verify that incoming quaternions are properly normalized and that timestamps are valid before injecting them into the EKF or costmap math. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Shared Pointer Factory Generation (interface_factories.hpp)', '### Quaternion Normalization Mathematics (validate_messages.hpp)', and '### NaN/Infinity Value Detection and Rejection (validate_messages.hpp)'."
+  },
+
+  "Chapter_089_Nav2_Core_Exceptions_and_Fault_States.md": {
+    "chapter_title": "Nav2 Core: Exceptions and Fault States",
+    "files": [
+      "nav2_core/include/nav2_core/controller_exceptions.hpp",
+      "nav2_core/include/nav2_core/planner_exceptions.hpp",
+      "nav2_core/include/nav2_core/route_exceptions.hpp",
+      "nav2_core/include/nav2_core/smoother_exceptions.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the standardized fault reporting architecture. Write an 'Exception Polymorphism Formulation' detailing the exact hierarchy of custom C++ exceptions defined across the `nav2_core` headers. Explain how specific exceptions (e.g., `InvalidPath`, `NoValidControl`, `StartOutsideMap`) are thrown by plugins, caught by the host servers, and translated into specific Action Server error codes (defined in `nav2_msgs`) to trigger the correct BT recovery behaviors. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The nav2_core Exception Hierarchy (controller_exceptions.hpp)', '### Specific Fault Definitions: NoValidControl vs InvalidPath (planner_exceptions.hpp)', and '### C++ Exception to Action Error Code Translation (nav2_core)'."
+  },
+
+  "Chapter_090_Nav2_Core_Goal_and_Progress_Checker_Interfaces.md": {
+    "chapter_title": "Nav2 Core: Goal and Progress Checker Interfaces",
+    "files": [
+      "nav2_core/include/nav2_core/goal_checker.hpp",
+      "nav2_core/include/nav2_core/progress_checker.hpp"
+    ],
+    "research_prompt": "Extract the abstract contracts for navigation validation. Write a 'Validation State Machine Formulation' detailing the pure virtual methods mandated by `goal_checker.hpp` and `progress_checker.hpp`. Explain how `isGoalReached()` and `check()` decouple the geometric arrival logic from the main control loop, allowing users to write custom plugins that validate arrival based on entirely custom logic (e.g., waiting for an external visual marker to align) rather than just $(x,y)$ tolerances. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The GoalChecker Plugin Interface (goal_checker.hpp)', '### The ProgressChecker Stalling Interface (progress_checker.hpp)', and '### Decoupling Validation from Velocity Generation (nav2_core)'."
+  },
+
+  "Chapter_091_Nav2_Parameter_Handler_Architecture_and_Hot_Swapping.md": {
+    "chapter_title": "Nav2 Parameter Handler Architecture and Hot-Swapping",
+    "files": [
+      "nav2_planner/src/parameter_handler.cpp",
+      "nav2_controller/src/parameter_handler.cpp",
+      "nav2_util/include/nav2_util/parameter_handler.hpp"
+    ],
+    "research_prompt": "Reverse-engineer the dynamic parameter infrastructure. Write a 'ROS 2 Parameter Callback Formulation' detailing how `parameter_handler.cpp` uses `rclcpp::AsyncParametersClient` and internal callbacks to monitor variables. Explain the thread-safe mathematics used to hot-swap critical values (like maximum velocity or inflation radius) dynamically while the robot is driving, without crashing the active planner or controller matrices. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Dynamic Parameter Declaration and Typing (parameter_handler.cpp)', '### Mutex-Protected OnSetParameters Callbacks (parameter_handler.cpp)', and '### Real-Time Mathematical Variable Injection (nav2_util)'."
+  },
+
+  "Chapter_092_Nav2_Bringup_Launch_File_Orchestration.md": {
+    "chapter_title": "Nav2 Bringup: Launch File Orchestration",
+    "files": [
+      "nav2_bringup/launch/bringup_launch.py",
+      "nav2_bringup/launch/navigation_launch.py"
+    ],
+    "research_prompt": "Extract the Python-based execution pipeline that starts the entire stack. Write an 'Opaque Node Instantiation Formulation' detailing how `navigation_launch.py` and `bringup_launch.py` utilize the `launch_ros` framework to spawn the dozens of independent C++ executables. Explain how they pass specific remappings, QoS overrides, and parameter file paths to coordinate the massive decentralized architecture into a single coherent system. CRITICAL: In the 'Python Implementation' section, use '###' (H3) headers: '### LaunchROS Node Definition and Orchestration (navigation_launch.py)', '### Topic Remapping and TF Tree Configuration (bringup_launch.py)', and '### Parameter File Injection and Overrides (bringup_launch.py)'."
+  },
+
+  "Chapter_093_Nav2_Bringup_Simulation_and_SLAM_Launch_Sequences.md": {
+    "chapter_title": "Nav2 Bringup: Simulation and SLAM Launch Sequences",
+    "files": [
+      "nav2_bringup/launch/tb3_simulation_launch.py",
+      "nav2_bringup/launch/slam_launch.py",
+      "nav2_bringup/launch/localization_launch.py"
+    ],
+    "research_prompt": "Perform a forensic extraction of the integrated testing environments. Write a 'Simulation and Mapping Formulation' detailing how `tb3_simulation_launch.py` brings up an instance of Gazebo (or Ignition), a TurtleBot3 URDF, and connects them directly into Nav2. Detail the exact orchestration in `slam_launch.py` that bypasses AMCL and the Map Server, injecting `slam_toolbox` into the Nav2 pipeline to allow the robot to autonomously map an unknown environment using the same global planners. CRITICAL: In the 'Python Implementation' section, use '###' (H3) headers: '### Gazebo Physics Sync and URDF Spawning (tb3_simulation_launch.py)', '### SLAM Toolbox Integration and TF Publishing (slam_launch.py)', and '### AMCL Map-Server Localization (localization_launch.py)'."
+  },
+
+  "Chapter_094_Nav2_Bringup_Multi_Robot_Fleet_Launching.md": {
+    "chapter_title": "Nav2 Bringup: Multi-Robot Fleet Launching",
+    "files": [
+      "nav2_bringup/launch/cloned_multi_tb3_simulation_launch.py",
+      "nav2_bringup/launch/unique_multi_tb3_simulation_launch.py"
+    ],
+    "research_prompt": "Extract the architecture for massive fleet deployment. Write a 'Namespace Arbitration Formulation' detailing how `cloned_multi_tb3_simulation_launch.py` spawns multiple identical robots in a single ROS 2 network. Explain the exact `PushRosNamespace` mechanics used to perfectly isolate the TF trees, action servers, and costmaps of 'robot_1' from 'robot_2', preventing catastrophic cross-talk while allowing them to navigate the same simulated world. CRITICAL: In the 'Python Implementation' section, use '###' (H3) headers: '### ROS 2 Namespace Push Mechanics (cloned_multi_tb3_simulation_launch.py)', '### TF Tree Prefixing and Isolation (unique_multi_tb3_simulation_launch.py)', and '### Multi-Robot Gazebo Coordinate Spawning (unique_multi_tb3_simulation_launch.py)'."
+  },
+
+  "Chapter_095_The_Master_Nav2_Params_YAML_Configuration.md": {
+    "chapter_title": "The Master Nav2 Params YAML Configuration",
+    "files": [
+      "nav2_bringup/params/nav2_params.yaml"
+    ],
+    "research_prompt": "Reverse-engineer the master configuration file that defines the default behavior of Nav2. Write a 'YAML Plugin Injection Formulation' detailing how `nav2_params.yaml` acts as the definitive source of truth. Explain how this file physically declares the plugin arrays (e.g., defining `GridBased` as a `nav2_navfn_planner/NavfnPlanner` plugin), configuring the precise algorithm parameters, costmap resolutions, and AMCL particle counts that govern the entire C++ architecture. CRITICAL: In the 'YAML Configuration' section, use '###' (H3) headers: '### Pluginlib Class String Declarations (nav2_params.yaml)', '### Costmap Layer Resolution and Extent Configurations (nav2_params.yaml)', and '### Controller/Planner Tuning Values (nav2_params.yaml)'."
+  },
+
+  "Chapter_096_Keepout_and_Speed_Zone_Configurations.md": {
+    "chapter_title": "Keepout and Speed Zone Configurations",
+    "files": [
+      "nav2_bringup/launch/keepout_zone_launch.py",
+      "nav2_bringup/launch/speed_zone_launch.py",
+      "nav2_bringup/maps/warehouse_keepout.yaml"
+    ],
+    "research_prompt": "Extract the specific configurations for restricted space navigation. Write a 'Filter Mask Overlay Formulation' detailing how `keepout_zone_launch.py` starts a secondary `map_server` dedicated purely to publishing a filter mask. Explain the metadata defined in `warehouse_keepout.yaml` and how it maps raw pixel data to exact $(x, y)$ coordinates, syncing perfectly with the global costmap to enforce warehouse safety rules. CRITICAL: In the 'Python/YAML Implementation' section, use '###' (H3) headers: '### Secondary Map Server Launch Logic (keepout_zone_launch.py)', '### Speed Limit Metadata Translation (speed_zone_launch.py)', and '### Filter Mask YAML Definitions (warehouse_keepout.yaml)'."
+  },
+
+  "Chapter_097_Footprint_Publishers_and_Collision_Subscribers.md": {
+    "chapter_title": "Footprint Publishers and Collision Subscribers",
+    "files": [
+      "nav2_util/src/base_footprint_publisher.cpp",
+      "nav2_costmap_2d/src/footprint_subscriber.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the robot dimension broadcasting system. Write a 'Dynamic Polygon Publishing Formulation' detailing how `base_footprint_publisher.cpp` broadcasts the physical shape of the robot as a stamped `Polygon` message. Explain how `footprint_subscriber.cpp` ingests this message across all costmap and collision-checking nodes, allowing the robot to dynamically change its footprint mid-flight (e.g., extending a robotic arm) and instantly have the planners react to the new physical dimensions. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Stamped Polygon Broadcasting Math (base_footprint_publisher.cpp)', '### Universal Footprint Subscription and Synchronization (footprint_subscriber.cpp)', and '### Dynamic Shape-Change Handoff to Planners (nav2_costmap_2d)'."
+  },
+
+  "Chapter_098_DWB_One_Dimensional_Velocity_Iterators.md": {
+    "chapter_title": "DWB One-Dimensional Velocity Iterators",
+    "files": [
+      "nav2_dwb_controller/dwb_plugins/include/dwb_plugins/one_d_velocity_iterator.hpp",
+      "nav2_dwb_controller/dwb_plugins/src/xy_theta_iterator.cpp"
+    ],
+    "research_prompt": "Extract the fundamental discretization math of the DWB approach. Write a 'Discrete Velocity Space Formulation' detailing how `one_d_velocity_iterator.hpp` breaks down a continuous acceleration bound into a finite array of testable velocity segments. Mathematically explain how `xy_theta_iterator.cpp` combines three of these 1D iterators to generate the full 3D $(v_x, v_y, v_\\theta)$ matrix of velocity commands that the trajectory generator evaluates. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### 1D Velocity Discretization Mathematics (one_d_velocity_iterator.hpp)', '### 3D Iteration Matrix Combination (xy_theta_iterator.cpp)', and '### Granularity and Step-Size Calculation (xy_theta_iterator.cpp)'."
+  },
+
+  "Chapter_099_Costmap_Queue_Algorithms_for_DWB.md": {
+    "chapter_title": "Costmap Queue Algorithms for DWB Trajectory Scoring",
+    "files": [
+      "nav2_dwb_controller/costmap_queue/src/costmap_queue.cpp",
+      "nav2_dwb_controller/costmap_queue/src/limited_costmap_queue.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the highly optimized grid-search algorithms specific to DWB. Write a 'Breadth-First Cost Expansion Formulation' detailing how `costmap_queue.cpp` utilizes a priority queue to perform a massive breadth-first search across the local costmap, pre-calculating the distance from every cell to the nearest obstacle. Explain the optimization in `limited_costmap_queue.cpp` that cuts off the search at a specific distance limit, saving thousands of CPU cycles when scoring trajectories in wide-open spaces. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Breadth-First Priority Queue Mathematics (costmap_queue.cpp)', '### Distance-to-Obstacle Precomputation Array (costmap_queue.cpp)', and '### Cutoff Limit Search Optimization (limited_costmap_queue.cpp)'."
+  },
+
+  "Chapter_100_AMCL_Angle_Utilities_and_Portable_Math.md": {
+    "chapter_title": "AMCL Angle Utilities and Portable Math",
+    "files": [
+      "nav2_amcl/include/nav2_amcl/angleutils.hpp",
+      "nav2_amcl/include/nav2_amcl/portable_utils.hpp"
+    ],
+    "research_prompt": "Extract the lowest-level mathematical definitions of the AMCL algorithm. Write a 'Circular Geometry Formulation' detailing the specific algorithms in `angleutils.hpp` used to normalize yaw angles strictly between $-\\pi$ and $\\pi$. Explain how `portable_utils.hpp` manages floating-point math, seeding functions, and pseudo-random generators in a way that guarantees deterministic execution of the particle filter regardless of the underlying hardware architecture. CRITICAL: In the 'C/C++ Implementation' section, use '###' (H3) headers: '### Strict Radian Normalization Mathematics (angleutils.hpp)', '### Cross-Platform Random Number Generation (portable_utils.hpp)', and '### Floating-Point Equality Tolerances (portable_utils.hpp)'."
+  },
+
+  "Chapter_101_AMCL_Map_Coordinate_Spaces_and_C_Space_Expansion.md": {
+    "chapter_title": "AMCL Map Coordinate Spaces and C-Space Expansion",
+    "files": [
+      "nav2_amcl/src/map/map_cspace.cpp",
+      "nav2_amcl/src/map/map_range.c"
+    ],
+    "research_prompt": "Perform a forensic extraction of the AMCL Configuration Space (C-Space) mathematics. Write an 'Obstacle Inflation Formulation' detailing how `map_cspace.cpp` dynamically expands the boundaries of static obstacles based on the robot's physical radius, allowing the particle filter to instantly invalidate particles that spawn inside the robot's physical collision bounds. Explain the raytracing limits in `map_range.c` used to calculate the maximum expected laser return for any given particle. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Configuration Space (C-Space) Inflation Math (map_cspace.cpp)', '### Particle Invalidity Masking (map_cspace.cpp)', and '### Raytracing Range Limits for Sensor Models (map_range.c)'."
+  },
+
+  "Chapter_102_AMCL_Map_Rendering_and_Legacy_Memory_Structures.md": {
+    "chapter_title": "AMCL Map Rendering and Legacy Memory Structures",
+    "files": [
+      "nav2_amcl/src/map/map.c",
+      "nav2_amcl/src/map/map_draw.c"
+    ],
+    "research_prompt": "Reverse-engineer the underlying pure-C memory management of the AMCL map. Write a 'Memory Allocation Formulation' detailing how `map.c` allocates contiguous blocks of memory for multi-megabyte occupancy grids, ensuring extremely high cache-hit rates during the millions of likelihood-field lookups required per second by the particle filter. Detail the GUI rendering hooks in `map_draw.c` designed for visual debugging of the probability fields. CRITICAL: In the 'C Implementation' section, use '###' (H3) headers: '### Contiguous Map Memory Allocation (map.c)', '### High-Speed Coordinate-to-Index Translation (map.c)', and '### Probability Field Rendering Hooks (map_draw.c)'."
+  },
+
+  "Chapter_103_Costmap_Math_Polygon_Intersections_and_Distances.md": {
+    "chapter_title": "Costmap Math: Polygon Intersections and Coordinate Distances",
+    "files": [
+      "nav2_costmap_2d/src/costmap_math.cpp",
+      "nav2_costmap_2d/include/nav2_costmap_2d/costmap_math.hpp"
+    ],
+    "research_prompt": "Extract the core mathematical functions utilized by the collision checkers. Write a 'Polygon Intersection Formulation' detailing the exact algebraic algorithms in `costmap_math.cpp` used to determine if two line segments (e.g., the robot's footprint edge and an obstacle boundary) intersect. Mathematically explain the distance calculations used to find the shortest vector between a point and a convex polygon, crucial for the precise collision-avoidance logic in DWB and MPPI. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Line-Segment Intersection Algebra (costmap_math.cpp)', '### Point-to-Polygon Minimum Distance Math (costmap_math.cpp)', and '### Convex Hull Evaluations (costmap_math.hpp)'."
+  },
+
+  "Chapter_104_MPPI_Optimal_Trajectory_Validation_and_Failsafes.md": {
+    "chapter_title": "MPPI Optimal Trajectory Validation and Kinematic Failsafes",
+    "files": [
+      "nav2_mppi_controller/src/trajectory_validators/optimal_trajectory_validator.cpp",
+      "nav2_mppi_controller/include/nav2_mppi_controller/optimal_trajectory_validator.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the MPPI post-optimization safety checks. Write a 'Trajectory Validation Formulation' detailing how `optimal_trajectory_validator.cpp` acts as the final gatekeeper after the tensor-based cost-weighted averaging is complete. Explain how it mathematically verifies that the final, optimized trajectory does not violate hard kinematic constraints (like sudden infinite acceleration) and guarantees collision-free execution, throwing an exception to halt the robot if the optimizer converges on a dangerous path. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Post-Optimization Kinematic Validation (optimal_trajectory_validator.cpp)', '### Hard-Stop Collision Verification (optimal_trajectory_validator.cpp)', and '### Optimizer Divergence Failsafes (optimal_trajectory_validator.hpp)'."
+  },
+
+  "Chapter_105_MPPI_Trajectory_Visualization_and_Debugging_Tools.md": {
+    "chapter_title": "MPPI Trajectory Visualization and Tensor Debugging",
+    "files": [
+      "nav2_mppi_controller/src/trajectory_visualizer.cpp",
+      "nav2_mppi_controller/include/nav2_mppi_controller/tools/trajectory_visualizer.hpp"
+    ],
+    "research_prompt": "Extract the visual debugging infrastructure of the MPPI tensor engine. Write a 'Rollout Rendering Formulation' detailing how `trajectory_visualizer.cpp` captures the thousands of parallel GPU/CPU trajectories generated during the stochastic rollout phase. Explain how it downsamples and publishes these multi-dimensional tensors as highly optimized ROS 2 `MarkerArray` messages, allowing developers to visually see the optimizer 'exploring' the state space in RViz2 in real-time. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Stochastic Rollout Tensor Capture (trajectory_visualizer.cpp)', '### Downsampling and MarkerArray Generation (trajectory_visualizer.cpp)', and '### Optimal vs Candidate Path Rendering (trajectory_visualizer.hpp)'."
+  },
+
+  "Chapter_106_Smac_Goal_Management_and_Terminal_Tolerances.md": {
+    "chapter_title": "Smac Goal Management and Terminal Tolerances",
+    "files": [
+      "nav2_smac_planner/include/nav2_smac_planner/goal_manager.hpp"
+    ],
+    "research_prompt": "Reverse-engineer the goal resolution logic within the Smac planning engine. Write a 'Terminal Tolerance Formulation' detailing how `goal_manager.hpp` expands a single $(x, y)$ target coordinate into a valid 'goal region' based on user-defined $(x, y, \\theta)$ tolerances. Explain how this allows the A* or Hybrid-A* search to successfully terminate slightly early if the exact coordinate is infinitesimally blocked by an obstacle, but a perfectly valid pose exists 5 centimeters away. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Goal Region Expansion Math (goal_manager.hpp)', '### Tolerance-Based Search Termination (goal_manager.hpp)', and '### Kinematic Validity Checks at the Goal (goal_manager.hpp)'."
+  },
+
+  "Chapter_107_Smac_Internal_Path_Smoother_and_Spline_Refinement.md": {
+    "chapter_title": "Smac Internal Path Smoother and Spline Refinement",
+    "files": [
+      "nav2_smac_planner/src/smoother.cpp",
+      "nav2_smac_planner/include/nav2_smac_planner/smoother.hpp"
+    ],
+    "research_prompt": "Extract the internal smoothing algorithms native to the Smac planners. Write a 'Gradient Descent Smoothing Formulation' detailing how `smoother.cpp` applies a fast, lightweight gradient descent to the raw A* output path *before* it is handed off to the global Nav2 Smoother Server. Mathematically explain how this internal step pulls the nodes away from obstacle boundaries (maximizing clearance) while minimizing the overall path length. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Lightweight Gradient Descent Mathematics (smoother.cpp)', '### Obstacle Clearance Maximization (smoother.cpp)', and '### Path Length Minimization Penalties (smoother.hpp)'."
+  },
+
+  "Chapter_108_Route_Server_Corner_Smoothing_and_Spline_Kinematics.md": {
+    "chapter_title": "Route Server Corner Smoothing and Spline Kinematics",
+    "files": [
+      "nav2_route/include/nav2_route/corner_smoothing.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the graph-to-spline conversion logic. Write a 'Corner Radius Formulation' detailing the mathematics in `corner_smoothing.hpp` used by the Route Server. Explain how it intercepts sharp, 90-degree graph edges (typical in warehouse GeoJSON maps) and mathematically inscribes Bezier or polynomial splines into the corners, converting rigid graph connections into fluid, kinematically drivable curves for the local controller. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Graph Edge Intersection Math (corner_smoothing.hpp)', '### Bezier Curve Corner Inscription (corner_smoothing.hpp)', and '### Kinematic Turn Radius Preservation (corner_smoothing.hpp)'."
+  },
+
+  "Chapter_109_Route_Server_Dynamic_Edge_Scoring_and_Updates.md": {
+    "chapter_title": "Route Server Dynamic Edge Scoring and Map Updates",
+    "files": [
+      "nav2_route/src/plugins/edge_cost_functions/dynamic_edges_scorer.cpp",
+      "nav2_route/include/nav2_route/plugins/edge_cost_functions/dynamic_edges_scorer.hpp"
+    ],
+    "research_prompt": "Extract the dynamic routing capabilities of the graph server. Write a 'Dynamic Edge Penalty Formulation' detailing how `dynamic_edges_scorer.cpp` listens for real-time ROS 2 service calls or topic updates indicating that a specific graph edge (e.g., 'Aisle 4') is currently blocked by a forklift. Explain how it mathematically injects massive, temporary cost multipliers to those specific edges, forcing the A* graph search to instantly route around the blockage without altering the static GeoJSON file. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Dynamic Cost Injection via ROS 2 Topics (dynamic_edges_scorer.cpp)', '### Temporary Edge Severing Mathematics (dynamic_edges_scorer.cpp)', and '### Graph Re-Evaluation Triggers (dynamic_edges_scorer.hpp)'."
+  },
+
+  "Chapter_110_Route_Server_Goal_Intent_Search_Algorithms.md": {
+    "chapter_title": "Route Server Goal Intent Search Algorithms",
+    "files": [
+      "nav2_route/include/nav2_route/goal_intent_search.hpp"
+    ],
+    "research_prompt": "Reverse-engineer the semantic search algorithms within the Route Server. Write a 'Semantic Intent Matching Formulation' detailing how `goal_intent_search.hpp` traverses the loaded graph metadata. Mathematically explain the string matching, property evaluation, and proximity heuristics used to select the absolute optimal physical graph node when a fleet manager requests an abstract intent like 'Navigate to any available pallet drop-off zone'. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Graph Metadata Traversal and Property Matching (goal_intent_search.hpp)', '### Multiple-Candidate Evaluation and Cost Weighting (goal_intent_search.hpp)', and '### Optimal Node Selection Algorithms (goal_intent_search.hpp)'."
+  },
+
+  "Chapter_111_DWB_Illegal_Trajectory_Tracking_and_Invalidation.md": {
+    "chapter_title": "DWB Illegal Trajectory Tracking and Invalidation",
+    "files": [
+      "nav2_dwb_controller/dwb_core/src/illegal_trajectory_tracker.cpp",
+      "nav2_dwb_controller/dwb_core/include/dwb_core/illegal_trajectory_tracker.hpp"
+    ],
+    "research_prompt": "Extract the fault-tracking mechanisms within the Dynamic Window Approach controller. Write an 'Invalid Trajectory Cache Formulation' detailing how `illegal_trajectory_tracker.cpp` stores the exact reasons *why* a specific generated arc was rejected by the critics (e.g., 'Hit Obstacle', 'Exceeded Speed'). Explain how this data is actively aggregated during the control loop to provide critical debug logging and to determine if the controller is completely trapped, triggering an exception. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Rejection Reason Caching and Aggregation (illegal_trajectory_tracker.cpp)', '### Critical Failure State Determination (illegal_trajectory_tracker.cpp)', and '### High-Speed Trajectory Invalidation Lookups (illegal_trajectory_tracker.hpp)'."
+  },
+
+  "Chapter_112_DWB_Trajectory_Utilities_and_Kinematic_Projection.md": {
+    "chapter_title": "DWB Trajectory Utilities and Kinematic Projection",
+    "files": [
+      "nav2_dwb_controller/dwb_core/src/trajectory_utils.cpp",
+      "nav2_dwb_controller/dwb_core/include/dwb_core/trajectory_utils.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core kinematic projection math for DWB. Write a 'Circular Arc Projection Formulation' detailing exactly how `trajectory_utils.cpp` integrates a given velocity command $(v_x, v_y, v_\\theta)$ over a specific simulation time. Mathematically explain the geometric formulas used to rapidly generate the $(x, y)$ coordinates of the resulting arc without requiring heavy numerical integration, allowing DWB to generate thousands of test trajectories in milliseconds. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Constant-Velocity Arc Geometric Mathematics (trajectory_utils.cpp)', '### State Integration over Simulation Time (trajectory_utils.cpp)', and '### Trajectory Struct Memory Population (trajectory_utils.hpp)'."
+  },
+
+  "Chapter_113_BT_Selector_Nodes_Dynamic_Planner_and_Controller_Routing.md": {
+    "chapter_title": "BT Selector Nodes: Dynamic Planner and Controller Routing",
+    "files": [
+      "nav2_behavior_tree/plugins/action/planner_selector_node.cpp",
+      "nav2_behavior_tree/plugins/action/controller_selector_node.cpp"
+    ],
+    "research_prompt": "Extract the dynamic routing nodes within the Behavior Tree. Write a 'Plugin Arbitration Formulation' detailing how `planner_selector_node.cpp` and `controller_selector_node.cpp` evaluate variables on the Blackboard to determine *which* algorithm to use mid-flight. Explain how this architecture allows a single robot to use the high-speed Smac planner in open hallways, and seamlessly switch to the Theta* planner when entering a dense warehouse aisle, dynamically passing the correct string ID to the underlying Action Servers. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Blackboard String Evaluation for Algorithm Selection (planner_selector_node.cpp)', '### Dynamic Action Request String Injection (controller_selector_node.cpp)', and '### Goal-Checker and Progress-Checker Arbitration (nav2_behavior_tree)'."
+  },
+
+  "Chapter_114_BT_Advanced_Decorators_Distance_and_Trigger_Nodes.md": {
+    "chapter_title": "BT Advanced Decorators: Distance and Trigger Nodes",
+    "files": [
+      "nav2_behavior_tree/plugins/decorator/distance_controller.cpp",
+      "nav2_behavior_tree/plugins/decorator/single_trigger_node.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the spatial control decorators in the Behavior Tree. Write a 'Distance-Driven Tick Formulation' detailing how `distance_controller.cpp` prevents its child nodes (like global replanning) from ticking until the robot has physically moved a specific distance (e.g., 1.0 meters) from the last calculation point, vastly reducing CPU load. Explain the state-retention logic in `single_trigger_node.cpp` that ensures a specific action (like opening a door) only ever fires once during a navigation sequence. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Odometry Delta Tracking and Tick Throttling (distance_controller.cpp)', '### State Retention and One-Shot Execution (single_trigger_node.cpp)', and '### Reset Logic for Trigger Nodes (single_trigger_node.cpp)'."
+  },
+
+  "Chapter_115_BT_Complex_Conditions_Path_Tracking_and_Transforms.md": {
+    "chapter_title": "BT Complex Conditions: Path Tracking and Transform Checks",
+    "files": [
+      "nav2_behavior_tree/plugins/condition/is_within_path_tracking_bounds_condition.cpp",
+      "nav2_behavior_tree/plugins/condition/transform_available_condition.cpp"
+    ],
+    "research_prompt": "Extract the critical safety condition nodes. Write a 'Cross-Track Deviation Formulation' detailing how `is_within_path_tracking_bounds_condition.cpp` mathematically checks the robot's physical deviation from the active global path, triggering an instant `FAILURE` (and a replan) if the controller gets shoved too far off course. Explain the TF verification in `transform_available_condition.cpp`, detailing how the tree confirms that the `map -> odom` transform is actively publishing before ever attempting to dispatch a movement command. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Cross-Track Error Tolerance Mathematics (is_within_path_tracking_bounds_condition.cpp)', '### TF Tree Polling and Timeout Verification (transform_available_condition.cpp)', and '### Failure State Routing to Recovery Branches (nav2_behavior_tree)'."
+  },
+
+  "Chapter_116_Waypoint_Follower_Parameter_Handlers_and_Configuration.md": {
+    "chapter_title": "Waypoint Follower Parameter Handlers and Configuration",
+    "files": [
+      "nav2_waypoint_follower/src/parameter_handler.cpp",
+      "nav2_waypoint_follower/include/nav2_waypoint_follower/parameter_handler.hpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Waypoint Follower configuration architecture. Write a 'Dynamic Mission Configuration Formulation' detailing how `parameter_handler.cpp` manages the hot-swapping of mission constraints (e.g., stopping distance, loop behavior, failure actions). Explain the thread-safe mutex logic used to ensure that if a fleet manager updates these parameters via ROS 2 mid-mission, the active waypoint iterator does not encounter a race condition or segmentation fault. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### OnSetParameters Callback Execution (parameter_handler.cpp)', '### Mutex-Protected Mission Variable Hot-Swapping (parameter_handler.cpp)', and '### Default Plugin Declaration and Loading (parameter_handler.hpp)'."
+  },
+
+  "Chapter_117_System_Tests_Node_Bringup_and_UpDown_Lifecycle.md": {
+    "chapter_title": "System Tests: Node Bringup and UpDown Lifecycle Validation",
+    "files": [
+      "nav2_system_tests/src/updown/test_updown.cpp"
+    ],
+    "research_prompt": "Extract the master lifecycle validation test suite. Write an 'Orchestration Stress-Test Formulation' detailing how `test_updown.cpp` utilizes the Google Test framework to programmatically boot the entire Nav2 stack (dozens of nodes), configure them, activate them, deactivate them, and completely tear them down multiple times in rapid succession. Explain how this specifically proves that the `nav2_lifecycle_manager` correctly handles the state transitions without memory leaks or zombie threads. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Programmatic Lifecycle Command Execution (test_updown.cpp)', '### State Transition Verification and Assertions (test_updown.cpp)', and '### Memory Leak and Thread Cleanup Validation (test_updown.cpp)'."
+  },
+
+  "Chapter_118_System_Tests_Localization_and_AMCL_Verification.md": {
+    "chapter_title": "System Tests: Localization and AMCL Convergence Verification",
+    "files": [
+      "nav2_system_tests/src/localization/test_localization_node.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the automated testing of the AMCL particle filter. Write a 'Filter Convergence Validation Formulation' detailing how `test_localization_node.cpp` boots AMCL, feeds it synthetic LaserScan and Odometry data, and mathematically measures the covariance matrix of the resulting pose estimate. Explain how the GTest asserts that the particle cloud successfully converges on the correct $(x,y,\\theta)$ coordinate within a specified tolerance and timeframe, proving the probabilistic math functions correctly. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Synthetic Sensor Data Injection (test_localization_node.cpp)', '### Particle Cloud Covariance and Convergence Measurement (test_localization_node.cpp)', and '### GTest Tolerance Assertions for Pose Accuracy (test_localization_node.cpp)'."
+  },
+
+  "Chapter_119_System_Tests_Planner_Random_Node_and_Costmap_Harness.md": {
+    "chapter_title": "System Tests: Planner Random Node and Costmap Harness",
+    "files": [
+      "nav2_system_tests/src/planning/test_planner_random_node.cpp",
+      "nav2_system_tests/src/planning/test_planner_costmaps_node.cpp"
+    ],
+    "research_prompt": "Extract the rigorous validation framework for the Nav2 planners. Write a 'Stochastic Path Validation Formulation' detailing how `test_planner_random_node.cpp` generates thousands of completely random start and goal poses, feeding them through the Smac and NavFn planners to ensure they never crash when given impossible or highly complex requests. Explain how `test_planner_costmaps_node.cpp` artificially constructs highly complex maze structures in a mock costmap to verify that the planners correctly route around the specific obstacles. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### High-Volume Stochastic Goal Generation (test_planner_random_node.cpp)', '### Edge-Case and Impossible-Goal Failsafe Verification (test_planner_random_node.cpp)', and '### Artificial Maze Costmap Construction (test_planner_costmaps_node.cpp)'."
+  },
+
+  "Chapter_120_Master_Navigation_Launch_and_Metapackage_Aggregation.md": {
+    "chapter_title": "Master Navigation Launch and Metapackage Aggregation",
+    "files": [
+      "navigation2/package.xml",
+      "nav2_bringup/launch/rviz_launch.py"
+    ],
+    "research_prompt": "Perform a final extraction wrapping the entire ecosystem. Write a 'Metapackage Dependency Graph Formulation' detailing how the top-level `navigation2/package.xml` binds all 40+ independent ament packages together, ensuring `rosdep` resolves the entire architecture perfectly on any Ubuntu installation. Detail the final visualization layer in `rviz_launch.py`, explaining how it boots the pre-configured RViz2 canvas (`nav2_default_view.rviz`), connecting the human operator to the massive, complex robotic brain we have just reverse-engineered. CRITICAL: In the 'Architecture/Python Implementation' section, use '###' (H3) headers: '### The ROS 2 Metapackage Dependency Tree (package.xml)', '### Unified System Resolution and Compilation (navigation2)', and '### RViz2 Canvas Bootstrapping and Panel Configuration (rviz_launch.py)'."
+  }
+}

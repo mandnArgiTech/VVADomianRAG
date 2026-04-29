@@ -1,0 +1,2009 @@
+{
+  "Chapter_001_Core_RTOS_and_Hardware_Initialization.md": {
+    "chapter_title": "Core RTOS, Macro Definitions, and Hardware Initialization",
+    "files": [
+      "Rover/Rover.cpp",
+      "Rover/Rover.h",
+      "Rover/system.cpp",
+      "Rover/config.h",
+      "Rover/defines.h",
+      "Rover/version.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master RTOS architecture and hardware definitions. Write a '400Hz Fast Loop Formulation' detailing the exact sequence of C++ function calls within `Rover.cpp` that execute the primary physics matrix. Write a 'Hardware Initialization Analysis' extracting the C++ logic in `system.cpp` that bridges the ChibiOS HAL to the ArduPilot matrices, and analyze how `defines.h` and `config.h` set the absolute memory and macro constraints for the chassis. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The fast_loop() Microsecond Budget (Rover.cpp)', '### Hardware Abstraction Boot Sequence (system.cpp)', and '### Core Macro Constraints (defines.h)'."
+  },
+
+  "Chapter_002_Sensor_Polling_and_RC_Input_Arbitration.md": {
+    "chapter_title": "Asynchronous Sensor Polling and RC Input Arbitration",
+    "files": [
+      "Rover/sensors.cpp",
+      "Rover/radio.cpp",
+      "Rover/RC_Channel.cpp",
+      "Rover/RC_Channel.h"
+    ],
+    "research_prompt": "Reverse-engineer the ingestion pipelines for sensors and human control. Write a 'Sensor Threading Formulation' detailing how `sensors.cpp` handles the asynchronous polling of the GPS and compass without blocking the primary RTOS thread. Write a 'Radio Arbitration Analysis' explaining the exact C++ logic in `radio.cpp` and `RC_Channel.cpp` that applies deadzones, mathematically scales raw PWM inputs into normalized (-1.0 to 1.0) steering/throttle vectors, and prioritizes human overrides. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Asynchronous Sensor State Pointers (sensors.cpp)', '### RC PWM Normalization Math (RC_Channel.cpp)', and '### Hardware Deadzone Filtering (radio.cpp)'."
+  },
+
+  "Chapter_003_Master_Safety_Matrices_and_Advanced_Failsafes.md": {
+    "chapter_title": "Master Safety Matrices, Collision Detection, and AFS",
+    "files": [
+      "Rover/failsafe.cpp",
+      "Rover/crash_check.cpp",
+      "Rover/ekf_check.cpp",
+      "Rover/afs_rover.cpp",
+      "Rover/afs_rover.h"
+    ],
+    "research_prompt": "Extract the absolute safety protocols that prevent vehicle runaways. Write a 'Kinematic Crash Formulation' mathematically proving the logic in `crash_check.cpp` that compares motor output against physical IMU acceleration to detect if the chassis is flipped. Write an 'EKF Variance and AFS Analysis' detailing how `ekf_check.cpp` monitors spatial drift, and how the Advanced Failsafe System (`afs_rover.cpp`) executes terminal flight-termination actions (like dropping physical relays) if the primary CPU hangs. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### EKF Trust Variance Limits (ekf_check.cpp)', '### Flipped Chassis Acceleration Math (crash_check.cpp)', and '### Advanced Failsafe Termination Logic (afs_rover.cpp)'."
+  },
+
+  "Chapter_004_Pre_Arm_Lockouts_and_Spatial_Geo_Fencing.md": {
+    "chapter_title": "Pre-Arm Hardware Lockouts and Spatial Geo-Fencing",
+    "files": [
+      "Rover/AP_Arming.cpp",
+      "Rover/AP_Arming.h",
+      "Rover/fence.cpp"
+    ],
+    "research_prompt": "Forensically analyze the pre-flight gates and geographic containment vectors. Write a 'Pre-Arm Matrix Formulation' detailing the exact C++ boolean checks and threshold variables evaluated in `AP_Arming.cpp` (GPS HDOP, IMU temps) before permitting motor actuation. Write a 'Geo-Fence Boundary Analysis' mathematically explaining the Ray-Casting or radius algorithms used in `fence.cpp` to continuously verify the rover's EKF position against user-defined containment polygons, triggering a hard brake upon breach. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Subsystem Health Bitmasks (AP_Arming.cpp)', '### Geographic Ray-Casting Math (fence.cpp)', and '### Perimeter Breach Brake Actuation (fence.cpp)'."
+  },
+
+  "Chapter_005_Base_Navigation_State_Machine_and_Manual_Modes.md": {
+    "chapter_title": "Base Navigation State Machine, Acro, and Manual Control",
+    "files": [
+      "Rover/mode.cpp",
+      "Rover/mode.h",
+      "Rover/mode_manual.cpp",
+      "Rover/mode_acro.cpp",
+      "Rover/mode_hold.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the abstract class architecture governing driving modes. Write a 'State Machine Polymorphism Formulation' detailing how `mode.cpp` uses virtual C++ methods to enforce a standard `update()` loop across all modes. Write an 'Acro and Hold Kinematic Analysis' extracting the exact math in `mode_acro.cpp` that uses the gyroscopes to hold a specific turn rate regardless of traction, compared to `mode_hold.cpp` which zeroes all matrices. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Virtual Mode Inheritance (mode.cpp)', '### Acro Gyro Rate Lock Math (mode_acro.cpp)', and '### Absolute Zero Thrust Forcing (mode_hold.cpp)'."
+  },
+
+  "Chapter_006_Autonomous_Pathing_and_Waypoint_Command_Execution.md": {
+    "chapter_title": "Autonomous Pathing, Guided Navigation, and Mission Commands",
+    "files": [
+      "Rover/mode_auto.cpp",
+      "Rover/mode_guided.cpp",
+      "Rover/commands.cpp"
+    ],
+    "research_prompt": "Extract the mathematical translation of GPS waypoints into target vectors. Write a 'Waypoint Vector Formulation' detailing the exact L1/Pure Pursuit math used in `mode_auto.cpp` to calculate the required heading to reach a target coordinate. Write a 'Mission Command Execution Analysis' documenting how `commands.cpp` parses MAVLink mission items (e.g., delays, implement triggers, velocity changes) and feeds them into the active `mode_guided.cpp` trajectory matrices. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Target Heading Trigonometry (mode_auto.cpp)', '### MAVLink Mission Item Parsing (commands.cpp)', and '### Off-Board Guided Velocity Vectors (mode_guided.cpp)'."
+  },
+
+  "Chapter_007_Return_to_Launch_RTL_and_Rally_Point_Math.md": {
+    "chapter_title": "Return-to-Launch (RTL), Smart RTL, and Rally Point Logic",
+    "files": [
+      "Rover/mode_rtl.cpp",
+      "Rover/mode_smart_rtl.cpp",
+      "Rover/AP_Rally.cpp",
+      "Rover/AP_Rally.h"
+    ],
+    "research_prompt": "Reverse-engineer the emergency homing algorithms. Write a 'Smart RTL Path Retraction Formulation' detailing how `mode_smart_rtl.cpp` records a breadcrumb trail of spatial nodes during outbound flight and mathematically reverses them to navigate home around obstacles. Write a 'Rally Point Distance Analysis' explaining the Haversine distance math in `AP_Rally.cpp` used to determine if the rover should return to its launch point or a closer pre-defined emergency coordinate. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Breadcrumb Node Reversal Math (mode_smart_rtl.cpp)', '### Haversine Rally Point Arbitration (AP_Rally.cpp)', and '### Standard RTL Direct Vectoring (mode_rtl.cpp)'."
+  },
+
+  "Chapter_008_Advanced_Targeting_and_Kinematic_Following.md": {
+    "chapter_title": "Advanced Targeting, Human-Following, and Simple Mode",
+    "files": [
+      "Rover/mode_follow.cpp",
+      "Rover/mode_steering.cpp",
+      "Rover/mode_loiter.cpp",
+      "Rover/mode_simple.cpp"
+    ],
+    "research_prompt": "Forensically extract the math for moving targets and frame-of-reference transformations. Write a 'Lead-Angle Intercept Formulation' detailing the vector calculus in `mode_follow.cpp` used to project the future coordinate of a moving MAVLink target. Write a 'Simple Mode Frame Rotation Analysis' explaining the matrix rotation in `mode_simple.cpp` that decouples the RC stick inputs from the rover's physical nose direction, allowing 'stick forward' to always mean 'North' based on the EKF compass. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Target Velocity Projection Algebra (mode_follow.cpp)', '### Frame of Reference Matrix Rotation (mode_simple.cpp)', and '### Loiter Radius Maintenance (mode_loiter.cpp)'."
+  },
+
+  "Chapter_009_Steering_Kinematics_and_Cruise_Learning.md": {
+    "chapter_title": "Steering PID Kinematics, Cruise Speed Learning, and Actuator Testing",
+    "files": [
+      "Rover/Steering.cpp",
+      "Rover/cruise_learn.cpp",
+      "Rover/motor_test.cpp"
+    ],
+    "research_prompt": "Analyze the core mathematical translation of navigation targets into physical turning forces. Write a 'Yaw Rate PID Formulation' detailing the exact Proportional-Integral-Derivative math used in `Steering.cpp` to calculate the required differential wheel speed to achieve a target turn rate. Write a 'Cruise Throttle Estimation Analysis' explaining how `cruise_learn.cpp` monitors motor output versus physical GPS speed to dynamically adjust the base throttle required to maintain a set velocity across changing terrain. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Yaw Rate Feedforward & PID Integration (Steering.cpp)', '### Dynamic Base Throttle Learning (cruise_learn.cpp)', and '### Mixer Bypass Actuation (motor_test.cpp)'."
+  },
+
+  "Chapter_010_Telemetry_Pipelines_and_Deterministic_Logging.md": {
+    "chapter_title": "MAVLink Telemetry Pipelines and High-Speed Deterministic Logging",
+    "files": [
+      "Rover/GCS_Mavlink.cpp",
+      "Rover/GCS_Mavlink.h",
+      "Rover/GCS_Rover.cpp",
+      "Rover/GCS_Rover.h",
+      "Rover/Log.cpp"
+    ],
+    "research_prompt": "Extract the specific communication architectures handling ground station telemetry and blackbox logging. Write a 'Telemetry Stream Arbitration Formulation' detailing how `GCS_Mavlink.cpp` packs specific data (like GPS, Battery, and Attitude) into binary payloads and schedules them across specific UART channels based on baud rate constraints. Write a 'Deterministic Block Writing Analysis' documenting the C++ bitmask priorities in `Log.cpp` that dump real-time EKF states to the SD card at 400Hz using circular buffers to prevent RTOS stalling. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### MAVLink Payload Struct Packing (GCS_Mavlink.cpp)', '### UART Bandwidth Scheduling (GCS_Rover.cpp)', and '### Non-Blocking SD Card Flushing (Log.cpp)'."
+  },
+
+  "Chapter_011_EEPROM_Parameter_Mapping_and_Memory_Retrieval.md": {
+    "chapter_title": "EEPROM Parameter Mapping, Default Trees, and Memory Retrieval",
+    "files": [
+      "Rover/Parameters.cpp",
+      "Rover/Parameters.h"
+    ],
+    "research_prompt": "Reverse-engineer the persistent configuration storage architecture. Write a 'Parameter Memory Map Formulation' detailing exactly how `Parameters.cpp` maps human-readable variables (like `ATC_STR_RAT_P`) directly to static memory addresses in the STM32's emulated EEPROM or FRAM. Write a 'Pointer Bootloader Analysis' explaining how the C++ class structure loads these float and integer values into RAM upon boot, applying factory default fallbacks if the memory sector is corrupted. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Parameter Name to Hex Address Mapping (Parameters.cpp)', '### Boot-Time Flash Memory Reads (Parameters.cpp)', and '### Default Value Overrides (Parameters.h)'."
+  },
+
+  "Chapter_012_Non_Standard_Kinematics_Sailboats_and_Balance_Bots.md": {
+    "chapter_title": "Non-Standard Kinematics: Sailboat Wind Vectors and Inverted Pendulums",
+    "files": [
+      "Rover/sailboat.cpp",
+      "Rover/sailboat.h",
+      "Rover/balance_bot.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the specialty physical models maintained within the Rover codebase. Write an 'Apparent Wind Tack Formulation' detailing the trigonometry in `sailboat.cpp` used to calculate apparent wind angle versus true wind angle, computing the exact wing-sail servo positions required to tack upwind. Write an 'Inverted Pendulum Analysis' explaining the high-speed pitch-axis PID loop in `balance_bot.cpp` used to calculate the instantaneous forward/reverse wheel acceleration required to keep a two-wheeled chassis standing upright against gravity. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### True vs Apparent Wind Trigonometry (sailboat.cpp)', '### Upwind Tacking Matrix Logic (sailboat.cpp)', and '### Pitch Acceleration PID Output (balance_bot.cpp)'."
+  },
+
+  "Chapter_013_ChibiOS_HAL_Instantiation_and_System_Core.md": {
+    "chapter_title": "ChibiOS HAL Instantiation, Memory Maps, and System Core",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/HAL_ChibiOS_Class.cpp",
+      "libraries/AP_HAL_ChibiOS/HAL_ChibiOS_Class.h",
+      "libraries/AP_HAL_ChibiOS/system.cpp",
+      "libraries/AP_HAL_ChibiOS/AP_HAL_ChibiOS.h",
+      "libraries/AP_HAL_ChibiOS/AP_HAL_ChibiOS_Namespace.h",
+      "libraries/AP_HAL_ChibiOS/AP_HAL_ChibiOS_Private.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the ArduPilot to ChibiOS bridging architecture. Write a 'HAL Boot Sequence Formulation' detailing exactly how `system.cpp` and `HAL_ChibiOS_Class.cpp` wrest control from the STM32 hardware bootloader, initialize the clock trees, and instantiate the virtual HAL interfaces. Write a 'Memory and Namespace Analysis' extracting the C++ pointer logic that maps generic ArduPilot functions (like `hal.scheduler->delay()`) directly to the underlying ChibiOS RTOS system calls. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### STM32 Clock Tree Initialization (system.cpp)', '### Virtual HAL Pointer Assignments (HAL_ChibiOS_Class.cpp)', and '### Bare-Metal Namespace Bindings (AP_HAL_ChibiOS.h)'."
+  },
+
+  "Chapter_014_RTOS_Scheduler_Semaphores_and_Thread_Arbitration.md": {
+    "chapter_title": "RTOS Scheduler, Mutex Semaphores, and Thread Arbitration",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/Scheduler.cpp",
+      "libraries/AP_HAL_ChibiOS/Scheduler.h",
+      "libraries/AP_HAL_ChibiOS/Semaphores.cpp",
+      "libraries/AP_HAL_ChibiOS/Semaphores.h",
+      "libraries/AP_HAL_ChibiOS/EventSource.cpp",
+      "libraries/AP_HAL_ChibiOS/EventSource.h"
+    ],
+    "research_prompt": "Reverse-engineer the RTOS timing and multi-threading safety constraints. Write a 'Microsecond Scheduling Formulation' detailing how `Scheduler.cpp` utilizes the STM32 hardware timers to enforce the strict 400Hz execution loop without drift. Write a 'Concurrency and Deadlock Prevention Analysis' mathematically proving how `Semaphores.cpp` and `EventSource.cpp` utilize hardware mutexes to prevent memory corruption when the high-priority IMU thread and the low-priority SD Card logging thread attempt to access the same I2C bus simultaneously. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Hardware Timer Interrupts (Scheduler.cpp)', '### Priority Inversion Prevention (Semaphores.cpp)', and '### Thread Wakeup Event Flags (EventSource.cpp)'."
+  },
+
+  "Chapter_015_Direct_Memory_Access_DMA_and_Bus_Arbitration.md": {
+    "chapter_title": "Direct Memory Access (DMA) and Shared Bus Arbitration",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/shared_dma.cpp",
+      "libraries/AP_HAL_ChibiOS/shared_dma.h",
+      "libraries/AP_HAL_ChibiOS/Device.cpp",
+      "libraries/AP_HAL_ChibiOS/Device.h"
+    ],
+    "research_prompt": "Extract the zero-CPU-cost data transfer architecture. Write a 'DMA Stream Allocation Formulation' detailing the exact logic in `shared_dma.cpp` that dynamically multiplexes the limited hardware DMA channels across multiple competing sensors to prevent data bottlenecks. Write a 'Device Abstraction Analysis' explaining how `Device.cpp` provides the base C++ virtual methods for taking bus semaphores and validating physical device IDs (WhoAmI registers) before allowing a DMA transfer to initiate. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### DMA Channel Multiplexing Logic (shared_dma.cpp)', '### Bus Semaphore Locking (Device.cpp)', and '### Hardware Device ID Validation (Device.cpp)'."
+  },
+
+  "Chapter_016_High_Speed_Sensor_Buses_SPI_QSPI_and_I2C.md": {
+    "chapter_title": "High-Speed Sensor Buses: SPI, QSPI, and I2C Drivers",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/SPIDevice.cpp",
+      "libraries/AP_HAL_ChibiOS/SPIDevice.h",
+      "libraries/AP_HAL_ChibiOS/QSPIDevice.cpp",
+      "libraries/AP_HAL_ChibiOS/QSPIDevice.h",
+      "libraries/AP_HAL_ChibiOS/I2CDevice.cpp",
+      "libraries/AP_HAL_ChibiOS/I2CDevice.h"
+    ],
+    "research_prompt": "Forensically analyze the C++ drivers interacting with physical sensor hardware. Write a 'Non-Blocking SPI Formulation' detailing how `SPIDevice.cpp` and `QSPIDevice.cpp` utilize DMA burst transfers to read 16-bit IMU registers directly into RAM while the CPU calculates navigation matrices. Write an 'I2C Bus Lockup Recovery Analysis' extracting the precise hardware interrupt logic used in `I2CDevice.cpp` to detect a stalled SCL clock line and physically reset the STM32 I2C peripheral without crashing the flight controller. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### DMA Burst Transfer Pointers (SPIDevice.cpp)', '### Quad-SPI Memory Mapping (QSPIDevice.cpp)', and '### I2C Dead-Short Recovery Execution (I2CDevice.cpp)'."
+  },
+
+  "Chapter_017_UART_Serial_Drivers_and_Ring_Buffer_Math.md": {
+    "chapter_title": "UART Serial Drivers, Ring Buffers, and Standard I/O",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/UARTDriver.cpp",
+      "libraries/AP_HAL_ChibiOS/UARTDriver.h",
+      "libraries/AP_HAL_ChibiOS/stdio.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the asynchronous serial communication architecture. Write a 'UART Ring Buffer Formulation' detailing the exact C++ pointer arithmetic used in `UARTDriver.cpp` to safely push and pop bytes from circular memory buffers at 921,600 baud without causing a buffer overrun. Write a 'Standard I/O Redirection Analysis' explaining how `stdio.cpp` hijacks standard C functions like `printf` and routes them directly into the USB/Serial DMA streams for ground station debugging. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Circular Buffer Head/Tail Math (UARTDriver.cpp)', '### Hardware UART DMA Streams (UARTDriver.cpp)', and '### Printf Serial Redirection (stdio.cpp)'."
+  },
+
+  "Chapter_018_Hardware_PWM_Bi_Directional_DShot_and_Actuation.md": {
+    "chapter_title": "Hardware PWM, Bi-Directional DShot, and Physical Actuation",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/RCOutput.cpp",
+      "libraries/AP_HAL_ChibiOS/RCOutput.h",
+      "libraries/AP_HAL_ChibiOS/RCOutput_bdshot.cpp",
+      "libraries/AP_HAL_ChibiOS/RCOutput_serial.cpp"
+    ],
+    "research_prompt": "Extract the mathematical generation of physical motor signals. Write a 'Hardware Timer PWM Formulation' detailing exactly how `RCOutput.cpp` configures the STM32 Advanced Timers to generate microsecond-perfect square waves. Write a 'Bi-Directional DShot Analysis' mathematically proving how `RCOutput_bdshot.cpp` multiplexes a single signal wire to blast digital thrust commands to an ESC, and then immediately flips the GPIO pin to an input state to catch the returning eRPM telemetry packet in the span of a few microseconds. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Advanced Timer Register Math (RCOutput.cpp)', '### Digital DShot Frame Generation (RCOutput_bdshot.cpp)', and '### eRPM Telemetry Decoding (RCOutput_bdshot.cpp)'."
+  },
+
+  "Chapter_019_RCInput_Soft_Signaling_and_Pulse_Decoding.md": {
+    "chapter_title": "RC Input Capture, Soft-Signaling, and Protocol Decoding",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/RCInput.cpp",
+      "libraries/AP_HAL_ChibiOS/RCInput.h",
+      "libraries/AP_HAL_ChibiOS/SoftSigReader.cpp",
+      "libraries/AP_HAL_ChibiOS/SoftSigReader.h",
+      "libraries/AP_HAL_ChibiOS/SoftSigReaderInt.cpp",
+      "libraries/AP_HAL_ChibiOS/SoftSigReaderInt.h"
+    ],
+    "research_prompt": "Reverse-engineer the decoding of complex radio receiver protocols. Write a 'Hardware Input Capture Formulation' detailing how `RCInput.cpp` utilizes STM32 hardware timers to measure the exact microsecond width of incoming SBUS or CRSF pulses. Write a 'Soft-Signature Decoding Analysis' explaining the state machines in `SoftSigReader.cpp` and `SoftSigReaderInt.cpp` used to mathematically reconstruct corrupted bitstreams from inexpensive RC receivers using EXTI pin toggling. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Timer Input Capture Units (RCInput.cpp)', '### Protocol State Machine Logic (SoftSigReader.cpp)', and '### Interrupt-Driven Bitstream Reconstruction (SoftSigReaderInt.cpp)'."
+  },
+
+  "Chapter_020_CAN_Bus_Arbitration_and_Flexible_Data_Rate.md": {
+    "chapter_title": "Industrial CAN Bus Arbitration and Flexible Data-Rate (CAN FD)",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/CanIface.cpp",
+      "libraries/AP_HAL_ChibiOS/CANIface.h",
+      "libraries/AP_HAL_ChibiOS/CANFDIface.cpp",
+      "libraries/AP_HAL_ChibiOS/CANFDIface.h",
+      "libraries/AP_HAL_ChibiOS/bxcan.hpp"
+    ],
+    "research_prompt": "Forensically analyze the bare-metal architecture for DroneCAN/UAVCAN industrial peripherals. Write a 'Hardware Mailbox Arbitration Formulation' detailing the exact logic in `bxcan.hpp` and `CanIface.cpp` that loads outgoing CAN frames into the STM32's hardware transmit mailboxes based on message priority (e.g., motor commands preempting battery status). Write a 'CAN FD Bandwidth Analysis' explaining how `CANFDIface.cpp` mathematically handles the bit-rate switching required to push 64-byte payloads at 8Mbps for modern smart ESCs. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Priority Mailbox Loading Logic (bxcan.hpp)', '### Standard CAN Arbitration (CanIface.cpp)', and '### CAN FD Bit-Rate Switching (CANFDIface.cpp)'."
+  },
+
+  "Chapter_021_Persistent_Storage_EEPROM_Emulation_and_FATFS.md": {
+    "chapter_title": "Persistent Storage, EEPROM Emulation, and SD Card FATFS",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/Storage.cpp",
+      "libraries/AP_HAL_ChibiOS/Storage.h",
+      "libraries/AP_HAL_ChibiOS/sdcard.cpp",
+      "libraries/AP_HAL_ChibiOS/sdcard.h",
+      "libraries/AP_HAL_ChibiOS/Flash.h"
+    ],
+    "research_prompt": "Extract the low-level memory writing protocols. Write a 'Flash Wear-Leveling Formulation' detailing exactly how `Storage.cpp` and `Flash.h` safely emulate standard EEPROM within the STM32's high-density flash sectors without burning out the memory via excessive write cycles. Write an 'SD Card Block I/O Analysis' explaining the DMA SPI transfers in `sdcard.cpp` used to write massive 400Hz DataFlash `.BIN` logs to the physical MicroSD card without blocking the RTOS. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Flash Sector Erase and Write Math (Storage.cpp)', '### Wear-Leveling Pointers (Flash.h)', and '### FATFS Block Writing over SPI/SDIO (sdcard.cpp)'."
+  },
+
+  "Chapter_022_GPIO_Analog_ADC_and_Digital_Signal_Processing.md": {
+    "chapter_title": "GPIO EXTI, Analog ADC Polling, and DSP Utility Hooks",
+    "files": [
+      "libraries/AP_HAL_ChibiOS/GPIO.cpp",
+      "libraries/AP_HAL_ChibiOS/GPIO.h",
+      "libraries/AP_HAL_ChibiOS/AnalogIn.cpp",
+      "libraries/AP_HAL_ChibiOS/AnalogIn.h",
+      "libraries/AP_HAL_ChibiOS/DSP.cpp",
+      "libraries/AP_HAL_ChibiOS/DSP.h",
+      "libraries/AP_HAL_ChibiOS/Util.cpp",
+      "libraries/AP_HAL_ChibiOS/Util.h"
+    ],
+    "research_prompt": "Reverse-engineer the direct hardware pin manipulation and voltage polling. Write a 'Continuous ADC Polling Formulation' detailing how `AnalogIn.cpp` utilizes the STM32's internal Analog-to-Digital Converters (via DMA) to continuously monitor main battery voltage and current shunt resistance without CPU intervention. Write an 'EXTI and DSP Analysis' extracting the C++ logic in `GPIO.cpp` for triggering immediate hardware interrupts, and analyze how `DSP.cpp` provides hardware-accelerated math hooks (like FFTs) used to filter mechanical vibration. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### DMA-Driven ADC Ring Buffers (AnalogIn.cpp)', '### EXTI Interrupt Pin Toggling (GPIO.cpp)', and '### Hardware-Accelerated Math Hooks (DSP.cpp)'."
+  },
+
+  "Chapter_023_Linux_POSIX_Scheduling_and_Real_Time_Threads.md": {
+    "chapter_title": "Linux POSIX Scheduling, Core Instantiation, and Real-Time Threads",
+    "files": [
+      "libraries/AP_HAL_Linux/HAL_Linux_Class.cpp",
+      "libraries/AP_HAL_Linux/HAL_Linux_Class.h",
+      "libraries/AP_HAL_Linux/system.cpp",
+      "libraries/AP_HAL_Linux/AP_HAL_Linux.h",
+      "libraries/AP_HAL_Linux/Scheduler.cpp",
+      "libraries/AP_HAL_Linux/Scheduler.h",
+      "libraries/AP_HAL_Linux/Thread.cpp",
+      "libraries/AP_HAL_Linux/Thread.h",
+      "libraries/AP_HAL_Linux/Semaphores.cpp",
+      "libraries/AP_HAL_Linux/Semaphores.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Linux Real-Time architecture. Write a 'POSIX SCHED_FIFO Formulation' detailing exactly how `Scheduler.cpp` and `Thread.cpp` bypass the standard Linux completely-fair scheduler (CFS) to elevate the ArduPilot `fast_loop` to real-time priority, preventing OS background tasks from crashing the heavy vehicle. Write a 'Mutex and Memory Analysis' explaining how `Semaphores.cpp` translates ArduPilot locks into `pthread_mutex_t` calls, and how `system.cpp` traps fatal Linux signals (SIGSEGV, SIGBUS) to dump memory before the OS kills the process. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Real-Time POSIX Thread Elevation (Thread.cpp)', '### Mutex Locking and Priority Inversion (Semaphores.cpp)', and '### HAL Linux Virtual Method Bindings (HAL_Linux_Class.cpp)'."
+  },
+
+  "Chapter_024_Asynchronous_IO_Multiplexing_and_Epoll.md": {
+    "chapter_title": "Asynchronous I/O Multiplexing, Event Polling, and CPU Affinity",
+    "files": [
+      "libraries/AP_HAL_Linux/Poller.cpp",
+      "libraries/AP_HAL_Linux/Poller.h",
+      "libraries/AP_HAL_Linux/PollerThread.cpp",
+      "libraries/AP_HAL_Linux/PollerThread.h",
+      "libraries/AP_HAL_Linux/Util.cpp",
+      "libraries/AP_HAL_Linux/Util.h",
+      "libraries/AP_HAL_Linux/Util_RPI.cpp",
+      "libraries/AP_HAL_Linux/Util_RPI.h"
+    ],
+    "research_prompt": "Reverse-engineer the Linux high-speed non-blocking I/O pipeline. Write a 'Syscall Multiplexing Formulation' detailing how `Poller.cpp` wraps the Linux `epoll()` system call to monitor dozens of file descriptors (UARTs, Sockets, I2C buses) simultaneously without wasting CPU cycles in blocking loops. Write a 'Raspberry Pi CPU Affinity Analysis' extracting the C++ logic in `Util_RPI.cpp` and `Util.cpp` that physically locks specific ArduPilot threads to isolated CPU cores to prevent cache-misses and context-switching latency. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Linux epoll() File Descriptor Arrays (Poller.cpp)', '### Event-Driven Thread Wakeups (PollerThread.cpp)', and '### RPi CPU Core Isolation Math (Util_RPI.cpp)'."
+  },
+
+  "Chapter_025_Memory_Mapped_GPIO_and_Sysfs_Actuation.md": {
+    "chapter_title": "Memory-Mapped GPIO (/dev/mem), Sysfs, and Board Variants",
+    "files": [
+      "libraries/AP_HAL_Linux/GPIO.cpp",
+      "libraries/AP_HAL_Linux/GPIO.h",
+      "libraries/AP_HAL_Linux/GPIO_Sysfs.cpp",
+      "libraries/AP_HAL_Linux/GPIO_Sysfs.h",
+      "libraries/AP_HAL_Linux/GPIO_RPI.cpp",
+      "libraries/AP_HAL_Linux/GPIO_RPI.h",
+      "libraries/AP_HAL_Linux/GPIO_Navio.cpp",
+      "libraries/AP_HAL_Linux/GPIO_Navio.h",
+      "libraries/AP_HAL_Linux/GPIO_Navio2.cpp",
+      "libraries/AP_HAL_Linux/GPIO_Navio2.h",
+      "libraries/AP_HAL_Linux/GPIO_BBB.cpp",
+      "libraries/AP_HAL_Linux/GPIO_BBB.h",
+      "libraries/AP_HAL_Linux/GPIO_Bebop.cpp",
+      "libraries/AP_HAL_Linux/GPIO_Bebop.h",
+      "libraries/AP_HAL_Linux/GPIO_Disco.cpp",
+      "libraries/AP_HAL_Linux/GPIO_Disco.h",
+      "libraries/AP_HAL_Linux/GPIO_Aero.cpp",
+      "libraries/AP_HAL_Linux/GPIO_Aero.h",
+      "libraries/AP_HAL_Linux/GPIO_Edge.cpp",
+      "libraries/AP_HAL_Linux/GPIO_Edge.h"
+    ],
+    "research_prompt": "Extract the direct hardware manipulation techniques bypassing the Linux kernel. Write a 'Memory Mapped High-Speed GPIO Formulation' detailing exactly how `GPIO_RPI.cpp` and `GPIO_BBB.cpp` open `/dev/mem` using `mmap()` to directly calculate and flip raw CPU registers, allowing bit-banging at megahertz speeds rather than relying on slow OS calls. Write a 'Sysfs Fallback Analysis' explaining how `GPIO_Sysfs.cpp` handles less time-critical pin toggling (like LEDs or relays) by writing ASCII '1' or '0' directly into the Linux virtual file system (`/sys/class/gpio`). CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Direct Register Pointer Algebra (GPIO_RPI.cpp)', '### Virtual File System Writes (GPIO_Sysfs.cpp)', and '### Target Board Base-Address Offsets (GPIO.cpp)'."
+  },
+
+  "Chapter_026_Linux_Hardware_Buses_I2C_SPI_and_SocketCAN.md": {
+    "chapter_title": "Linux Hardware Buses: I2C-Dev, SPI-Dev, and SocketCAN",
+    "files": [
+      "libraries/AP_HAL_Linux/I2CDevice.cpp",
+      "libraries/AP_HAL_Linux/I2CDevice.h",
+      "libraries/AP_HAL_Linux/SPIDevice.cpp",
+      "libraries/AP_HAL_Linux/SPIDevice.h",
+      "libraries/AP_HAL_Linux/CANSocketIface.cpp",
+      "libraries/AP_HAL_Linux/CANSocketIface.h"
+    ],
+    "research_prompt": "Forensically analyze the C++ drivers bridging ArduPilot to Linux kernel bus frameworks. Write an 'Ioctl Bus Transaction Formulation' detailing how `I2CDevice.cpp` and `SPIDevice.cpp` construct multi-byte payload structs and execute low-level `ioctl()` system calls to interface with `/dev/i2c-x` and `/dev/spidevX.Y`. Write a 'SocketCAN Translation Analysis' explaining how `CANSocketIface.cpp` opens standard Linux network sockets (`PF_CAN`) to send and receive raw DroneCAN motor telemetry directly through the Linux networking stack. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Linux Ioctl Structure Packing (I2CDevice.cpp)', '### High-Speed SPI Dev IO (SPIDevice.cpp)', and '### PF_CAN Socket Bindings (CANSocketIface.cpp)'."
+  },
+
+  "Chapter_027_Termios_UART_TCP_UDP_and_Network_Telemetry.md": {
+    "chapter_title": "Termios UARTs, TCP/UDP Sockets, and IP Telemetry Bridges",
+    "files": [
+      "libraries/AP_HAL_Linux/SerialDevice.h",
+      "libraries/AP_HAL_Linux/UARTDevice.cpp",
+      "libraries/AP_HAL_Linux/UARTDevice.h",
+      "libraries/AP_HAL_Linux/UARTDriver.cpp",
+      "libraries/AP_HAL_Linux/UARTDriver.h",
+      "libraries/AP_HAL_Linux/SPIUARTDriver.cpp",
+      "libraries/AP_HAL_Linux/SPIUARTDriver.h",
+      "libraries/AP_HAL_Linux/TCPServerDevice.cpp",
+      "libraries/AP_HAL_Linux/TCPServerDevice.h",
+      "libraries/AP_HAL_Linux/UDPDevice.cpp",
+      "libraries/AP_HAL_Linux/UDPDevice.h",
+      "libraries/AP_HAL_Linux/ConsoleDevice.cpp",
+      "libraries/AP_HAL_Linux/ConsoleDevice.h"
+    ],
+    "research_prompt": "Reverse-engineer the asynchronous serial and IP network pipelines used for off-board companion computers. Write a 'Termios Serial Formulation' detailing the exact flag clearing in `UARTDevice.cpp` using the POSIX `termios` struct to force `/dev/ttyAMA0` into raw, non-canonical mode, preventing Linux from injecting random carriage returns into binary GPS streams. Write a 'Network Socket Bridging Analysis' documenting how `UDPDevice.cpp` and `TCPServerDevice.cpp` instantiate standard POSIX sockets to act as virtual UARTs, allowing Ground Stations to stream MAVLink over LTE or Wi-Fi. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### POSIX Termios Raw Configuration (UARTDevice.cpp)', '### UDP Datagram Packing (UDPDevice.cpp)', and '### SPI-to-UART Bridge Buffers (SPIUARTDriver.cpp)'."
+  },
+
+  "Chapter_028_PRU_Coprocessors_and_RC_Input_Decoding.md": {
+    "chapter_title": "PRU/Zynq Coprocessors, UDP RC Input, and Signal Decoding",
+    "files": [
+      "libraries/AP_HAL_Linux/RCInput.cpp",
+      "libraries/AP_HAL_Linux/RCInput.h",
+      "libraries/AP_HAL_Linux/RCInput_Multi.cpp",
+      "libraries/AP_HAL_Linux/RCInput_Multi.h",
+      "libraries/AP_HAL_Linux/RCInput_RPI.cpp",
+      "libraries/AP_HAL_Linux/RCInput_RPI.h",
+      "libraries/AP_HAL_Linux/RCInput_Navio2.cpp",
+      "libraries/AP_HAL_Linux/RCInput_Navio2.h",
+      "libraries/AP_HAL_Linux/RCInput_PRU.cpp",
+      "libraries/AP_HAL_Linux/RCInput_PRU.h",
+      "libraries/AP_HAL_Linux/RCInput_AioPRU.cpp",
+      "libraries/AP_HAL_Linux/RCInput_AioPRU.h",
+      "libraries/AP_HAL_Linux/RCInput_UART.cpp",
+      "libraries/AP_HAL_Linux/RCInput_UART.h",
+      "libraries/AP_HAL_Linux/RCInput_UDP.cpp",
+      "libraries/AP_HAL_Linux/RCInput_UDP.h",
+      "libraries/AP_HAL_Linux/RCInput_UDP_Protocol.h",
+      "libraries/AP_HAL_Linux/RCInput_RCProtocol.cpp",
+      "libraries/AP_HAL_Linux/RCInput_RCProtocol.h",
+      "libraries/AP_HAL_Linux/RCInput_SoloLink.cpp",
+      "libraries/AP_HAL_Linux/RCInput_SoloLink.h",
+      "libraries/AP_HAL_Linux/RCInput_ZYNQ.cpp",
+      "libraries/AP_HAL_Linux/RCInput_ZYNQ.h",
+      "libraries/AP_HAL_Linux/sbus.cpp",
+      "libraries/AP_HAL_Linux/sbus.h"
+    ],
+    "research_prompt": "Extract the methods used to capture microsecond-accurate RC pulses on a preemptive OS. Write a 'Coprocessor Ring Buffer Formulation' detailing exactly how `RCInput_PRU.cpp` and `RCInput_ZYNQ.cpp` bypass the Linux CPU entirely by reading shared memory populated by onboard FPGA/PRU microcontrollers that capture the physical PWM pulses. Write a 'Direct UART Protocol Parsing Analysis' explaining the math in `sbus.cpp` and `RCInput_UART.cpp` used to decode 100,000 baud inverted serial bitstreams directly into standard 11-bit RC channel values. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### BeagleBone PRU Shared Memory Reads (RCInput_PRU.cpp)', '### SBUS Shift/Mask Logic (sbus.cpp)', and '### UDP Virtual Stick Ingestion (RCInput_UDP.cpp)'."
+  },
+
+  "Chapter_029_Sysfs_PWM_PCA9685_and_Hardware_Motor_Output.md": {
+    "chapter_title": "Hardware Motor Output, I2C PWM ICs, and Sysfs Duty Cycles",
+    "files": [
+      "libraries/AP_HAL_Linux/RCOutput_Sysfs.cpp",
+      "libraries/AP_HAL_Linux/RCOutput_Sysfs.h",
+      "libraries/AP_HAL_Linux/PWM_Sysfs.cpp",
+      "libraries/AP_HAL_Linux/PWM_Sysfs.h",
+      "libraries/AP_HAL_Linux/RCOutput_PCA9685.cpp",
+      "libraries/AP_HAL_Linux/RCOutput_PCA9685.h",
+      "libraries/AP_HAL_Linux/RCOutput_PRU.cpp",
+      "libraries/AP_HAL_Linux/RCOutput_PRU.h",
+      "libraries/AP_HAL_Linux/RCOutput_AioPRU.cpp",
+      "libraries/AP_HAL_Linux/RCOutput_AioPRU.h",
+      "libraries/AP_HAL_Linux/RCOutput_Bebop.cpp",
+      "libraries/AP_HAL_Linux/RCOutput_Bebop.h",
+      "libraries/AP_HAL_Linux/RCOutput_Disco.cpp",
+      "libraries/AP_HAL_Linux/RCOutput_Disco.h",
+      "libraries/AP_HAL_Linux/RCOutput_AeroIO.cpp",
+      "libraries/AP_HAL_Linux/RCOutput_AeroIO.h",
+      "libraries/AP_HAL_Linux/RCOutput_ZYNQ.cpp",
+      "libraries/AP_HAL_Linux/RCOutput_ZYNQ.h"
+    ],
+    "research_prompt": "Reverse-engineer the generation of physical PWM square waves from user-space Linux. Write an 'I2C PWM Generator Formulation' detailing exactly how `RCOutput_PCA9685.cpp` calculates raw 12-bit ON/OFF timer registers and blasts them over the I2C bus to offload motor timing from the main CPU. Write a 'Sysfs Hardware Timer Analysis' explaining how `PWM_Sysfs.cpp` writes period and duty-cycle nanoseconds as ASCII strings directly to `/sys/class/pwm` to control hardware-backed ESC signals. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### PCA9685 Register Math (RCOutput_PCA9685.cpp)', '### PRU Shared Memory PWM Output (RCOutput_PRU.cpp)', and '### Linux Sysfs Duty Cycle Manipulation (PWM_Sysfs.cpp)'."
+  },
+
+  "Chapter_030_Industrial_IO_ADC_and_Voltage_Polling.md": {
+    "chapter_title": "Linux Industrial I/O (IIO), ADC Subsystems, and I2C Voltage Polling",
+    "files": [
+      "libraries/AP_HAL_Linux/AnalogIn_IIO.cpp",
+      "libraries/AP_HAL_Linux/AnalogIn_IIO.h",
+      "libraries/AP_HAL_Linux/AnalogIn_ADS1115.cpp",
+      "libraries/AP_HAL_Linux/AnalogIn_ADS1115.h",
+      "libraries/AP_HAL_Linux/AnalogIn_Navio2.cpp",
+      "libraries/AP_HAL_Linux/AnalogIn_Navio2.h"
+    ],
+    "research_prompt": "Extract the voltage telemetry pipelines for companion computers. Write an 'Industrial I/O (IIO) Framework Formulation' detailing how `AnalogIn_IIO.cpp` reads raw analog voltage values directly from the `/sys/bus/iio/devices/` filesystem exposed by the Linux kernel. Write an 'External I2C ADC Analysis' mathematically explaining how `AnalogIn_ADS1115.cpp` requests samples, parses the 16-bit register replies, and scales them based on programmable gain amplifiers (PGA) to determine exact battery voltage and current consumption. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Linux IIO File Parsing (AnalogIn_IIO.cpp)', '### ADS1115 I2C Gain Scaling Algebra (AnalogIn_ADS1115.cpp)', and '### Navio2 Specific ADC Routing (AnalogIn_Navio2.cpp)'."
+  },
+
+  "Chapter_031_Optical_Flow_V4L2_Cameras_and_Visual_Odometry.md": {
+    "chapter_title": "Optical Flow Sensors, V4L2 Cameras, and Visual Odometry",
+    "files": [
+      "libraries/AP_HAL_Linux/CameraSensor.cpp",
+      "libraries/AP_HAL_Linux/CameraSensor.h",
+      "libraries/AP_HAL_Linux/CameraSensor_Mt9v117.cpp",
+      "libraries/AP_HAL_Linux/CameraSensor_Mt9v117.h",
+      "libraries/AP_HAL_Linux/CameraSensor_Mt9v117_Patches.cpp",
+      "libraries/AP_HAL_Linux/VideoIn.cpp",
+      "libraries/AP_HAL_Linux/VideoIn.h",
+      "libraries/AP_HAL_Linux/OpticalFlow_Onboard.cpp",
+      "libraries/AP_HAL_Linux/OpticalFlow_Onboard.h"
+    ],
+    "research_prompt": "Forensically analyze the ingestion of visual data on Linux flight controllers. Write a 'Video4Linux (V4L2) Extraction Formulation' detailing how `VideoIn.cpp` maps device memory (`mmap`) to capture raw YUV/RGB frames from physical camera hardware without CPU copy overhead. Write an 'Optical Flow Pixel Tracking Analysis' mathematically explaining how `OpticalFlow_Onboard.cpp` processes these frames sequentially to calculate block-matching planar vectors ($dx, dy$), converting pixel shift into physical metric velocity for the EKF. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### V4L2 Memory Mapping and Buffer Queues (VideoIn.cpp)', '### Pixel Shift Velocity Algebra (OpticalFlow_Onboard.cpp)', and '### I2C Camera Configuration Patches (CameraSensor_Mt9v117.cpp)'."
+  },
+
+  "Chapter_032_Linux_File_Storage_and_Sysfs_Acoustic_Feedback.md": {
+    "chapter_title": "Linux File System Storage (EEPROM Emulation), Sysfs, and Acoustic Feedback",
+    "files": [
+      "libraries/AP_HAL_Linux/Storage.cpp",
+      "libraries/AP_HAL_Linux/Storage.h",
+      "libraries/AP_HAL_Linux/ToneAlarm.cpp",
+      "libraries/AP_HAL_Linux/ToneAlarm.h"
+    ],
+    "research_prompt": "Extract how ArduPilot persists parameters and mission data on Linux boards and how acoustic feedback is driven from user space. Write a 'File-Backed Storage Formulation' detailing how `Storage.cpp` maps logical EEPROM addresses onto a backing file or raw block device, including alignment, buffering, and flush semantics so parameter writes remain safe across power loss. Write a 'Sysfs and Tone-Alarm Analysis' explaining how `ToneAlarm.cpp` uses Linux interfaces (e.g. PWM or character devices) to play arming/disarm tones and failsafe alarms without blocking the main loop. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Backing File Layout and Writes (Storage.cpp)', '### Read-Modify-Commit Semantics (Storage.cpp)', and '### Tone Generation and Sysfs/PWM Hooks (ToneAlarm.cpp)'."
+  },
+
+  "Chapter_033_HAL_Stub_Instantiation_and_Compiler_Contracts.md": {
+    "chapter_title": "HAL Stub Instantiation, Namespace Encapsulation, and Compiler Contracts",
+    "files": [
+      "libraries/AP_HAL_Empty/HAL_Empty_Class.cpp",
+      "libraries/AP_HAL_Empty/HAL_Empty_Class.h",
+      "libraries/AP_HAL_Empty/AP_HAL_Empty.h",
+      "libraries/AP_HAL_Empty/AP_HAL_Empty_Namespace.h",
+      "libraries/AP_HAL_Empty/AP_HAL_Empty_Private.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the ArduPilot Hardware Abstraction Layer stub architecture. Write an 'Interface Satisfaction Formulation' detailing exactly how `HAL_Empty_Class.cpp` defines the required abstract base classes to prevent C++ linker errors when porting to a new processor. Write a 'Namespace Encapsulation Analysis' explaining how `AP_HAL_Empty.h` and the private headers isolate these mock hardware pointers from the master `Rover.cpp` execution loop, ensuring the physics engine remains completely blind to the lack of actual silicon. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Virtual HAL Constructor Initialization (HAL_Empty_Class.cpp)', '### Abstract Base Class Satisfaction (AP_HAL_Empty.h)', and '### Private Pointer Encapsulation (AP_HAL_Empty_Private.h)'."
+  },
+
+  "Chapter_034_Mock_Schedulers_Thread_Yielding_and_Null_Semaphores.md": {
+    "chapter_title": "Mock Schedulers, Microsecond Yielding, and Null Semaphores",
+    "files": [
+      "libraries/AP_HAL_Empty/Scheduler.cpp",
+      "libraries/AP_HAL_Empty/Scheduler.h",
+      "libraries/AP_HAL_Empty/Semaphores.cpp",
+      "libraries/AP_HAL_Empty/Semaphores.h"
+    ],
+    "research_prompt": "Reverse-engineer the RTOS timing stubs required for software-in-the-loop or blank-board testing. Write a 'Mock Microsecond Clock Formulation' detailing how `Scheduler.cpp` fakes the 400Hz RTOS loop by returning incremented software counters instead of reading hardware timer registers. Write a 'Null Mutex Arbitration Analysis' mathematically explaining how `Semaphores.cpp` safely returns `true` for all thread-locking requests, preventing the multi-threaded EKF3 matrices from deadlocking when running in a single-threaded stub environment. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Software Time Counter Incrementation (Scheduler.cpp)', '### Mock Mutex Give/Take Logic (Semaphores.cpp)', and '### Delay and Yield Bypasses (Scheduler.cpp)'."
+  },
+
+  "Chapter_035_Stubbed_RC_Inputs_and_Zeroed_Sensor_Arrays.md": {
+    "chapter_title": "Stubbed RC Inputs, ADC Bypasses, and Zeroed Sensor Arrays",
+    "files": [
+      "libraries/AP_HAL_Empty/RCInput.cpp",
+      "libraries/AP_HAL_Empty/RCInput.h",
+      "libraries/AP_HAL_Empty/AnalogIn.cpp",
+      "libraries/AP_HAL_Empty/AnalogIn.h",
+      "libraries/AP_HAL_Empty/OpticalFlow.h"
+    ],
+    "research_prompt": "Extract the data starvation protections used in the empty HAL. Write a 'Null-Data Struct Formulation' detailing exactly how `AnalogIn.cpp` and `RCInput.cpp` return sanitized arrays of zeroes (or safe default 1500us PWM values) to prevent the flight controller's mathematical matrices from encountering divide-by-zero or `NaN` errors. Write an 'Interface Bridging Analysis' explaining the exact C++ method signatures defined in `OpticalFlow.h` and `AnalogIn.h` that a future developer must override to inject real hardware voltages into the system. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Default 1500us Channel Array Injection (RCInput.cpp)', '### Voltage ADC Safe-Zero Returns (AnalogIn.cpp)', and '### Missing Sensor Interface Contracts (OpticalFlow.h)'."
+  },
+
+  "Chapter_036_Void_Motor_Actuation_and_Ephemeral_Storage.md": {
+    "chapter_title": "Void Motor Actuation, Bit-Bucket PWM, and Ephemeral RAM Storage",
+    "files": [
+      "libraries/AP_HAL_Empty/RCOutput.cpp",
+      "libraries/AP_HAL_Empty/RCOutput.h",
+      "libraries/AP_HAL_Empty/Storage.cpp",
+      "libraries/AP_HAL_Empty/Storage.h",
+      "libraries/AP_HAL_Empty/Flash.h"
+    ],
+    "research_prompt": "Forensically analyze the dead-end routing for physical actuation and memory storage. Write a 'Bit-Bucket PWM Formulation' detailing how `RCOutput.cpp` accepts the highly calculated skid-steering mixer thrust vectors and quietly discards them via empty void functions without throwing CPU exceptions. Write an 'Ephemeral Memory Emulation Analysis' explaining how `Storage.cpp` allocates a temporary byte array in RAM to mock an EEPROM chip, allowing the `Parameters.cpp` boot sequence to read and write vehicle tuning variables successfully until power is cut. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Void Mixer Output Discarding (RCOutput.cpp)', '### Heap RAM EEPROM Emulation (Storage.cpp)', and '### Flash Wear-Leveling Stub Signatures (Flash.h)'."
+  },
+
+  "Chapter_037_Virtual_Hardware_Buses_and_UART_Bit_Buckets.md": {
+    "chapter_title": "Virtual Hardware Buses, Serial Bit-Buckets, and DSP Stubs",
+    "files": [
+      "libraries/AP_HAL_Empty/UARTDriver.cpp",
+      "libraries/AP_HAL_Empty/UARTDriver.h",
+      "libraries/AP_HAL_Empty/GPIO.cpp",
+      "libraries/AP_HAL_Empty/GPIO.h",
+      "libraries/AP_HAL_Empty/I2CDevice.h",
+      "libraries/AP_HAL_Empty/SPIDevice.h",
+      "libraries/AP_HAL_Empty/QSPIDevice.h",
+      "libraries/AP_HAL_Empty/DSP.h",
+      "libraries/AP_HAL_Empty/Util.h"
+    ],
+    "research_prompt": "Reverse-engineer the compiler satisfaction layers for complex digital interfaces. Write a 'Serial Byte Discard Formulation' detailing how `UARTDriver.cpp` implements the C++ `write()` and `read()` ring-buffer overrides to safely sink massive MAVLink telemetry streams into a virtual bit-bucket. Write a 'Bus Abstraction Analysis' extracting the pure virtual interface definitions in `I2CDevice.h`, `SPIDevice.h`, and `GPIO.h`, explaining exactly what hardware register operations a porting engineer must write to bring these buses online. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### MAVLink UART Bit-Bucket Logic (UARTDriver.cpp)', '### Pure Virtual SPI/I2C Pointers (I2CDevice.h)', and '### Mock Digital Pin Toggling (GPIO.cpp)'."
+  },
+
+  "Chapter_038_AHRS_Polymorphism_and_Estimator_Arbitration.md": {
+    "chapter_title": "AHRS Polymorphism, Estimator Arbitration, and Body Frames",
+    "files": [
+      "libraries/AP_AHRS/AP_AHRS.cpp",
+      "libraries/AP_AHRS/AP_AHRS.h",
+      "libraries/AP_AHRS/AP_AHRS_Backend.cpp",
+      "libraries/AP_AHRS/AP_AHRS_Backend.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master Attitude and Heading Reference System (AHRS) abstraction layer. Write an 'Estimator Arbitration Formulation' detailing exactly how `AP_AHRS.cpp` evaluates the health of the primary Extended Kalman Filter (EKF) and mathematically decides when to downgrade the active state estimator to a secondary EKF or the legacy DCM backend. Write a 'Polymorphic Backend Analysis' explaining how `AP_AHRS_Backend.cpp` forces all internal mathematical engines to output uniform Euler angles and quaternions to the master `Rover.cpp` loop, completely isolating the physics mixer from the underlying state-estimation algorithms. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Active Estimator Selection Logic (AP_AHRS.cpp)', '### Sensor to Body Frame Rotations (AP_AHRS.cpp)', and '### Virtual Backend Matrix Interpolation (AP_AHRS_Backend.cpp)'."
+  },
+
+  "Chapter_039_Direction_Cosine_Matrix_DCM_and_Nonlinear_Algebra.md": {
+    "chapter_title": "Direction Cosine Matrix (DCM) Algebra and Gyro Drift Compensation",
+    "files": [
+      "libraries/AP_AHRS/AP_AHRS_DCM.cpp",
+      "libraries/AP_AHRS/AP_AHRS_DCM.h"
+    ],
+    "research_prompt": "Reverse-engineer the hardcore aerospace mathematics driving the DCM fallback estimator. Write a 'Nonlinear DCM Formulation' detailing the exact 3x3 matrix multiplication and cross-product vectors ($x \\times y$) used in `AP_AHRS_DCM.cpp` to integrate raw gyroscope rates into a global orientation matrix. Write a 'Gyro Drift Compensation Analysis' mathematically explaining the PI (Proportional-Integral) controller used to compare the GPS heading and accelerometer gravity vector against the integrated gyro attitude, detailing how the algorithm mathematically bends the orientation matrix to cancel out thermal gyro bias drift. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Direction Cosine Matrix Integration (AP_AHRS_DCM.cpp)', '### PI Controller Gyro Bias Correction (AP_AHRS_DCM.cpp)', and '### Orthogonal Matrix Renormalization (AP_AHRS_DCM.cpp)'."
+  },
+
+  "Chapter_040_Spatial_Viewports_and_Quaternion_State_Logging.md": {
+    "chapter_title": "Spatial Viewports, Frame Translation, and Quaternion Logging",
+    "files": [
+      "libraries/AP_AHRS/AP_AHRS_View.cpp",
+      "libraries/AP_AHRS/AP_AHRS_View.h",
+      "libraries/AP_AHRS/AP_AHRS_Logging.cpp",
+      "libraries/AP_AHRS/LogStructure.h"
+    ],
+    "research_prompt": "Extract the mathematical frame-of-reference transformations and telemetry serialization. Write a 'Spatial Viewport Rotation Formulation' detailing the exact matrix algebra in `AP_AHRS_View.cpp` used to generate a decoupled orientation state (e.g., projecting the rover's attitude into the isolated frame of reference of a heavily stabilized camera gimbal). Write a 'Deterministic State Logging Analysis' documenting how `AP_AHRS_Logging.cpp` packs highly sensitive Quaternion arrays and Euler angles into the binary structs defined in `LogStructure.h`, ensuring high-frequency attitude data is safely written to the DMA SD card pipeline. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Target Frame Matrix Multiplication (AP_AHRS_View.cpp)', '### Quaternion Telemetry Serialization (AP_AHRS_Logging.cpp)', and '### Log Packet Bitmask Formatting (LogStructure.h)'."
+  },
+
+  "Chapter_041_Bare_Metal_Memory_Overrides_and_Heap_Safety.md": {
+    "chapter_title": "Bare-Metal C++ Memory Overrides, Expanding Arrays, and Heap Safety",
+    "files": [
+      "libraries/AP_Common/c++.cpp",
+      "libraries/AP_Common/AP_ExpandingArray.cpp",
+      "libraries/AP_Common/AP_ExpandingArray.h",
+      "libraries/AP_Common/ExpandingString.cpp",
+      "libraries/AP_Common/ExpandingString.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of ArduPilot's bare-metal memory management. Write a 'Heap Fragmentation Prevention Formulation' detailing exactly how `c++.cpp` intercepts and overrides the global C++ `new` and `delete` operators, mathematically proving how it prevents catastrophic heap fragmentation during 400Hz execution. Write a 'Dynamic Array Arbitration Analysis' explaining how `AP_ExpandingArray.cpp` and `ExpandingString.cpp` allow the flight controller to dynamically allocate memory buffers on the fly (e.g., for routing complex MAVLink strings) while enforcing strict byte-limits to prevent Out-Of-Memory (OOM) hard faults. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Overriding Global new/delete Operators (c++.cpp)', '### Fragmentation-Safe Heap Expansion (AP_ExpandingArray.cpp)', and '### Dynamic String Buffer Allocation (ExpandingString.cpp)'."
+  },
+
+  "Chapter_042_Geospatial_Vectors_Haversine_Math_and_NMEA.md": {
+    "chapter_title": "Geospatial Location Vectors, Haversine Math, and NMEA Parsing",
+    "files": [
+      "libraries/AP_Common/Location.cpp",
+      "libraries/AP_Common/Location.h",
+      "libraries/AP_Common/NMEA.cpp",
+      "libraries/AP_Common/NMEA.h"
+    ],
+    "research_prompt": "Reverse-engineer the master geospatial coordinate architecture. Write a 'High-Precision Coordinate Formulation' detailing exactly how `Location.h` stores Latitude and Longitude as 32-bit integers (scaled by 1e7) rather than standard floating-point numbers, mathematically proving how this prevents catastrophic rounding errors when calculating vectors over long agricultural rows. Write a 'Haversine Kinematics Analysis' extracting the exact trigonometric algebra in `Location.cpp` used to calculate distance and bearing between two spatial nodes, and detail how `NMEA.cpp` tokenizes raw ASCII `$GPGGA` strings into these precise vectors as a fallback to binary GPS protocols. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### 32-bit Integer Coordinate Scaling (Location.h)', '### Haversine Distance and Bearing Algebra (Location.cpp)', and '### ASCII NMEA String Tokenization (NMEA.cpp)'."
+  },
+
+  "Chapter_043_Firmware_Fingerprints_Bitmasks_and_Sorting.md": {
+    "chapter_title": "Firmware Binary Fingerprints, Arbitrary Bitmasks, and Sorting Math",
+    "files": [
+      "libraries/AP_Common/AP_Common.cpp",
+      "libraries/AP_Common/AP_Common.h",
+      "libraries/AP_Common/AP_FWVersion.cpp",
+      "libraries/AP_Common/AP_FWVersion.h",
+      "libraries/AP_Common/AP_FWVersionDefine.h",
+      "libraries/AP_Common/Bitmask.h",
+      "libraries/AP_Common/sorting.cpp",
+      "libraries/AP_Common/sorting.h",
+      "libraries/AP_Common/TSIndex.h"
+    ],
+    "research_prompt": "Extract the low-level utility math and binary fingerprinting mechanisms. Write a 'Binary Versioning Formulation' detailing how `AP_FWVersion.cpp` statically embeds the exact Git Hash, vehicle type, and build macros directly into the flash ROM, allowing Ground Stations to cryptographic verify the firmware upon boot. Write a 'Fast Bitmask and Sorting Analysis' mathematically explaining the bitwise shift operations in `Bitmask.h` used to manage arrays of flags without wasting RAM, and extract the execution complexity (Big O notation) of the embedded C++ insertion algorithms in `sorting.cpp` used to quickly prioritize RTOS scheduler tasks. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Embedded Git Hash Fingerprinting (AP_FWVersion.cpp)', '### Arbitrary-Length Bitmask Algebra (Bitmask.h)', and '### Bare-Metal Sorting Algorithms (sorting.cpp)'."
+  },
+
+  "Chapter_044_Compass_Backend_Arbitration_and_Vector_Math.md": {
+    "chapter_title": "Compass Backend Arbitration, Polymorphism, and Vector Math",
+    "files": [
+      "libraries/AP_Compass/AP_Compass.cpp",
+      "libraries/AP_Compass/AP_Compass.h",
+      "libraries/AP_Compass/AP_Compass_Backend.cpp",
+      "libraries/AP_Compass/AP_Compass_Backend.h",
+      "libraries/AP_Compass/AP_Compass_ExternalAHRS.cpp",
+      "libraries/AP_Compass/AP_Compass_ExternalAHRS.h",
+      "libraries/AP_Compass/AP_Compass_MSP.cpp",
+      "libraries/AP_Compass/AP_Compass_MSP.h",
+      "libraries/AP_Compass/AP_Compass_UAVCAN.cpp",
+      "libraries/AP_Compass/AP_Compass_UAVCAN.h",
+      "libraries/AP_Compass/AP_Compass_SITL.cpp",
+      "libraries/AP_Compass/AP_Compass_SITL.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master magnetometer abstraction layer and network injection. Write a 'Multi-Compass Arbitration Formulation' detailing exactly how `AP_Compass.cpp` polls up to three discrete compass backends, automatically prioritizes external CAN-bus compasses over internal I2C ones, and applies board orientation matrices to align the raw $X, Y, Z$ vectors. Write a 'Networked Sensor Ingestion Analysis' explaining how `AP_Compass_UAVCAN.cpp` and `AP_Compass_MSP.cpp` bypass local SPI/I2C buses to parse highly-compressed DroneCAN or MultiWii Serial Protocol magnetic vectors streamed from remote smart-sensors. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Priority-Based Sensor Arbitration (AP_Compass.cpp)', '### Board Orientation Matrix Rotations (AP_Compass.cpp)', and '### DroneCAN Magnetic Payload Unpacking (AP_Compass_UAVCAN.cpp)'."
+  },
+
+  "Chapter_045_Sphere_Fitting_Calibration_and_Interference_Rejection.md": {
+    "chapter_title": "Sphere-Fitting Calibration, In-Flight Learning, and Motor Interference Rejection",
+    "files": [
+      "libraries/AP_Compass/CompassCalibrator.cpp",
+      "libraries/AP_Compass/CompassCalibrator.h",
+      "libraries/AP_Compass/AP_Compass_Calibration.cpp",
+      "libraries/AP_Compass/Compass_learn.cpp",
+      "libraries/AP_Compass/Compass_learn.h",
+      "libraries/AP_Compass/Compass_PerMotor.cpp",
+      "libraries/AP_Compass/Compass_PerMotor.h"
+    ],
+    "research_prompt": "Reverse-engineer the intense spatial mathematics used to correct magnetic field distortion. Write an 'Ellipsoid Correction Formulation' detailing the exact Levenberg-Marquardt or similar geometric sphere-fitting algorithms in `CompassCalibrator.cpp` used to calculate Hard-Iron offsets and Soft-Iron diagonal matrix diagonals from raw spatial point clouds. Write a 'Dynamic Motor Interference Analysis' mathematically explaining how `Compass_PerMotor.cpp` calculates real-time magnetic vector subtractions proportional to the immediate amperage draw of the drive motors, and how `Compass_learn.cpp` continuously nudges the baseline Earth-magnetic offsets during autonomous flight without user intervention. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Hard and Soft Iron Matrix Algebra (CompassCalibrator.cpp)', '### In-Flight Offset Convergence Math (Compass_learn.cpp)', and '### Current-Proportional CompassMot Subtraction (Compass_PerMotor.cpp)'."
+  },
+
+  "Chapter_046_Bare_Metal_Magnetometer_Silicon_Drivers.md": {
+    "chapter_title": "Bare-Metal Magnetometer Silicon Drivers and MilliGauss Scaling",
+    "files": [
+      "libraries/AP_Compass/AP_Compass_AK09916.cpp",
+      "libraries/AP_Compass/AP_Compass_AK09916.h",
+      "libraries/AP_Compass/AP_Compass_AK8963.cpp",
+      "libraries/AP_Compass/AP_Compass_AK8963.h",
+      "libraries/AP_Compass/AP_Compass_BMM150.cpp",
+      "libraries/AP_Compass/AP_Compass_BMM150.h",
+      "libraries/AP_Compass/AP_Compass_HMC5843.cpp",
+      "libraries/AP_Compass/AP_Compass_HMC5843.h",
+      "libraries/AP_Compass/AP_Compass_IST8308.cpp",
+      "libraries/AP_Compass/AP_Compass_IST8308.h",
+      "libraries/AP_Compass/AP_Compass_IST8310.cpp",
+      "libraries/AP_Compass/AP_Compass_IST8310.h",
+      "libraries/AP_Compass/AP_Compass_LIS3MDL.cpp",
+      "libraries/AP_Compass/AP_Compass_LIS3MDL.h",
+      "libraries/AP_Compass/AP_Compass_LSM303D.cpp",
+      "libraries/AP_Compass/AP_Compass_LSM303D.h",
+      "libraries/AP_Compass/AP_Compass_LSM9DS1.cpp",
+      "libraries/AP_Compass/AP_Compass_LSM9DS1.h",
+      "libraries/AP_Compass/AP_Compass_MAG3110.cpp",
+      "libraries/AP_Compass/AP_Compass_MAG3110.h",
+      "libraries/AP_Compass/AP_Compass_MMC3416.cpp",
+      "libraries/AP_Compass/AP_Compass_MMC3416.h",
+      "libraries/AP_Compass/AP_Compass_MMC5xx3.cpp",
+      "libraries/AP_Compass/AP_Compass_MMC5xx3.h",
+      "libraries/AP_Compass/AP_Compass_QMC5883L.cpp",
+      "libraries/AP_Compass/AP_Compass_QMC5883L.h",
+      "libraries/AP_Compass/AP_Compass_RM3100.cpp",
+      "libraries/AP_Compass/AP_Compass_RM3100.h"
+    ],
+    "research_prompt": "Extract the low-level silicon interrogation protocols for Earth-magnetic sensors. Write a 'MilliGauss Conversion Formulation' detailing how drivers like `AP_Compass_HMC5843.cpp` and `AP_Compass_AK8963.cpp` parse 16-bit 2's complement integers from raw I2C/SPI hardware registers and multiply them by silicon-specific scaling factors to yield normalized milliGauss vectors. Write a 'Hardware Sync and Decimation Analysis' explaining how these drivers utilize data-ready EXTI interrupt pins to ensure the C++ backend only reads the bus when the silicon has completed its internal ADC sampling, preventing duplicate or corrupted vector reads. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### 16-bit 2s Complement Register Parsing (AP_Compass_HMC5843.cpp)', '### Silicon-Specific Gain Scaling (AP_Compass_AK8963.cpp)', and '### Interrupt-Driven Data Ready Checks (AP_Compass_RM3100.cpp)'."
+  },
+
+  "Chapter_047_GPS_Frontend_Arbitration_and_Auto_Baud_Detection.md": {
+    "chapter_title": "GPS Frontend Arbitration, Backend Polymorphism, and Auto-Baud Detection",
+    "files": [
+      "libraries/AP_GPS/AP_GPS.cpp",
+      "libraries/AP_GPS/AP_GPS.h",
+      "libraries/AP_GPS/GPS_Backend.cpp",
+      "libraries/AP_GPS/GPS_Backend.h",
+      "libraries/AP_GPS/GPS_detect_state.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master GPS abstraction layer and hardware discovery mechanisms. Write a 'Serial Auto-Baud Formulation' detailing exactly how the state machine in `GPS_detect_state.h` and `AP_GPS.cpp` cycles UART baud rates (e.g., 9600 to 115200) and injects distinct protocol-probe bytes until a valid silicon signature is returned. Write a 'Virtual Backend Arbitration Analysis' explaining how `GPS_Backend.cpp` enforces a strict C++ contract, forcing all underlying drivers to populate a unified `Location` struct, and mathematically detail how the frontend arbitrates between multiple physical antennas (Dual GPS Blending) based on satellite count and horizontal dilution of precision (HDOP). CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Auto-Baud Probe State Machine (AP_GPS.cpp)', '### Dual Antenna Covariance Blending (AP_GPS.cpp)', and '### Virtual Backend Struct Population (GPS_Backend.cpp)'."
+  },
+
+  "Chapter_048_RTK_Moving_Baseline_and_RTCM3_Carrier_Phase_Math.md": {
+    "chapter_title": "RTK Moving Baseline, RTCM3 Carrier-Phase Math, and GPS Yaw",
+    "files": [
+      "libraries/AP_GPS/AP_GPS_UBLOX.cpp",
+      "libraries/AP_GPS/AP_GPS_UBLOX.h",
+      "libraries/AP_GPS/MovingBase.cpp",
+      "libraries/AP_GPS/MovingBase.h",
+      "libraries/AP_GPS/RTCM3_Parser.cpp",
+      "libraries/AP_GPS/RTCM3_Parser.h"
+    ],
+    "research_prompt": "Reverse-engineer the ultra-precise sub-centimeter positioning and compassless heading algorithms. Write a 'Carrier-Phase Vector Formulation' detailing exactly how `MovingBase.cpp` processes the spatial differential between two physical GPS antennas mounted on the rover chassis to calculate a highly precise 3D vector. Write an 'RTCM3 Differential Injection Analysis' explaining how `RTCM3_Parser.cpp` unpacks raw base-station correction packets and dynamically routes them into the active `AP_GPS_UBLOX.cpp` silicon over UART, allowing the EKF to mathematically derive Earth-heading (Yaw) and permanently ignore the noisy magnetic compass. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### RTCM3 Packet CRC Validation (RTCM3_Parser.cpp)', '### Dual-Antenna Vector Trigonometry (MovingBase.cpp)', and '### U-Blox Proprietary Binary Parsing (AP_GPS_UBLOX.cpp)'."
+  },
+
+  "Chapter_049_Proprietary_Binary_Protocols_and_Silicon_Parsing.md": {
+    "chapter_title": "Proprietary Binary Protocols, Silicon Parsing, and NMEA Fallbacks",
+    "files": [
+      "libraries/AP_GPS/AP_GPS_SBF.cpp",
+      "libraries/AP_GPS/AP_GPS_SBF.h",
+      "libraries/AP_GPS/AP_GPS_SBP.cpp",
+      "libraries/AP_GPS/AP_GPS_SBP.h",
+      "libraries/AP_GPS/AP_GPS_SBP2.cpp",
+      "libraries/AP_GPS/AP_GPS_SBP2.h",
+      "libraries/AP_GPS/AP_GPS_GSOF.cpp",
+      "libraries/AP_GPS/AP_GPS_GSOF.h",
+      "libraries/AP_GPS/AP_GPS_NOVA.cpp",
+      "libraries/AP_GPS/AP_GPS_NOVA.h",
+      "libraries/AP_GPS/AP_GPS_ERB.cpp",
+      "libraries/AP_GPS/AP_GPS_ERB.h",
+      "libraries/AP_GPS/AP_GPS_SIRF.cpp",
+      "libraries/AP_GPS/AP_GPS_SIRF.h",
+      "libraries/AP_GPS/AP_GPS_NMEA.cpp",
+      "libraries/AP_GPS/AP_GPS_NMEA.h"
+    ],
+    "research_prompt": "Extract the specific serial decoding logic for diverse industrial GPS silicon. Write a 'Binary Frame Extraction Formulation' detailing the C++ shift operations and magic-byte synchronizations used in drivers like `AP_GPS_SBF.cpp` (Septentrio) and `AP_GPS_NOVA.cpp` (NovAtel) to reconstruct massive 32-bit floating-point coordinates from fragmented serial ring buffers. Write an 'ASCII NMEA Checksum Analysis' explaining how `AP_GPS_NMEA.cpp` hunts for `$GPGGA` headers and mathematically validates the XOR byte-checksum as an absolute last-resort fallback when high-speed proprietary binary links degrade due to electromagnetic interference. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Magic-Byte Sync and Frame Assembly (AP_GPS_SBF.cpp)', '### 32-bit Float Reassembly Logic (AP_GPS_NOVA.cpp)', and '### ASCII Comma Separation and XOR Math (AP_GPS_NMEA.cpp)'."
+  },
+
+  "Chapter_050_Networked_GPS_DroneCAN_and_Telemetry_Logging.md": {
+    "chapter_title": "Networked GPS Injection, DroneCAN, and Telemetry Serialization",
+    "files": [
+      "libraries/AP_GPS/AP_GPS_UAVCAN.cpp",
+      "libraries/AP_GPS/AP_GPS_UAVCAN.h",
+      "libraries/AP_GPS/AP_GPS_MSP.cpp",
+      "libraries/AP_GPS/AP_GPS_MSP.h",
+      "libraries/AP_GPS/AP_GPS_MAV.cpp",
+      "libraries/AP_GPS/AP_GPS_MAV.h",
+      "libraries/AP_GPS/AP_GPS_ExternalAHRS.cpp",
+      "libraries/AP_GPS/AP_GPS_ExternalAHRS.h",
+      "libraries/AP_GPS/LogStructure.h",
+      "libraries/AP_GPS/LogStructure_SBP.h"
+    ],
+    "research_prompt": "Forensically analyze the ingestion of non-local spatial data streams and logging. Write a 'Network Spatial Override Formulation' detailing exactly how `AP_GPS_MAV.cpp` and `AP_GPS_MSP.cpp` bypass physical UART scanning to inject remote GPS coordinates (e.g., from an optical-flow companion computer or DroneCAN node) directly into the EKF's primary measurement gates. Write a 'Binary Struct Serialization Analysis' documenting how `LogStructure.h` and `LogStructure_SBP.h` define the exact byte-aligned matrices used to flush real-time satellite counts, RTK flags, and error variances to the SD card at high speed. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Remote MAVLink GPS Ingestion (AP_GPS_MAV.cpp)', '### DroneCAN Fix_2 Payload Unpacking (AP_GPS_UAVCAN.cpp)', and '### Byte-Aligned Telemetry Structs (LogStructure.h)'."
+  },
+
+  "Chapter_051_Core_Attitude_Control_and_Square_Root_Kinematics.md": {
+    "chapter_title": "Core Attitude Control, The Square Root Controller, and Loop Divergence",
+    "files": [
+      "libraries/AC_AttitudeControl/AC_AttitudeControl.cpp",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl.h",
+      "libraries/AC_AttitudeControl/ControlMonitor.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master Attitude Control abstraction layer. Write a 'Square Root Controller Formulation' detailing the exact kinematic math in `AC_AttitudeControl.cpp` (specifically the `sqrt_controller` algorithm) used to calculate the optimal deceleration curve when approaching a target angle, preventing high-inertia overshoot. Write a 'Control Loop Divergence Analysis' mathematically explaining how `ControlMonitor.cpp` continuously compares the target angular rates against the physical gyroscope rates to detect if the aerodynamic surfaces or motors have stalled, triggering an immediate failsafe. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The Kinematic Square Root Deceleration Math (AC_AttitudeControl.cpp)', '### Angular Rate Target Generation (AC_AttitudeControl.cpp)', and '### PID Tracking Error Saturation (ControlMonitor.cpp)'."
+  },
+
+  "Chapter_052_3D_Kinematic_Position_Control_and_Altitude_Hold.md": {
+    "chapter_title": "3D Kinematic Position Control, Jerk Limiting, and Weather-Vaning",
+    "files": [
+      "libraries/AC_AttitudeControl/AC_PosControl.cpp",
+      "libraries/AC_AttitudeControl/AC_PosControl.h",
+      "libraries/AC_AttitudeControl/AC_WeatherVane.cpp",
+      "libraries/AC_AttitudeControl/AC_WeatherVane.h"
+    ],
+    "research_prompt": "Reverse-engineer the spatial targeting and Z-axis altitude hold algorithms. Write a 'Kinematic Shaping Formulation' detailing the matrix math in `AC_PosControl.cpp` used to shape raw XYZ coordinate requests into smooth, jerk-limited velocity and acceleration profiles that the heavy chassis can physically achieve. Write an 'Aerodynamic Weather-Vaning Analysis' explaining the vector calculus in `AC_WeatherVane.cpp` that commands the vehicle to automatically yaw its nose into the prevailing wind during hovering, minimizing cross-sectional drag and saving battery power. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Z-Axis Acceleration Feedforward (AC_PosControl.cpp)', '### XY Planar Kinematic Shaping (AC_PosControl.cpp)', and '### Wind Vector Drag Minimization (AC_WeatherVane.cpp)'."
+  },
+
+  "Chapter_053_Multi_Rotor_and_6_DoF_Attitude_Matrices.md": {
+    "chapter_title": "Multi-Rotor Matrices, 6-DoF Control, and Thrust Vectoring",
+    "files": [
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.cpp",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_Multi_6DoF.cpp",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_Multi_6DoF.h"
+    ],
+    "research_prompt": "Extract the specific angular rate control loops for multi-rotor and over-actuated chassis. Write a 'Thrust Vector Normalization Formulation' detailing how `AC_AttitudeControl_Multi.cpp` mathematically translates the desired Roll/Pitch/Yaw rates into normalized thrust vectors (-1.0 to +1.0) before passing them to the motor mixer. Write a '6-DoF Decoupling Analysis' explaining the specialized matrix transformations in `AC_AttitudeControl_Multi_6DoF.cpp` that allow highly experimental over-actuated vehicles to translate laterally (strafe) or vertically without altering their pitch or roll angles. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Roll/Pitch/Yaw Rate PID Integration (AC_AttitudeControl_Multi.cpp)', '### Motor Thrust Vector Normalization (AC_AttitudeControl_Multi.cpp)', and '### 6-Degree-of-Freedom Matrix Decoupling (AC_AttitudeControl_Multi_6DoF.cpp)'."
+  },
+
+  "Chapter_054_Non_Standard_Frames_Helicopters_Subs_and_Tailsitters.md": {
+    "chapter_title": "Non-Standard Frames: Swashplates, Submarines, and Tailsitters",
+    "files": [
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_Heli.cpp",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_Heli.h",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_Sub.cpp",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_Sub.h",
+      "libraries/AC_AttitudeControl/AC_PosControl_Sub.cpp",
+      "libraries/AC_AttitudeControl/AC_PosControl_Sub.h",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_TS.cpp",
+      "libraries/AC_AttitudeControl/AC_AttitudeControl_TS.h"
+    ],
+    "research_prompt": "Forensically analyze the attitude control implementations for highly specialized fluid and aerodynamic environments. Write a 'Swashplate Phase Formulation' detailing the trigonometry in `AC_AttitudeControl_Heli.cpp` used to calculate cyclical blade pitch to overcome gyroscopic precession in traditional helicopters. Write a 'Hydrodynamic and VTOL Transition Analysis' explaining the 3D depth-hold math in `AC_PosControl_Sub.cpp` and extract the complex quaternion rotation matrices in `AC_AttitudeControl_TS.cpp` that manage the singularity when a Tailsitter vehicle pitches 90 degrees to transition from vertical hover to horizontal forward flight. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Helicopter Gyroscopic Precession Offsets (AC_AttitudeControl_Heli.cpp)', '### Hydrodynamic Depth Hold Z-Axis (AC_PosControl_Sub.cpp)', and '### VTOL Hover-to-Forward Flight Transition Math (AC_AttitudeControl_TS.cpp)'."
+  },
+
+  "Chapter_055_UGV_Motor_Mixer_and_Skid_Steering_Kinematics.md": {
+    "chapter_title": "UGV Motor Mixer, Skid-Steering Matrices, and Ackermann Kinematics",
+    "files": [
+      "libraries/AP_Motors/AP_MotorsUGV.cpp",
+      "libraries/AP_Motors/AP_MotorsUGV.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master Unmanned Ground Vehicle (UGV) motor mixer. Write a 'Skid-Steering and Ackermann Formulation' detailing the exact matrix algebra in `AP_MotorsUGV.cpp` used to calculate independent left and right wheel speeds based on incoming throttle and steering vectors, including the specific inverse-radius trigonometry used for Ackermann (standard tractor) steering geometries. Write a 'Thrust Slew and Saturation Analysis' explaining the C++ logic that enforces `MOT_SLEW_TIME` to limit the instantaneous rate-of-change (jerk) sent to the motors, preventing massive inductive current spikes from destroying the H-bridge MOSFETs, and detail how the mixer prioritizes steering over throttle when the physical PWM outputs reach their 100% saturation limits. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Differential Skid-Steering Matrix Algebra (AP_MotorsUGV.cpp)', '### Ackermann Inverse Turning Radius Math (AP_MotorsUGV.cpp)', and '### PWM Slew Limiting and Motor Saturation (AP_MotorsUGV.cpp)'."
+  },
+
+  "Chapter_056_Master_PID_Kinematics_and_Integrator_Anti_Windup.md": {
+    "chapter_title": "Master PID Kinematics, Derivative Filtering, and Anti-Windup",
+    "files": [
+      "libraries/AC_PID/AC_PID.cpp",
+      "libraries/AC_PID/AC_PID.h",
+      "libraries/AC_PID/AC_PID_Basic.cpp",
+      "libraries/AC_PID/AC_PID_Basic.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master Proportional-Integral-Derivative (PID) and Feedforward (FF) architecture. Write a 'Derivative Low-Pass Filter Formulation' detailing the exact discrete-time math in `AC_PID.cpp` used to filter the D-term against the `dt` (delta-time) of the execution loop, proving how ArduPilot prevents high-frequency gyroscope noise from burning out the motor ESCs. Write an 'Integrator Anti-Windup Analysis' explaining the C++ threshold logic that actively stops the I-term from accumulating error when the physical motors reach 100% saturation, preventing the vehicle from violently snapping back after a heavy gust of wind subsides. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Discrete-Time PID Arithmetic (AC_PID.cpp)', '### D-Term Low-Pass Filtering (AC_PID.cpp)', and '### I-Term Saturation and Leakage Limits (AC_PID_Basic.cpp)'."
+  },
+
+  "Chapter_057_Lower_Order_Regulators_and_Nested_P_PI_Loops.md": {
+    "chapter_title": "Lower-Order Regulators, Nested P/PI Loops, and 1D Kinematics",
+    "files": [
+      "libraries/AC_PID/AC_P.cpp",
+      "libraries/AC_PID/AC_P.h",
+      "libraries/AC_PID/AC_PI.cpp",
+      "libraries/AC_PID/AC_PI.h",
+      "libraries/AC_PID/AC_P_1D.cpp",
+      "libraries/AC_PID/AC_P_1D.h"
+    ],
+    "research_prompt": "Reverse-engineer the lower-order kinematic controllers used for cascaded/nested navigation loops. Write a 'Cascaded Loop Formulation' detailing how position-to-velocity targets are often handled by purely proportional controllers (`AC_P.cpp`) before feeding into the inner-loop PID attitude controllers. Write a '1D Kinematic Analysis' explaining the exact math in `AC_P_1D.cpp` used to control singular, isolated axes (like Z-axis altitude or a single gimbal pitch motor), documenting how the error is calculated and squared to provide non-linear, exponential braking as the vehicle approaches the target. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Proportional Error Scaling (AC_P.cpp)', '### PI Controller Integration Math (AC_PI.cpp)', and '### 1D Non-Linear Square Root Braking (AC_P_1D.cpp)'."
+  },
+
+  "Chapter_058_2D_Planar_Vector_PID_and_Helicopter_Leaky_Integrators.md": {
+    "chapter_title": "2D Planar Vector PID, Feedforward, and Helicopter Leaky Integrators",
+    "files": [
+      "libraries/AC_PID/AC_PID_2D.cpp",
+      "libraries/AC_PID/AC_PID_2D.h",
+      "libraries/AC_PID/AC_PI_2D.cpp",
+      "libraries/AC_PID/AC_PI_2D.h",
+      "libraries/AC_PID/AC_P_2D.cpp",
+      "libraries/AC_PID/AC_P_2D.h",
+      "libraries/AC_PID/AC_HELI_PID.cpp",
+      "libraries/AC_PID/AC_HELI_PID.h"
+    ],
+    "research_prompt": "Extract the specific mathematical controllers designed for multi-axis planar motion and cyclic rotors. Write a '2D Vector PID Formulation' detailing the trigonometry and magnitude calculations in `AC_PID_2D.cpp` used to apply PID corrections across a coupled XY coordinate plane (e.g., controlling a rover's planar velocity vector rather than just a single wheel speed). Write a 'Helicopter Feedforward and Leaky-I Analysis' explaining the exact C++ logic in `AC_HELI_PID.cpp` that aggressively utilizes Feedforward (VFF) to push the swashplate before error accumulates, and how the 'Leaky I-Term' bleeds off integral accumulation to prevent dynamic rollover while a helicopter sits on the ground. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Coupled XY Planar Vector Math (AC_PID_2D.cpp)', '### Feedforward (VFF) Injection Algebra (AC_HELI_PID.cpp)', and '### Ground-State Integral Bleed Logic (AC_HELI_PID.cpp)'."
+  },
+
+  "Chapter_059_IMU_Thermal_Calibration_and_Polynomial_Bias.md": {
+    "chapter_title": "IMU Thermal Calibration, Polynomial Bias Curves, and Sensor Drift",
+    "files": [
+      "libraries/AP_TempCalibration/AP_TempCalibration.cpp",
+      "libraries/AP_TempCalibration/AP_TempCalibration.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the IMU thermal compensation architecture. Write a 'Thermal Bias Polynomial Formulation' detailing the exact curve-fitting math (e.g., 3rd-order polynomials) used in `AP_TempCalibration.cpp` to calculate real-time accelerometer and gyroscope offsets based on the instantaneous die temperature read from the silicon. Write a 'Calibration State Machine Analysis' mathematically explaining how the onboard routine records spatial variance while the flight controller is artificially heated or cooled, calculating the necessary compensation coefficients to prevent EKF horizon drift during extreme thermal gradients (like flying from a hot tarmac into cold altitude). CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Thermal Bias Polynomial Algebra (AP_TempCalibration.cpp)', '### Online Temperature Delta Sampling (AP_TempCalibration.cpp)', and '### Flash Memory Coefficient Mapping (AP_TempCalibration.h)'."
+  },
+
+  "Chapter_060_OSD_Frontend_Arbitration_and_Screen_Rendering.md": {
+    "chapter_title": "OSD Frontend Arbitration, Grid Coordinate Math, and Screen Rendering",
+    "files": [
+      "libraries/AP_OSD/AP_OSD.cpp",
+      "libraries/AP_OSD/AP_OSD.h",
+      "libraries/AP_OSD/AP_OSD_Backend.cpp",
+      "libraries/AP_OSD/AP_OSD_Backend.h",
+      "libraries/AP_OSD/AP_OSD_Screen.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master On-Screen Display (OSD) abstraction layer. Write a 'Coordinate Grid Formulation' detailing exactly how `AP_OSD_Screen.cpp` maps dynamic telemetry data (like artificial horizons and battery voltages) to an abstract 2D character-grid array (typically 30x16), abstracting the physical pixel resolution. Write an 'Asynchronous Update Analysis' explaining how `AP_OSD.cpp` manages thread-safe string formatting and delegates the actual memory buffer flushing to the polymorphous `AP_OSD_Backend.cpp`, ensuring the heavy floating-point string conversions do not block the 400Hz physics loop. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Abstract 2D Grid Coordinate Mapping (AP_OSD_Screen.cpp)', '### Telemetry String Formatting Execution (AP_OSD.cpp)', and '### Backend Buffer Flushing Arbitration (AP_OSD_Backend.cpp)'."
+  },
+
+  "Chapter_061_MAX7456_Analog_Video_and_SPI_VSYNC_Interrupts.md": {
+    "chapter_title": "MAX7456 Analog Video Injection and SPI VSYNC Interrupts",
+    "files": [
+      "libraries/AP_OSD/AP_OSD_MAX7456.cpp",
+      "libraries/AP_OSD/AP_OSD_MAX7456.h"
+    ],
+    "research_prompt": "Reverse-engineer the bare-metal silicon driver used to overlay telemetry onto analog NTSC/PAL video feeds. Write a 'VSYNC DMA Formulation' detailing the exact hardware interrupt logic in `AP_OSD_MAX7456.cpp` used to detect the physical vertical sync (VSYNC) pulse from the analog camera, triggering a high-speed SPI DMA burst to update the video chip's Display Data RAM (DDRAM) during the blanking interval to prevent screen tearing. Write a 'Font EEPROM Flashing Analysis' mathematically explaining how custom character bitmaps are pushed across the SPI bus in 8-bit chunks to reprogram the MAX7456's internal Non-Volatile Memory (NVM) during boot. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### VSYNC Interrupt Polling Logic (AP_OSD_MAX7456.cpp)', '### DDRAM SPI Burst Transactions (AP_OSD_MAX7456.cpp)', and '### Character Bitmap NVM Flashing (AP_OSD_MAX7456.cpp)'."
+  },
+
+  "Chapter_062_Digital_FPV_MSP_DisplayPort_and_Serial_Telemetry.md": {
+    "chapter_title": "Digital FPV, MSP DisplayPort Protocols, and UART Canvas Mapping",
+    "files": [
+      "libraries/AP_OSD/AP_OSD_MSP.cpp",
+      "libraries/AP_OSD/AP_OSD_MSP.h",
+      "libraries/AP_OSD/AP_OSD_MSP_DisplayPort.cpp",
+      "libraries/AP_OSD/AP_OSD_MSP_DisplayPort.h"
+    ],
+    "research_prompt": "Extract the specific serial communication protocols required to drive modern HD digital video transmitters (e.g., DJI, Walksnail, HDZero). Write a 'DisplayPort Payload Formulation' detailing how `AP_OSD_MSP_DisplayPort.cpp` packs character indexes and grid coordinates into highly compressed binary MultiWii Serial Protocol (MSP) packets. Write a 'Dynamic Canvas Negotiation Analysis' explaining how `AP_OSD_MSP.cpp` mathematically scales the standard ArduPilot 30x16 character grid to fit the varied high-definition canvas sizes requested by the remote video transmitter over the UART handshake. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### MSP Binary Struct Packing (AP_OSD_MSP.cpp)', '### DisplayPort Character Mapping (AP_OSD_MSP_DisplayPort.cpp)', and '### HD Canvas Resolution Scaling (AP_OSD_MSP.cpp)'."
+  },
+
+  "Chapter_063_In_Flight_RC_Menu_UI_and_EEPROM_Parameter_Tuning.md": {
+    "chapter_title": "In-Flight RC Menu UI, State Machines, and EEPROM Tuning",
+    "files": [
+      "libraries/AP_OSD/AP_OSD_ParamScreen.cpp",
+      "libraries/AP_OSD/AP_OSD_ParamSetting.cpp",
+      "libraries/AP_OSD/AP_OSD_Setting.cpp",
+      "libraries/AP_OSD/AP_OSD_SITL.cpp",
+      "libraries/AP_OSD/AP_OSD_SITL.h"
+    ],
+    "research_prompt": "Forensically analyze the architecture that allows operators to reprogram the flight controller mid-flight using nothing but RC transmitter sticks. Write an 'RC Stick State Machine Formulation' detailing exactly how `AP_OSD_Screen.cpp` and `AP_OSD_ParamScreen.cpp` decode extreme pitch and roll PWM inputs into UI cursor movements (Up/Down/Select). Write an 'EEPROM Commit Analysis' documenting the C++ pointer math in `AP_OSD_ParamSetting.cpp` used to modify the live PID floats in RAM and safely commit them to the STM32's flash memory without inducing a blocking write delay that could crash the vehicle. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### RC PWM UI Cursor Translation (AP_OSD_Screen.cpp)', '### Live Parameter Pointer Modification (AP_OSD_ParamSetting.cpp)', and '### Non-Blocking Flash Commits (AP_OSD_ParamSetting.cpp)'."
+  },
+
+  "Chapter_064_Loadable_Modules_ABI_and_Runtime_Injection.md": {
+    "chapter_title": "Loadable Modules, ABI Structures, and Runtime Hook Injection",
+    "files": [
+      "libraries/AP_Module/AP_Module.cpp",
+      "libraries/AP_Module/AP_Module.h",
+      "libraries/AP_Module/AP_Module_Structures.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the ArduPilot Loadable Modules architecture. Write an 'Application Binary Interface (ABI) Formulation' detailing exactly how `AP_Module_Structures.h` enforces strict memory alignment and pure C-style structs to allow pre-compiled, third-party binary blobs to interface with the core C++ physics engine without triggering linker errors or segmentation faults. Write a 'Runtime Hook Injection Analysis' explaining how `AP_Module.cpp` manages arrays of function pointers, allowing external modules to dynamically inject custom execution logic directly into the 400Hz `fast_loop`, sensor ingestion pathways, and AHRS attitude calculations. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Strict ABI Memory Alignment (AP_Module_Structures.h)', '### Dynamic Library Initialization Sequence (AP_Module.cpp)', and '### Core Execution Loop Function Pointers (AP_Module.cpp)'."
+  },
+
+  "Chapter_065_Marine_AIS_Telemetry_and_Vessel_Tracking.md": {
+    "chapter_title": "Marine AIS Telemetry, 6-bit Payload Decoding, and Vessel Tracking",
+    "files": [
+      "libraries/AP_AIS/AP_AIS.cpp",
+      "libraries/AP_AIS/AP_AIS.h",
+      "libraries/AP_AIS/LogStructure.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Automatic Identification System (AIS) architecture used for maritime surface vessels. Write a '6-bit AIVDM Payload Formulation' detailing exactly how `AP_AIS.cpp` decodes NMEA AIVDM/AIVDO sentences, extracting the bit-shifted ASCII armored payloads to reconstruct Maritime Mobile Service Identities (MMSI), physical coordinates, and vessel heading/speed vectors. Write a 'Maritime Collision Avoidance Analysis' mathematically explaining how the flight controller calculates the Closest Point of Approach (CPA) and Time to CPA (TCPA) between the autonomous boat and tracked commercial shipping traffic, and detail how `LogStructure.h` ensures these remote vessel vectors are continuously flushed to the SD card. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### AIVDM 6-bit ASCII Unpacking Logic (AP_AIS.cpp)', '### Closest Point of Approach (CPA) Trigonometry (AP_AIS.cpp)', and '### Marine Vessel Telemetry Serialization (LogStructure.h)'."
+  },
+
+  "Chapter_066_DAL_Core_Architecture_and_Bit_Exact_Replay.md": {
+    "chapter_title": "DAL Core Architecture, EKF Isolation, and Bit-Exact Replay Logging",
+    "files": [
+      "libraries/AP_DAL/AP_DAL.cpp",
+      "libraries/AP_DAL/AP_DAL.h",
+      "libraries/AP_DAL/LogStructure.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master Data Access Layer (DAL) architecture. Write an 'EKF Isolation Formulation' detailing exactly how `AP_DAL.cpp` acts as an absolute C++ abstraction wall, preventing the NavEKF matrices from making direct pointer calls to the physical sensor frontends. Write a 'Bit-Exact Replay Analysis' explaining the memory allocation in `AP_DAL.cpp` and `LogStructure.h` used to serialize the exact state of every sensor frame at 400Hz to the SD card, guaranteeing that an engineer can execute a deterministic, bit-perfect replay of a fatal crash on a desktop PC. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Virtual Interface Instantiation (AP_DAL.cpp)', '### EKF Pointer Decoupling (AP_DAL.h)', and '### Deterministic Sensor Serialization (LogStructure.h)'."
+  },
+
+  "Chapter_067_Primary_Kinematic_Sensors_IMU_Compass_Baro.md": {
+    "chapter_title": "Primary Kinematic Sensor DAL: IMU, Compass, and Barometer Data Buffering",
+    "files": [
+      "libraries/AP_DAL/AP_DAL_InertialSensor.cpp",
+      "libraries/AP_DAL/AP_DAL_InertialSensor.h",
+      "libraries/AP_DAL/AP_DAL_Compass.cpp",
+      "libraries/AP_DAL/AP_DAL_Compass.h",
+      "libraries/AP_DAL/AP_DAL_Baro.cpp",
+      "libraries/AP_DAL/AP_DAL_Baro.h"
+    ],
+    "research_prompt": "Reverse-engineer the high-frequency sensor ingestion pathways within the Data Access Layer. Write a 'Kinematic State Buffering Formulation' detailing how `AP_DAL_InertialSensor.cpp` safely extracts and caches raw accelerometer and gyroscope delta-angles/delta-velocities, ensuring the EKF reads a temporally consistent snapshot of the vehicle's physics matrix. Write a 'Hardware Flag Encapsulation Analysis' mathematically explaining how `AP_DAL_Compass.cpp` and `AP_DAL_Baro.cpp` package not just floating-point data, but also physical hardware health bitmasks (like I2C failure flags) into the DAL so the EKF knows when to dynamically reject a failing sensor. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Delta-Velocity Temporal Caching (AP_DAL_InertialSensor.cpp)', '### Magnetic Vector Snapshotting (AP_DAL_Compass.cpp)', and '### Hardware Health Bitmask Injection (AP_DAL_Baro.cpp)'."
+  },
+
+  "Chapter_068_Spatial_Sensors_GPS_Beacons_and_Visual_Odometry.md": {
+    "chapter_title": "Spatial Sensor DAL: GPS, Airspeed, Beacons, and Visual Odometry",
+    "files": [
+      "libraries/AP_DAL/AP_DAL_GPS.cpp",
+      "libraries/AP_DAL/AP_DAL_GPS.h",
+      "libraries/AP_DAL/AP_DAL_Airspeed.cpp",
+      "libraries/AP_DAL/AP_DAL_Airspeed.h",
+      "libraries/AP_DAL/AP_DAL_Beacon.cpp",
+      "libraries/AP_DAL/AP_DAL_Beacon.h",
+      "libraries/AP_DAL/AP_DAL_RangeFinder.cpp",
+      "libraries/AP_DAL/AP_DAL_RangeFinder.h",
+      "libraries/AP_DAL/AP_DAL_VisualOdom.cpp",
+      "libraries/AP_DAL/AP_DAL_VisualOdom.h"
+    ],
+    "research_prompt": "Extract the asynchronous and low-frequency spatial sensor handlers within the DAL. Write an 'Asynchronous Coordinate Formulation' detailing how `AP_DAL_GPS.cpp` and `AP_DAL_VisualOdom.cpp` buffer heavily delayed spatial data (like 5Hz RTK GPS or 15Hz ROS 2 SLAM coordinates), attaching exact microsecond epoch timestamps so the EKF can mathematically roll back its time horizon to fuse the data correctly. Write a 'Rangefinder and Beacon Decoupling Analysis' explaining how complex, non-standard position sources (like Ultra-Wideband local beacons or downward-facing crop canopy radar) are sanitized into standard unified structs within `AP_DAL_Beacon.cpp` and `AP_DAL_RangeFinder.cpp` before the EKF ingests them. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Epoch Timestamping for Horizon Rollback (AP_DAL_GPS.cpp)', '### VSLAM Quaternion State Caching (AP_DAL_VisualOdom.cpp)', and '### Non-Standard Rangefinder Sanitization (AP_DAL_RangeFinder.cpp)'."
+  },
+
+  "Chapter_069_Master_Multicopter_Architecture_and_Thrust_Linearization.md": {
+    "chapter_title": "Master Multicopter Architecture, Spool States, and Thrust Linearization",
+    "files": [
+      "libraries/AP_Motors/AP_Motors_Class.cpp",
+      "libraries/AP_Motors/AP_Motors_Class.h",
+      "libraries/AP_Motors/AP_Motors.h",
+      "libraries/AP_Motors/AP_MotorsMulticopter.cpp",
+      "libraries/AP_Motors/AP_MotorsMulticopter.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the primary aerial motor abstraction layer. Write a 'Thrust Curve Linearization Formulation' detailing the exact algebraic exponents used in `AP_MotorsMulticopter.cpp` (e.g., `MOT_THST_EXPO`) to translate a linear PID request into a non-linear PWM output that matches the physical aerodynamic lift profile of spinning propellers. Write a 'Voltage Sag Compensation Analysis' mathematically explaining how the mixer dynamically scales the base PWM request upwards in real-time as the battery voltage drops under heavy multi-rotor load, ensuring PID gains do not degrade at the end of a flight. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Aerodynamic Thrust Expo Algebra (AP_MotorsMulticopter.cpp)', '### Spool-Up State Machine Constraints (AP_MotorsMulticopter.cpp)', and '### Battery Voltage Sag PWM Compensation (AP_Motors_Class.cpp)'."
+  },
+
+  "Chapter_070_Static_Matrix_Mixing_and_6_DoF_Lua_Scripting.md": {
+    "chapter_title": "Static Matrix Mixing, 6-DoF Decoupling, and Lua Scripting Injections",
+    "files": [
+      "libraries/AP_Motors/AP_MotorsMatrix.cpp",
+      "libraries/AP_Motors/AP_MotorsMatrix.h",
+      "libraries/AP_Motors/AP_Motors6DOF.cpp",
+      "libraries/AP_Motors/AP_Motors6DOF.h",
+      "libraries/AP_Motors/AP_MotorsMatrix_6DoF_Scripting.cpp",
+      "libraries/AP_Motors/AP_MotorsMatrix_6DoF_Scripting.h",
+      "libraries/AP_Motors/AP_MotorsMatrix_Scripting_Dynamic.cpp",
+      "libraries/AP_Motors/AP_MotorsMatrix_Scripting_Dynamic.h"
+    ],
+    "research_prompt": "Reverse-engineer the frame-geometry matrices and dynamic memory hooking. Write a 'Motor Factor Matrix Formulation' detailing exactly how `AP_MotorsMatrix.cpp` calculates the specific Roll, Pitch, and Yaw leverage factors for each physical motor based on its geometric angle and distance from the center of gravity (e.g., Quadcopter X vs Octocopter V). Write a 'Dynamic Scripting Injection Analysis' explaining the C++ pointer architectures in `AP_MotorsMatrix_Scripting_Dynamic.cpp` that allow an external Lua script to overwrite the physical mixer weights in real-time at 400Hz, enabling experimental 6-Degree-of-Freedom omnidirectional drones to dynamically decouple lateral movement from pitch/roll angles. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Geometric Leverage Matrix Math (AP_MotorsMatrix.cpp)', '### 6-DoF Lateral Translation Vectors (AP_Motors6DOF.cpp)', and '### Lua Script Motor Weight Overrides (AP_MotorsMatrix_Scripting_Dynamic.cpp)'."
+  },
+
+  "Chapter_071_Helicopter_Swashplate_Kinematics_and_Rotor_Speed_Control.md": {
+    "chapter_title": "Helicopter Swashplate Kinematics, Phase Angles, and Rotor Speed Control (RSC)",
+    "files": [
+      "libraries/AP_Motors/AP_MotorsHeli.cpp",
+      "libraries/AP_Motors/AP_MotorsHeli.h",
+      "libraries/AP_Motors/AP_MotorsHeli_Single.cpp",
+      "libraries/AP_Motors/AP_MotorsHeli_Single.h",
+      "libraries/AP_Motors/AP_MotorsHeli_Dual.cpp",
+      "libraries/AP_Motors/AP_MotorsHeli_Dual.h",
+      "libraries/AP_Motors/AP_MotorsHeli_Quad.cpp",
+      "libraries/AP_Motors/AP_MotorsHeli_Quad.h",
+      "libraries/AP_Motors/AP_MotorsHeli_Swash.cpp",
+      "libraries/AP_Motors/AP_MotorsHeli_Swash.h",
+      "libraries/AP_Motors/AP_MotorsHeli_RSC.cpp",
+      "libraries/AP_Motors/AP_MotorsHeli_RSC.h"
+    ],
+    "research_prompt": "Extract the intense mechanical trigonometry required to fly single and multi-rotor helicopters. Write a 'Cyclic Swashplate Phase Formulation' detailing the sine/cosine math in `AP_MotorsHeli_Swash.cpp` used to calculate the exact servo deflections required to tilt the rotor disk while compensating for gyroscopic precession (e.g., advancing the phase angle 90 degrees). Write a 'Rotor Speed Control Analysis' mathematically explaining how `AP_MotorsHeli_RSC.cpp` manages the separate throttle/pitch curves, spool-up idle states, and autorotation bail-out logic for gas turbine and electric motors independent of the cyclic steering servos. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### CCPM Swashplate Servo Trigonometry (AP_MotorsHeli_Swash.cpp)', '### Dual-Rotor Intermeshing Phase Offsets (AP_MotorsHeli_Dual.cpp)', and '### Autorotation and Bailout Throttle States (AP_MotorsHeli_RSC.cpp)'."
+  },
+
+  "Chapter_072_Specialty_VTOL_Frames_Tricopters_and_Coaxial_Flaps.md": {
+    "chapter_title": "Specialty VTOL Frames: Tricopter Yaw Vectors, Coaxial Flaps, and Tailsitters",
+    "files": [
+      "libraries/AP_Motors/AP_MotorsTri.cpp",
+      "libraries/AP_Motors/AP_MotorsTri.h",
+      "libraries/AP_Motors/AP_MotorsSingle.cpp",
+      "libraries/AP_Motors/AP_MotorsSingle.h",
+      "libraries/AP_Motors/AP_MotorsCoax.cpp",
+      "libraries/AP_Motors/AP_MotorsCoax.h",
+      "libraries/AP_Motors/AP_MotorsTailsitter.cpp",
+      "libraries/AP_Motors/AP_MotorsTailsitter.h"
+    ],
+    "research_prompt": "Forensically analyze the hybrid kinematic matrices used for vectored thrust and control surfaces. Write a 'Tricopter Tail Vector Formulation' detailing the trigonometry in `AP_MotorsTri.cpp` used to actuate the rear tail servo, converting a portion of the rear motor's vertical lift into lateral yaw thrust, and recalculating the remaining vertical vector to prevent altitude loss during a spin. Write a 'Tailsitter and Coaxial Deflection Analysis' explaining how `AP_MotorsCoax.cpp` translates rotational PID requests into physical control flap deflections in the prop-wash, and how `AP_MotorsTailsitter.cpp` handles the extreme matrix rotations when a fixed-wing plane hovers on its tail. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Tricopter Tail Servo Vector Math (AP_MotorsTri.cpp)', '### Coaxial Prop-Wash Flap Deflection (AP_MotorsCoax.cpp)', and '### Tailsitter Attitude Matrix Rotation (AP_MotorsTailsitter.cpp)'."
+  },
+
+  "Chapter_073_Payload_Manipulation_EPMs_and_PWM_Actuation.md": {
+    "chapter_title": "Payload Manipulation, Electro-Permanent Magnets (EPM), and PWM Actuation",
+    "files": [
+      "libraries/AP_Gripper/AP_Gripper.cpp",
+      "libraries/AP_Gripper/AP_Gripper.h",
+      "libraries/AP_Gripper/AP_Gripper_Backend.cpp",
+      "libraries/AP_Gripper/AP_Gripper_Backend.h",
+      "libraries/AP_Gripper/AP_Gripper_EPM.cpp",
+      "libraries/AP_Gripper/AP_Gripper_EPM.h",
+      "libraries/AP_Gripper/AP_Gripper_Servo.cpp",
+      "libraries/AP_Gripper/AP_Gripper_Servo.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the payload manipulation architecture. Write a 'Mission Command Arbitration Formulation' detailing exactly how `AP_Gripper.cpp` intercepts MAVLink payload commands (`MAV_CMD_DO_GRIPPER`) and delegates them to the polymorphic backend without blocking the 400Hz physics thread. Write an 'Electro-Permanent Magnetic State Analysis' mathematically explaining the pulse-width timing logic in `AP_Gripper_EPM.cpp` used to send high-energy, microsecond-duration PWM pulses to flip the physical magnetic domains of an EPM, allowing it to grab or release heavy cargo without drawing continuous battery power. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Frontend MAVLink Payload Arbitration (AP_Gripper.cpp)', '### Electro-Permanent Magnet (EPM) State Switching (AP_Gripper_EPM.cpp)', and '### PWM Servo Kinematic Actuation (AP_Gripper_Servo.cpp)'."
+  },
+
+  "Chapter_074_High_Precision_Thermometry_and_TSYS01_Silicon_Drivers.md": {
+    "chapter_title": "High-Precision Thermometry, TSYS01 Silicon Drivers, and Fluid Temperature Sensing",
+    "files": [
+      "TSYS01.cpp",
+      "TSYS01.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the TSYS01 fast-response thermometry driver. Write a 'PROM Calibration Formulation' detailing the exact C++ I2C/SPI transactions in `TSYS01.cpp` used to interrogate the silicon during boot to extract its unique, factory-burned calibration coefficients ($k_0$ through $k_4$). Write a 'Thermal Polynomial Algebra Analysis' mathematically explaining how the driver reads the raw 24-bit Analog-to-Digital (ADC) registers and applies those exact coefficients against a 4th-order polynomial to calculate absolute Celsius fluid/air temperature without blocking the 400Hz RTOS loop. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Factory PROM Coefficient Extraction (TSYS01.cpp)', '### 24-Bit ADC Register Polling (TSYS01.cpp)', and '### 4th-Order Thermal Polynomial Math (TSYS01.cpp)'."
+  },
+
+  "Chapter_075_Pre_Flight_Safety_Matrices_and_Arming_Lockouts.md": {
+    "chapter_title": "Pre-Flight Safety Matrices, Subsystem Health, and Arming Lockouts",
+    "files": [
+      "AP_Arming.cpp",
+      "AP_Arming.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master pre-flight safety architecture. Write a 'Subsystem Health Evaluation Formulation' detailing exactly how `AP_Arming.cpp` uses bitmasks (specifically the `ARMING_CHECK` parameter) to conditionally evaluate dozens of hardware states—such as checking if the EKF velocity variance is below a safe threshold, or if the I2C bus has recorded too many hardware errors. Write a 'State Transition Analysis' explaining the C++ logic that physically un-latches the motor mixer when all boolean checks pass, and detail the strict timeout mechanisms that automatically disarm the heavy chassis if the operator fails to raise the throttle within a specific window. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Subsystem Health Bitmask Evaluation (AP_Arming.cpp)', '### EKF and GPS Variance Pre-Arm Thresholds (AP_Arming.cpp)', and '### Idle Timeout and Auto-Disarm Logic (AP_Arming.cpp)'."
+  },
+
+  "Chapter_076_EEPROM_Parameter_Mapping_and_PROGMEM_Variable_Trees.md": {
+    "chapter_title": "EEPROM Parameter Mapping, PROGMEM Variable Trees, and Type-Safe Pointers",
+    "files": [
+      "AP_Param.cpp",
+      "AP_Param.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master parameter storage and memory-mapping architecture. Write a 'PROGMEM Tree Formulation' detailing exactly how `AP_Param.cpp` statically allocates parameter names (like `ATC_RAT_RLL_P`) into the STM32's non-volatile Flash memory (PROGMEM) rather than active RAM, preventing the flight controller from running out of heap space during boot. Write a 'Type-Safe Pointer Serialization Analysis' mathematically explaining how `AP_Param.h` utilizes C++ class inheritance (e.g., `AP_Float`, `AP_Int16`) to provide a universal generic pointer interface, allowing the MAVLink telemetry loop to sequentially iterate through thousands of disparate memory addresses, cast them correctly, and serialize them into 16-byte payload arrays for Ground Station configuration. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Flash Memory Block Addressing and Wear-Leveling (AP_Param.cpp)', '### PROGMEM Tree Traversal and RAM Conservation (AP_Param.cpp)', and '### Type-Safe Class Inheritance for MAVLink Casting (AP_Param.h)'."
+  },
+
+  "Chapter_077_RSSI_Link_Quality_and_Signal_Filtering.md": {
+    "chapter_title": "Received Signal Strength Indicator (RSSI), Link Quality, and Signal Filtering",
+    "files": [
+      "AP_RSSI.cpp",
+      "AP_RSSI.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the radio signal strength telemetry architecture. Write a 'Signal Scaling Formulation' detailing exactly how `AP_RSSI.cpp` mathematically translates disparate hardware inputs—such as raw microsecond PWM pulse widths from a receiver channel, or fluctuating analog ADC voltages—into a normalized 0.0 to 1.0 floating-point link quality metric, including the C++ logic used to invert the scale for receivers where 0V indicates 100% signal. Write a 'Multi-Path Fading Filter Analysis' explaining the low-pass filter algorithms applied to the raw signal data to smooth out transient signal drops caused by antenna polarization or physical occlusion, preventing the flight controller from triggering a premature Return-to-Launch (RTL) failsafe. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### PWM and Analog Voltage Scaling Math (AP_RSSI.cpp)', '### Low-Pass Filtering for Multi-Path Fading (AP_RSSI.cpp)', and '### Digital MAVLink Signal Injection (AP_RSSI.cpp)'."
+  },
+
+  "Chapter_078_Geo_Fenced_Containment_and_Polygon_Breaches.md": {
+    "chapter_title": "Geo-Fenced Containment, Polygon Breaches, and EEPROM Boundary Loading",
+    "files": [
+      "libraries/AC_Fence/AC_Fence.cpp",
+      "libraries/AC_Fence/AC_Fence.h",
+      "libraries/AC_Fence/AC_PolyFence_loader.cpp",
+      "libraries/AC_Fence/AC_PolyFence_loader.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the spatial containment and boundary enforcement architecture. Write a 'Polygon Ray-Casting Formulation' detailing the exact computational geometry in `AC_Fence.cpp` used to continuously verify if the vehicle's EKF coordinate resides within a complex multi-point inclusion or exclusion zone. Write an 'EEPROM Fence Coordinate Analysis' mathematically explaining how `AC_PolyFence_loader.cpp` streams geographic latitude/longitude nodes from the STM32's non-volatile flash memory into RAM, preventing the RTOS from stalling when the user uploads a highly complex, 100-point perimeter via MAVLink. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Ray-Casting Point-in-Polygon Math (AC_Fence.cpp)', '### EEPROM Coordinate Stream Loading (AC_PolyFence_loader.cpp)', and '### Breach Action Arbitration and Hard Braking (AC_Fence.cpp)'."
+  },
+
+  "Chapter_079_Real_Time_Clock_Epoch_Sync_and_UART_Jitter_Correction.md": {
+    "chapter_title": "Real-Time Clock (RTC), Epoch Synchronization, and UART Jitter Correction",
+    "files": [
+      "libraries/AP_RTC/AP_RTC.cpp",
+      "libraries/AP_RTC/AP_RTC.h",
+      "libraries/AP_RTC/JitterCorrection.cpp",
+      "libraries/AP_RTC/JitterCorrection.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the global temporal synchronization architecture. Write a 'Microsecond Epoch Formulation' detailing exactly how `AP_RTC.cpp` ingests UTC time updates from external sources (like a 3D GPS fix or MAVLink `SYSTEM_TIME` packets) and mathematically binds the STM32's local boot-time microsecond counter to the global Unix Epoch, allowing the SD card logs to be perfectly timestamped against real-world events. Write a 'Serial Transport Smoothing Analysis' mathematically explaining the ring-buffer algorithms in `JitterCorrection.cpp` used to filter out the unpredictable UART latency (jitter) that occurs when time-sync packets traverse congested serial buses, guaranteeing the EKF receives a monotonically increasing, drift-free time vector. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Global UTC to Local Microsecond Binding (AP_RTC.cpp)', '### Hardware RTC Battery-Backed Synchronization (AP_RTC.cpp)', and '### UART Transport Latency Jitter Math (JitterCorrection.cpp)'."
+  },
+
+  "Chapter_080_Topographic_Terrain_Following_and_SRTM_Caching.md": {
+    "chapter_title": "Topographic Terrain Following, SRTM Tile Caching, and GCS Ingestion",
+    "files": [
+      "AP_Terrain.cpp",
+      "AP_Terrain.h",
+      "TerrainGCS.cpp",
+      "TerrainIO.cpp",
+      "TerrainMission.cpp",
+      "TerrainUtil.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the global terrain-following architecture. Write an 'SRTM Interpolation Formulation' detailing the exact bilinear interpolation math in `TerrainUtil.cpp` and `AP_Terrain.cpp` used to calculate a highly precise sub-meter altitude target when the vehicle's spatial coordinate falls squarely between four distinct 100-meter topographic grid nodes. Write a 'Topographic Memory Paging Analysis' mathematically explaining the Least Recently Used (LRU) RAM caching architecture and the DMA SPI disk writes in `TerrainIO.cpp` that manage megabytes of terrain tiles without exhausting the microcontroller's heap, and extract the state-machine logic in `TerrainGCS.cpp` that automatically blasts MAVLink requests to the Ground Station if the EKF vector predicts the vehicle is flying towards an un-cached topographic region. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Topographic Grid Bilinear Interpolation (TerrainUtil.cpp)', '### LRU Tile Caching and SD Card Paging (TerrainIO.cpp)', and '### Predictive MAVLink Tile Ingestion (TerrainGCS.cpp)'."
+  },
+
+  "Chapter_081_Core_DSP_Low_Pass_Biquads_and_Slew_Limiting.md": {
+    "chapter_title": "Core Digital Signal Processing: Low-Pass Biquads, Butterworth, and Slew Limiting",
+    "files": [
+      "libraries/Filter/Filter.h",
+      "libraries/Filter/FilterClass.h",
+      "libraries/Filter/LowPassFilter.cpp",
+      "libraries/Filter/LowPassFilter.h",
+      "libraries/Filter/LowPassFilter2p.cpp",
+      "libraries/Filter/LowPassFilter2p.h",
+      "libraries/Filter/Butter.h",
+      "libraries/Filter/SlewLimiter.cpp",
+      "libraries/Filter/SlewLimiter.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core Digital Signal Processing (DSP) architecture. Write a 'Discrete-Time Biquad Formulation' detailing the exact algebraic coefficients (alpha, beta) calculated in `LowPassFilter2p.cpp` and `Butter.h` used to construct second-order low-pass filters that surgically remove high-frequency mechanical noise without introducing unacceptable phase delay into the control loop. Write a 'Kinematic Jerk Analysis' mathematically explaining the delta-time bounds in `SlewLimiter.cpp` used to clamp the maximum rate-of-change of a signal, preventing violent instantaneous commands from destroying mechanical servos or inducing inductive voltage spikes in motor ESCs. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Discrete-Time Biquad Algebra (LowPassFilter2p.cpp)', '### Butterworth Filter Pole Placement (Butter.h)', and '### Delta-Time Slew Clamping (SlewLimiter.cpp)'."
+  },
+
+  "Chapter_082_Dynamic_Harmonic_Notch_Filters_and_ESC_Telemetry.md": {
+    "chapter_title": "Dynamic Harmonic Notch Filters, Resonance Attenuation, and ESC Telemetry",
+    "files": [
+      "libraries/Filter/NotchFilter.cpp",
+      "libraries/Filter/NotchFilter.h",
+      "libraries/Filter/HarmonicNotchFilter.cpp",
+      "libraries/Filter/HarmonicNotchFilter.h"
+    ],
+    "research_prompt": "Reverse-engineer the advanced active noise cancellation matrices. Write a 'Center-Frequency Attenuation Formulation' detailing the exact trigonometric math in `NotchFilter.cpp` used to construct a deep, narrow band-stop filter that completely eliminates specific resonant frequencies (e.g., frame vibration) from the IMU data stream. Write a 'Dynamic RPM Tracking Analysis' explaining how `HarmonicNotchFilter.cpp` intercepts live RPM telemetry from the motor ESCs or the Fast Fourier Transform (FFT) engine to continuously shift the notch filter's center frequency and its harmonics in real-time, effectively silencing motor noise at any throttle state. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Center-Frequency Band-Stop Math (NotchFilter.cpp)', '### Dynamic RPM Frequency Tracking (HarmonicNotchFilter.cpp)', and '### Multi-Harmonic Attenuation Scaling (HarmonicNotchFilter.cpp)'."
+  },
+
+  "Chapter_083_Statistical_Mode_Filtering_and_Safe_Derivatives.md": {
+    "chapter_title": "Statistical Mode Filtering, Ring Buffers, and Low-Noise Derivatives",
+    "files": [
+      "libraries/Filter/AverageFilter.h",
+      "libraries/Filter/DerivativeFilter.cpp",
+      "libraries/Filter/DerivativeFilter.h",
+      "libraries/Filter/ModeFilter.cpp",
+      "libraries/Filter/ModeFilter.h",
+      "libraries/Filter/FilterWithBuffer.h"
+    ],
+    "research_prompt": "Extract the statistical and rate-of-change extraction algorithms. Write a 'Low-Noise Derivative Formulation' detailing exactly how `DerivativeFilter.cpp` applies low-pass pre-filtering before calculating the slope ($dy/dx$) of a signal, mathematically preventing microscopic high-frequency sensor noise from exploding into massive artificial velocity spikes. Write a 'Sliding Window Mode Analysis' explaining the buffer sorting algorithms in `ModeFilter.cpp` and `FilterWithBuffer.h` used to determine the statistical mode (most common value) over a rolling array of samples, acting as an ultimate glitch-rejection mechanism against random ultrasonic sonar spikes or single-frame Lidar errors. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Safe Rate-of-Change Slope Math (DerivativeFilter.cpp)', '### Sliding Window Buffer Allocation (FilterWithBuffer.h)', and '### Glitch Rejection via Statistical Mode (ModeFilter.cpp)'."
+  },
+
+  "Chapter_084_RC_Input_Arbitration_and_Helicopter_Collective_Interlocks.md": {
+    "chapter_title": "RC Input Arbitration, Deadzone Sanitization, and Helicopter Collective Interlocks",
+    "files": [
+      "AC_InputManager.cpp",
+      "AC_InputManager.h",
+      "AC_InputManager_Heli.cpp",
+      "AC_InputManager_Heli.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the human-to-machine input arbitration layer. Write an 'RC Channel Sanitization Formulation' detailing exactly how `AC_InputManager.cpp` strips out raw PWM jitter using programmable deadzones, mathematically translating a noisy 900-2100 microsecond pulse into a perfectly normalized -1.0 to +1.0 floating-point vector representing the pilot's desired kinematic rate. Write a 'Helicopter Collective and Interlock Analysis' explaining the strict state-machine logic in `AC_InputManager_Heli.cpp` that decouples the physical throttle stick into two distinct mechanical outputs: the collective blade pitch angle and the Motor Run Enable (Interlock) switch, ensuring that an accidental stick bump on the ground does not spool up the main rotor. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### PWM Deadzone and Jitter Sanitization (AC_InputManager.cpp)', '### Flight Mode Switch Debouncing (AC_InputManager.cpp)', and '### Helicopter Motor Interlock and Collective Pitch Mapping (AC_InputManager_Heli.cpp)'."
+  },
+
+  "Chapter_085_Barometric_Frontend_Altitude_Math_and_Wind_Compensation.md": {
+    "chapter_title": "Barometric Frontend Arbitration, Hypsometric Math, and Wind Compensation",
+    "files": [
+      "libraries/AP_Baro/AP_Baro.cpp",
+      "libraries/AP_Baro/AP_Baro.h",
+      "libraries/AP_Baro/AP_Baro_Backend.cpp",
+      "libraries/AP_Baro/AP_Baro_Backend.h",
+      "libraries/AP_Baro/AP_Baro_Wind.cpp",
+      "libraries/AP_Baro/AP_Baro_Logging.cpp",
+      "libraries/AP_Baro/LogStructure.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master barometric abstraction layer. Write a 'Hypsometric Altitude Formulation' detailing exactly how `AP_Baro.cpp` applies the Standard Atmosphere mathematical model to convert raw static pressure (Pascals) and ambient temperature into a highly precise absolute altitude estimate above Mean Sea Level (MSL). Write a 'Dynamic Pressure Rejection Analysis' mathematically explaining how `AP_Baro_Wind.cpp` intercepts airspeed and wind telemetry to calculate the Bernoulli effect across the physical airframe, dynamically offsetting the artificial pressure drop caused by forward flight so the EKF does not falsely register an altitude climb. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Standard Atmosphere Altitude Conversion (AP_Baro.cpp)', '### Wind-Induced Dynamic Pressure Cancellation (AP_Baro_Wind.cpp)', and '### Multi-Sensor Covariance Arbitration (AP_Baro.cpp)'."
+  },
+
+  "Chapter_086_Bare_Metal_Silicon_Drivers_and_PROM_Calibration.md": {
+    "chapter_title": "Bare-Metal Silicon Drivers, 24-Bit ADCs, and Factory PROM Calibration",
+    "files": [
+      "libraries/AP_Baro/AP_Baro_MS5611.cpp",
+      "libraries/AP_Baro/AP_Baro_MS5611.h",
+      "libraries/AP_Baro/AP_Baro_BMP085.cpp",
+      "libraries/AP_Baro/AP_Baro_BMP085.h",
+      "libraries/AP_Baro/AP_Baro_BMP280.cpp",
+      "libraries/AP_Baro/AP_Baro_BMP280.h",
+      "libraries/AP_Baro/AP_Baro_BMP388.cpp",
+      "libraries/AP_Baro/AP_Baro_BMP388.h",
+      "libraries/AP_Baro/AP_Baro_DPS280.cpp",
+      "libraries/AP_Baro/AP_Baro_DPS280.h",
+      "libraries/AP_Baro/AP_Baro_FBM320.cpp",
+      "libraries/AP_Baro/AP_Baro_FBM320.h",
+      "libraries/AP_Baro/AP_Baro_ICM20789.cpp",
+      "libraries/AP_Baro/AP_Baro_ICM20789.h",
+      "libraries/AP_Baro/AP_Baro_ICP101XX.cpp",
+      "libraries/AP_Baro/AP_Baro_ICP101XX.h",
+      "libraries/AP_Baro/AP_Baro_ICP201XX.cpp",
+      "libraries/AP_Baro/AP_Baro_ICP201XX.h",
+      "libraries/AP_Baro/AP_Baro_LPS2XH.cpp",
+      "libraries/AP_Baro/AP_Baro_LPS2XH.h",
+      "libraries/AP_Baro/AP_Baro_SPL06.cpp",
+      "libraries/AP_Baro/AP_Baro_SPL06.h"
+    ],
+    "research_prompt": "Reverse-engineer the low-level silicon interrogation protocols for atmospheric pressure sensors. Write a 'PROM Calibration Extraction Formulation' detailing how drivers like `AP_Baro_MS5611.cpp` query the hardware's internal EEPROM during initialization to pull factory-burned geometric coefficients. Write a 'Thermal Compensation Matrix Analysis' mathematically explaining how these drivers utilize both the 24-bit raw pressure ADC ticks and the discrete silicon temperature to calculate a 2nd-order polynomial that eliminates pressure drift caused by the physical expansion or contraction of the silicon die in freezing high-altitude environments. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Factory EEPROM Coefficient Extraction (AP_Baro_MS5611.cpp)', '### 2nd-Order Silicon Thermal Algebra (AP_Baro_BMP280.cpp)', and '### High-Speed I2C/SPI Bus Polling (AP_Baro_DPS280.cpp)'."
+  },
+
+  "Chapter_087_Networked_Barometers_Submersibles_and_External_AHRS.md": {
+    "chapter_title": "Networked Barometers, Hydrostatic Depth, and External AHRS Injection",
+    "files": [
+      "libraries/AP_Baro/AP_Baro_UAVCAN.cpp",
+      "libraries/AP_Baro/AP_Baro_UAVCAN.h",
+      "libraries/AP_Baro/AP_Baro_MSP.cpp",
+      "libraries/AP_Baro/AP_Baro_MSP.h",
+      "libraries/AP_Baro/AP_Baro_ExternalAHRS.cpp",
+      "libraries/AP_Baro/AP_Baro_ExternalAHRS.h",
+      "libraries/AP_Baro/AP_Baro_KellerLD.cpp",
+      "libraries/AP_Baro/AP_Baro_KellerLD.h",
+      "libraries/AP_Baro/AP_Baro_SITL.cpp",
+      "libraries/AP_Baro/AP_Baro_SITL.h",
+      "libraries/AP_Baro/AP_Baro_Dummy.cpp",
+      "libraries/AP_Baro/AP_Baro_Dummy.h",
+      "libraries/AP_Baro/AP_Baro_HIL.cpp"
+    ],
+    "research_prompt": "Extract the specific ingestion logic for non-local and non-atmospheric pressure sources. Write a 'DroneCAN Payload Arbitration Formulation' detailing how `AP_Baro_UAVCAN.cpp` unpacks compressed IEEE 754 floating-point pressure values from remote smart-sensors across the CAN bus and injects them directly into the primary altitude matrices. Write a 'Hydrostatic Depth Analysis' explaining the specific fluid-density mathematics in `AP_Baro_KellerLD.cpp` used by ArduSub to translate raw underwater physical pressure (Bars) into an absolute submarine depth measurement, overriding the standard atmospheric models. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### DroneCAN Remote Telemetry Unpacking (AP_Baro_UAVCAN.cpp)', '### Hydrostatic Fluid Density Conversion Math (AP_Baro_KellerLD.cpp)', and '### External AHRS Spatial Synchronization (AP_Baro_ExternalAHRS.cpp)'."
+  },
+
+  "Chapter_088_Electronic_Fuel_Injection_and_Internal_Combustion_Telemetry.md": {
+    "chapter_title": "Electronic Fuel Injection (EFI), Internal Combustion, and Serial Engine Management",
+    "files": [
+      "AP_EFI.cpp",
+      "AP_EFI.h",
+      "AP_EFI_Backend.cpp",
+      "AP_EFI_Backend.h",
+      "AP_EFI_NWPMU.cpp",
+      "AP_EFI_NWPMU.h",
+      "AP_EFI_Serial_Lutan.cpp",
+      "AP_EFI_Serial_Lutan.h",
+      "AP_EFI_Serial_MS.cpp",
+      "AP_EFI_Serial_MS.h",
+      "AP_EFI_State.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the internal combustion engine management and Electronic Fuel Injection (EFI) architecture. Write a 'Combustion State Formulation' detailing the exact struct packing in `AP_EFI_State.h` used to hold critical mechanical telemetry—such as Engine RPM, Manifold Absolute Pressure (MAP), Cylinder Head Temperature (CHT), and ignition timing angles. Write an 'ECU Serial Decoupling Analysis' explaining how `AP_EFI_Serial_MS.cpp` and `AP_EFI_Serial_Lutan.cpp` parse highly specific, proprietary UART bitstreams from industrial ECUs (like MegaSquirt and Lutan), translating internal injector pulse-widths into real-time fuel consumption rates (grams per second) so the flight controller can mathematically predict physical fuel-exhaustion failsafes. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Combustion State Struct Architecture (AP_EFI_State.h)', '### MegaSquirt Serial Payload Unpacking (AP_EFI_Serial_MS.cpp)', and '### ECU Telemetry and Ignition Diagnostics (AP_EFI.cpp)'."
+  },
+
+  "Chapter_089_EKF_Core_Infrastructure_Buffers_and_GSF_Yaw.md": {
+    "chapter_title": "EKF Core Infrastructure, Temporal Buffers, and Gaussian Sum Filter (GSF) Yaw",
+    "files": [
+      "AP_Nav_Common.h",
+      "AP_NavEKF_core_common.cpp",
+      "AP_NavEKF_core_common.h",
+      "AP_NavEKF_Source.cpp",
+      "AP_NavEKF_Source.h",
+      "EKF_Buffer.cpp",
+      "EKF_Buffer.h",
+      "EKFGSF_yaw.cpp",
+      "EKFGSF_yaw.h",
+      "EKFGSF_Logging.cpp",
+      "LogStructure.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master Extended Kalman Filter (EKF) temporal infrastructure and emergency estimators. Write a 'Temporal Ring-Buffer Formulation' detailing the exact memory architecture in `EKF_Buffer.cpp` used to cache 400Hz IMU states, allowing the EKF to mathematically 'roll back' time to fuse a delayed 5Hz GPS coordinate into the exact historical horizon where it physically occurred. Write a 'Gaussian Sum Filter Analysis' mathematically explaining how `EKFGSF_yaw.cpp` spawns multiple parallel micro-EKFs, each initialized with a different heading assumption, to continuously deduce the vehicle's true Yaw vector purely from GPS velocity data, allowing the flight controller to survive catastrophic compass interference. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Ring-Buffer Horizon Rollback Math (EKF_Buffer.cpp)', '### Dynamic Sensor Source Arbitration (AP_NavEKF_Source.cpp)', and '### Gaussian Sum Filter Compass-less Yaw (EKFGSF_yaw.cpp)'."
+  },
+
+  "Chapter_090_MATLAB_Symbolic_Algebra_and_EKF_Prototyping.md": {
+    "chapter_title": "MATLAB Symbolic Algebra, Jacobian Derivation, and EKF Prototyping",
+    "files": [
+      "libraries/AP_NavEKF/Models/GenerateEquations.m",
+      "libraries/AP_NavEKF/Models/calcF.m",
+      "libraries/AP_NavEKF/Models/calcQ.m",
+      "libraries/AP_NavEKF/Models/calcH_MAG.m",
+      "libraries/AP_NavEKF/Models/PredictStates.m",
+      "libraries/AP_NavEKF/Models/PredictCovariance.m",
+      "libraries/AP_NavEKF/Models/FuseVelocity.m",
+      "libraries/AP_NavEKF/Models/FuseMagnetometer.m",
+      "libraries/AP_NavEKF/Models/AlignTilt.m",
+      "libraries/AP_NavEKF/Models/AlignHeading.m",
+      "libraries/AP_NavEKF/Models/RunSyntheticData.m",
+      "libraries/AP_NavEKF/Models/RunRealData.m",
+      "libraries/AP_NavEKF/Models/PlotData.m",
+      "libraries/AP_NavEKF/Models/with_initial_alignment.fig"
+    ],
+    "research_prompt": "Perform a forensic extraction of the MATLAB symbolic algebra framework used to design the Extended Kalman Filter. Write a 'Jacobian Matrix Derivation Formulation' detailing exactly how `GenerateEquations.m` utilizes symbolic math to automatically calculate the complex partial derivatives for the State Transition Jacobian ($F$) and Measurement Jacobian ($H$), saving the outputs to `calcF.m` and `calcH_MAG.m` to avoid human calculus errors. Write a 'Filter Prediction and Correction Analysis' mathematically explaining the core loop prototyped in `PredictCovariance.m` and `FuseMagnetometer.m`, detailing how the scripts use synthetically generated IMU noise (`RunSyntheticData.m`) to test the stability of the Kalman Gain ($K$) calculations before the logic is hard-coded into the ArduPilot C++ libraries. CRITICAL: In the 'C++ Implementation' section (adapted for MATLAB), use '###' (H3) headers: '### Symbolic Partial Derivative Generation (GenerateEquations.m)', '### Covariance Matrix Prediction Algebra (PredictCovariance.m)', and '### Synthetic Noise and Measurement Fusion (FuseMagnetometer.m)'."
+  },
+
+  "Chapter_091_EKF_Autogenerated_C_Code_and_Covariance_Optimization.md": {
+    "chapter_title": "EKF Auto-Generated C++ Math, Covariance Optimization, and Matrix Translation",
+    "files": [
+      "AlignHeading.m",
+      "AlignTilt.m",
+      "C_code.txt",
+      "FixAutoGenCCode.m",
+      "FuseMagnetometer.m",
+      "FuseVelocity.m",
+      "GenerateEquations.m",
+      "PlotData.m",
+      "PredictCovariance.m",
+      "PredictCovarianceOptimised.m",
+      "PredictStates.m",
+      "RunSimulation.m",
+      "calcEKF.m",
+      "calcF.c",
+      "calcF.cpp",
+      "calcF.m",
+      "calcH_MAG.c",
+      "calcH_MAG.cpp",
+      "calcH_MAG.m",
+      "calcMagAng.m",
+      "calcP.c",
+      "calcP.cpp",
+      "calcP.m",
+      "calcP.txt",
+      "calcQ.c",
+      "calcQ.cpp",
+      "calcQ.m",
+      "calcSF.c",
+      "calcSP.c",
+      "calcTmn.c",
+      "calcTmn.m",
+      "calcTms.c",
+      "calcTms.m"
+    ],
+    "research_prompt": "Perform a forensic extraction of the automated C++ generation pipeline used to construct the Extended Kalman Filter core. Write an 'Auto-Generated C++ Translation Formulation' detailing exactly how MATLAB scripts like `FixAutoGenCCode.m` parse the raw symbolic outputs of the State Transition and Measurement Jacobians ($F$ and $H$) and convert them into highly optimized `calcF.cpp` and `calcH_MAG.cpp` files, enforcing strict array indexing and C-style type casting. Write a 'Covariance FLOP Reduction Analysis' mathematically explaining the logic in `PredictCovarianceOptimised.m` used to identify and isolate common sub-expressions within the massive 24x24 covariance prediction matrix, extracting them into temporary variables to drastically reduce the number of Floating-Point Operations (FLOPs) required by the flight controller's processor. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### MATLAB to C++ Array Index Translation (FixAutoGenCCode.m)', '### Common Sub-Expression Elimination for FLOP Reduction (PredictCovarianceOptimised.m)', and '### Autogenerated State Covariance Propagation (calcP.cpp)'."
+  },
+
+  "Chapter_092_Quaternion_Kinematics_and_Symbolic_Math_Utilities.md": {
+    "chapter_title": "Quaternion Kinematics, Body-to-Nav Transformations, and Syntax Utilities",
+    "files": [
+      "ConvertToC.m",
+      "ConvertToM.m",
+      "EulToQuat.m",
+      "NormQuat.m",
+      "OptimiseAlgebra.m",
+      "Quat2Tbn.m",
+      "QuatDivide.m",
+      "QuatMult.m",
+      "QuatToEul.m",
+      "RotToQuat.m"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core mathematical utility library driving the EKF symbolic generation engine. Write a 'Quaternion Kinematics Formulation' detailing the exact 4D matrix algebra defined in `QuatMult.m` and `Quat2Tbn.m` used to translate the vehicle's internal Body Frame into the global Earth Navigation Frame, mathematically proving how quaternions completely eliminate the Gimbal Lock singularity that occurs when Euler pitch hits 90 degrees. Write a 'Syntax Translation and Optimization Analysis' explaining how `OptimiseAlgebra.m` algebraically reduces raw symbolic expressions, and how `ConvertToC.m` systematically parses the MATLAB syntax strings (e.g., translating `x^2` into `sq(x)`) so the resulting equations compile perfectly in the STM32's GCC compiler. CRITICAL: In the 'C++ Implementation' section (adapted for MATLAB utility scripts), use '###' (H3) headers: '### Euler-to-Quaternion Gimbal Lock Prevention (EulToQuat.m)', '### Body-to-Nav Frame Transformation Matrices (Quat2Tbn.m)', and '### Symbolic Syntax Conversion to C++ (ConvertToC.m)'."
+  },
+
+  "Chapter_093_Advanced_EKF_State_Matrices_and_Process_Noise.md": {
+    "chapter_title": "Advanced EKF State Matrices, Process Noise, and Real-World Tuning",
+    "files": [
+      "calcF.m",
+      "calcG.m",
+      "calcH_MAG.m",
+      "calcQ.m",
+      "FuseMagnetometer.m",
+      "FuseVelocity.m",
+      "GenerateEquations.m",
+      "PlotData.m",
+      "PredictCovariance.m",
+      "PredictStates.m",
+      "RunRealData.m"
+    ],
+    "research_prompt": "Perform a forensic extraction of the advanced Extended Kalman Filter state and process noise matrices. Write a 'State Transition and Process Noise Formulation' detailing the symbolic algebra in `GenerateEquations.m` used to derive the fundamental State Transition Jacobian ($F$) mapped in `calcF.m` and the specific Process Noise Mapping matrix ($G$) mapped in `calcG.m`. Write a 'Covariance Growth and Tuning Analysis' mathematically explaining how `calcQ.m` translates physical sensor noise metrics (like gyroscope and accelerometer random walks) into covariance growth over time, and detail how `RunRealData.m` leverages actual logged `.BIN` telemetry instead of synthetic data to tune the Kalman Gains against real-world vibration profiles. CRITICAL: In the 'C++ Implementation' section (adapted for MATLAB), use '###' (H3) headers: '### Process Noise Jacobian Mapping (calcG.m)', '### Inertial Random Walk Covariance Injection (calcQ.m)', and '### Real-World Telemetry Fusion Tuning (RunRealData.m)'."
+  },
+
+  "Chapter_094_Core_Proximity_Architecture_and_3D_Boundary_Mapping.md": {
+    "chapter_title": "Core Proximity Architecture, 3D Boundary Mapping, and Sector Arrays",
+    "files": [
+      "libraries/AP_Proximity/AP_Proximity.cpp",
+      "libraries/AP_Proximity/AP_Proximity.h",
+      "libraries/AP_Proximity/AP_Proximity_Backend.cpp",
+      "libraries/AP_Proximity/AP_Proximity_Backend.h",
+      "libraries/AP_Proximity/AP_Proximity_Boundary_3D.cpp",
+      "libraries/AP_Proximity/AP_Proximity_Boundary_3D.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master omnidirectional proximity abstraction layer. Write a '3D Sector Boundary Formulation' detailing exactly how `AP_Proximity_Boundary_3D.cpp` mathematically divides the physical space around the vehicle into discrete geometric sectors (e.g., 8 horizontal slices and multiple elevation bands) to compress massive point-cloud data into a lightweight array of closest-threat vectors that the microcontroller's RAM can handle. Write a 'Kinematic Threat Arbitration Analysis' explaining how `AP_Proximity.cpp` filters these sectors and calculates the absolute closest object in 3D space, feeding that vector directly into the attitude controllers to physically repel the vehicle from a collision. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Geometric Sector Array Compression (AP_Proximity_Boundary_3D.cpp)', '### Threat Vector Filtering and Validity Lifespans (AP_Proximity.cpp)', and '### Backend Polymorphism for Mixed Sensor Arrays (AP_Proximity_Backend.cpp)'."
+  },
+
+  "Chapter_095_Spinning_LiDAR_Serial_Drivers_and_ToF_Arrays.md": {
+    "chapter_title": "Spinning LiDAR Serial Drivers, RPM Control, and Time-of-Flight Arrays",
+    "files": [
+      "libraries/AP_Proximity/AP_Proximity_Backend_Serial.cpp",
+      "libraries/AP_Proximity/AP_Proximity_Backend_Serial.h",
+      "libraries/AP_Proximity/AP_Proximity_Cygbot_D1.cpp",
+      "libraries/AP_Proximity/AP_Proximity_Cygbot_D1.h",
+      "libraries/AP_Proximity/AP_Proximity_LightWareSerial.cpp",
+      "libraries/AP_Proximity/AP_Proximity_LightWareSerial.h",
+      "libraries/AP_Proximity/AP_Proximity_LightWareSF40C.cpp",
+      "libraries/AP_Proximity/AP_Proximity_LightWareSF40C.h",
+      "libraries/AP_Proximity/AP_Proximity_LightWareSF45B.cpp",
+      "libraries/AP_Proximity/AP_Proximity_LightWareSF45B.h",
+      "libraries/AP_Proximity/AP_Proximity_RPLidarA2.cpp",
+      "libraries/AP_Proximity/AP_Proximity_RPLidarA2.h",
+      "libraries/AP_Proximity/AP_Proximity_TeraRangerTower.cpp",
+      "libraries/AP_Proximity/AP_Proximity_TeraRangerTower.h",
+      "libraries/AP_Proximity/AP_Proximity_TeraRangerTowerEvo.cpp",
+      "libraries/AP_Proximity/AP_Proximity_TeraRangerTowerEvo.h"
+    ],
+    "research_prompt": "Reverse-engineer the high-speed UART parsing engines for continuous-rotation and solid-state LiDARs. Write a 'Spinning Motor RPM Sync Formulation' detailing exactly how drivers like `AP_Proximity_RPLidarA2.cpp` and `AP_Proximity_LightWareSF40C.cpp` utilize hardware PWM output to maintain the physical rotation speed of the LiDAR head, synchronizing the motor RPM to the serial baud rate to prevent buffer overruns. Write a 'UART Byte-Stream Unpacking Analysis' mathematically explaining how these serial backends hunt for distinct magic-byte headers in continuous binary streams, reconstructing 360-degree polar coordinate arrays (angle and distance) from fragmented packets while rejecting anomalous zero-distance optical reflections. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### UART Magic-Byte Sync and Frame Reassembly (AP_Proximity_Backend_Serial.cpp)', '### LiDAR Motor PWM RPM Control (AP_Proximity_RPLidarA2.cpp)', and '### Polar-to-Cartesian Threat Vector Math (AP_Proximity_LightWareSF45B.cpp)'."
+  },
+
+  "Chapter_096_MAVLink_Companion_Computers_and_Virtual_Sensor_Arrays.md": {
+    "chapter_title": "MAVLink Companion Computers, VSLAM Injection, and Virtual Sensor Arrays",
+    "files": [
+      "libraries/AP_Proximity/AP_Proximity_MAV.cpp",
+      "libraries/AP_Proximity/AP_Proximity_MAV.h",
+      "libraries/AP_Proximity/AP_Proximity_RangeFinder.cpp",
+      "libraries/AP_Proximity/AP_Proximity_RangeFinder.h",
+      "libraries/AP_Proximity/AP_Proximity_AirSimSITL.cpp",
+      "libraries/AP_Proximity/AP_Proximity_AirSimSITL.h",
+      "libraries/AP_Proximity/AP_Proximity_SITL.cpp",
+      "libraries/AP_Proximity/AP_Proximity_SITL.h"
+    ],
+    "research_prompt": "Extract the architecture for ingesting off-board spatial intelligence and virtualizing legacy sensors. Write an 'Off-board VSLAM Injection Formulation' detailing how `AP_Proximity_MAV.cpp` bypasses physical serial scanning entirely, instead intercepting `OBSTACLE_DISTANCE` and `DISTANCE_SENSOR` MAVLink messages generated by a companion computer (e.g., an Nvidia Jetson running ROS 2 and Intel RealSense stereoscopic cameras) and mapping them directly into the 3D boundary arrays. Write a 'Virtual Omni-Array Analysis' explaining how `AP_Proximity_RangeFinder.cpp` takes discrete, 1D rangefinders (like ultrasonic sonars mapped in `AP_RangeFinder`) and mathematically fuses them together to emulate a single 360-degree proximity sensor, dynamically calculating their physical orientation based on the vehicle's AHRS attitude matrix. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### MAVLink OBSTACLE_DISTANCE Payload Parsing (AP_Proximity_MAV.cpp)', '### 1D to 3D Virtual Array Fusion (AP_Proximity_RangeFinder.cpp)', and '### Synthetic Environment Spatial Emulation (AP_Proximity_AirSimSITL.cpp)'."
+  },
+
+  "Chapter_097_MAVLink_Architecture_Routing_and_Cryptographic_Signing.md": {
+    "chapter_title": "MAVLink Architecture, Network Routing, and Cryptographic Signing",
+    "files": [
+      "libraries/GCS_MAVLink/ap_message.h",
+      "libraries/GCS_MAVLink/GCS.cpp",
+      "libraries/GCS_MAVLink/GCS.h",
+      "libraries/GCS_MAVLink/GCS_Common.cpp",
+      "libraries/GCS_MAVLink/GCS_Dummy.cpp",
+      "libraries/GCS_MAVLink/GCS_Dummy.h",
+      "libraries/GCS_MAVLink/GCS_MAVLink.cpp",
+      "libraries/GCS_MAVLink/GCS_MAVLink.h",
+      "libraries/GCS_MAVLink/MAVLink_routing.cpp",
+      "libraries/GCS_MAVLink/MAVLink_routing.h",
+      "libraries/GCS_MAVLink/GCS_Signing.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the master telemetry and communications architecture. Write a 'Multi-Link Network Routing Formulation' detailing exactly how `MAVLink_routing.cpp` manages hop-counts and channel bitmasks to act as a transparent router, passing telemetry from a companion computer on `Serial2` down to a radio modem on `Serial1` without triggering infinite broadcast loops. Write a 'MAVLink 2.0 Cryptographic Integrity Analysis' mathematically explaining how `GCS_Signing.cpp` implements SHA-256 hashing to append a cryptographic signature to incoming control packets, ensuring that an attacker cannot spoof an RC override or waypoint command to hijack the heavy chassis. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Channel Arbitration and Hop-Count Routing (MAVLink_routing.cpp)', '### MAVLink 2.0 SHA-256 Packet Signing (GCS_Signing.cpp)', and '### Asynchronous Telemetry Stream Scheduling (GCS_MAVLink.cpp)'."
+  },
+
+  "Chapter_098_Mission_Microservices_and_EEPROM_Upload_Protocols.md": {
+    "chapter_title": "Mission Microservices, State Machines, and EEPROM Upload Protocols",
+    "files": [
+      "libraries/GCS_MAVLink/MissionItemProtocol.cpp",
+      "libraries/GCS_MAVLink/MissionItemProtocol.h",
+      "libraries/GCS_MAVLink/MissionItemProtocol_Waypoints.cpp",
+      "libraries/GCS_MAVLink/MissionItemProtocol_Waypoints.h",
+      "libraries/GCS_MAVLink/MissionItemProtocol_Fence.cpp",
+      "libraries/GCS_MAVLink/MissionItemProtocol_Fence.h",
+      "libraries/GCS_MAVLink/MissionItemProtocol_Rally.cpp",
+      "libraries/GCS_MAVLink/MissionItemProtocol_Rally.h",
+      "libraries/GCS_MAVLink/GCS_Fence.cpp",
+      "libraries/GCS_MAVLink/GCS_Rally.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the intense state machines required to upload and download mission data over a lossy RF link. Write an 'Asynchronous Protocol Formulation' detailing how the base class `MissionItemProtocol.cpp` manages handshakes, partial ACKs, and timeout-retries to guarantee the delivery of a 1000-point mission file over a noisy 57600-baud connection. Write an 'EEPROM Storage Decoupling Analysis' explaining how `MissionItemProtocol_Waypoints.cpp` safely commits multi-byte floating-point coordinates to the STM32's non-volatile flash memory one chunk at a time, preventing a massive contiguous memory write from stalling the 400Hz RTOS flight loop and crashing the vehicle. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### RF Link Timeout and Retry State Machines (MissionItemProtocol.cpp)', '### Non-Blocking Flash Memory Waypoint Commits (MissionItemProtocol_Waypoints.cpp)', and '### Multi-Polygon Fence Coordinate Streaming (MissionItemProtocol_Fence.cpp)'."
+  },
+
+  "Chapter_099_Parameter_Streaming_FTP_and_Transparent_Serial_Bridges.md": {
+    "chapter_title": "Parameter Streaming, MAVLink FTP, and Transparent Serial Bridges",
+    "files": [
+      "libraries/GCS_MAVLink/GCS_Param.cpp",
+      "libraries/GCS_MAVLink/GCS_FTP.cpp",
+      "libraries/GCS_MAVLink/GCS_DeviceOp.cpp",
+      "libraries/GCS_MAVLink/GCS_serial_control.cpp",
+      "libraries/GCS_MAVLink/GCS_ServoRelay.cpp"
+    ],
+    "research_prompt": "Extract the advanced remote hardware administration utilities within the GCS layer. Write a 'Background Parameter Sync Formulation' detailing how `GCS_Param.cpp` trickles thousands of RAM variables over the MAVLink bus during boot using an index-based request system, allowing the Ground Station to build a perfect replica of the vehicle's physics configuration. Write a 'Transparent Serial Bridging Analysis' explaining the buffer manipulation in `GCS_serial_control.cpp` that allows an engineer to tunnel raw binary streams (e.g., U-Blox GPS firmware updates) from a desktop PC, through the MAVLink radio link, directly into a specific UART port on the flight controller without physically unplugging the sensor. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Index-Based Parameter Streaming (GCS_Param.cpp)', '### MAVLink FTP SD Card Log Retrieval (GCS_FTP.cpp)', and '### Transparent UART Tunneling and Buffer Injection (GCS_serial_control.cpp)'."
+  },
+
+  "Chapter_100_Core_Energy_Arbitration_and_Analog_ADC_Scaling.md": {
+    "chapter_title": "Core Energy Arbitration, Failsafe Triggers, and Analog ADC Scaling",
+    "files": [
+      "AP_BattMonitor.cpp",
+      "AP_BattMonitor.h",
+      "AP_BattMonitor_Backend.cpp",
+      "AP_BattMonitor_Backend.h",
+      "AP_BattMonitor_Params.cpp",
+      "AP_BattMonitor_Params.h",
+      "AP_BattMonitor_Analog.cpp",
+      "AP_BattMonitor_Analog.h",
+      "AP_BattMonitor_Logging.cpp",
+      "LogStructure.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core energy management architecture. Write an 'Analog Scaling and Resistor Divider Formulation' detailing exactly how `AP_BattMonitor_Analog.cpp` translates raw 3.3V ADC pin voltages into accurate 14S (50V+) pack readings using configurable voltage multiplier parameters, including the low-pass filtering logic required to smooth out high-amperage voltage sag caused by motor spool-ups. Write a 'Capacity Integration and Failsafe Arbitration Analysis' explaining how `AP_BattMonitor.cpp` numerically integrates instantaneous current draw (Amperes) over time to mathematically calculate total consumed milliamp-hours (mAh), triggering strict, pre-configured MAVLink failsafes (like auto-landing) when the remaining capacity drops below the critical threshold. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Resistor Divider Multiplier Math (AP_BattMonitor_Analog.cpp)', '### Current Integration for mAh Capacity (AP_BattMonitor.cpp)', and '### Low-Voltage Failsafe State Machine (AP_BattMonitor.cpp)'."
+  },
+
+  "Chapter_101_Smart_SMBus_Telemetry_I2C_Silicon_and_DroneCAN.md": {
+    "chapter_title": "Smart SMBus Telemetry, I2C Power Silicon, and DroneCAN Networks",
+    "files": [
+      "AP_BattMonitor_SMBus.cpp",
+      "AP_BattMonitor_SMBus.h",
+      "AP_BattMonitor_SMBus_Generic.cpp",
+      "AP_BattMonitor_SMBus_Generic.h",
+      "AP_BattMonitor_SMBus_Solo.cpp",
+      "AP_BattMonitor_SMBus_Solo.h",
+      "AP_BattMonitor_SMBus_Maxell.h",
+      "AP_BattMonitor_SMBus_NeoDesign.cpp",
+      "AP_BattMonitor_SMBus_NeoDesign.h",
+      "AP_BattMonitor_SMBus_Rotoye.cpp",
+      "AP_BattMonitor_SMBus_Rotoye.h",
+      "AP_BattMonitor_SMBus_SUI.cpp",
+      "AP_BattMonitor_SMBus_SUI.h",
+      "AP_BattMonitor_INA2xx.cpp",
+      "AP_BattMonitor_INA2xx.h",
+      "AP_BattMonitor_LTC2946.cpp",
+      "AP_BattMonitor_LTC2946.h",
+      "AP_BattMonitor_UAVCAN.cpp",
+      "AP_BattMonitor_UAVCAN.h"
+    ],
+    "research_prompt": "Reverse-engineer the digital power monitoring and smart-battery communication protocols. Write an 'SMBus Cell-Balancing Telemetry Formulation' detailing how drivers like `AP_BattMonitor_SMBus.cpp` and `AP_BattMonitor_SMBus_Solo.cpp` poll internal Battery Management Systems (BMS) over I2C to extract highly granular data, such as individual LiPo cell voltages, internal pack temperatures, and manufacturer cycle counts. Write an 'I2C Power Silicon and DroneCAN Analysis' mathematically explaining the exact register shifting in `AP_BattMonitor_INA2xx.cpp` required to read the shunt-resistor drop from Texas Instruments power monitors, and detail how `AP_BattMonitor_UAVCAN.cpp` unpacks robust IEEE 754 floating-point battery states from remote CAN bus nodes. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### SMBus Protocol Register Polling (AP_BattMonitor_SMBus.cpp)', '### INA2xx/LTC2946 Shunt Resistor ADC Math (AP_BattMonitor_INA2xx.cpp)', and '### DroneCAN Battery Payload Extraction (AP_BattMonitor_UAVCAN.cpp)'."
+  },
+
+  "Chapter_102_Hybrid_Energy_Systems_Fuel_Flow_and_Virtual_Summation.md": {
+    "chapter_title": "Hybrid Energy Systems, Generators, Fuel Flow, and Virtual Summation",
+    "files": [
+      "AP_BattMonitor_FuelFlow.cpp",
+      "AP_BattMonitor_FuelFlow.h",
+      "AP_BattMonitor_FuelLevel_PWM.cpp",
+      "AP_BattMonitor_FuelLevel_PWM.h",
+      "AP_BattMonitor_Generator.cpp",
+      "AP_BattMonitor_Generator.h",
+      "AP_BattMonitor_Torqeedo.cpp",
+      "AP_BattMonitor_Torqeedo.h",
+      "AP_BattMonitor_ESC.cpp",
+      "AP_BattMonitor_ESC.h",
+      "AP_BattMonitor_Sum.cpp",
+      "AP_BattMonitor_Sum.h",
+      "AP_BattMonitor_Bebop.cpp",
+      "AP_BattMonitor_Bebop.h"
+    ],
+    "research_prompt": "Extract the architecture for heavy-industrial hybrid energy, internal combustion tracking, and multi-pack virtualization. Write a 'Combustion Fuel Flow Integration Formulation' detailing how `AP_BattMonitor_FuelFlow.cpp` and `AP_BattMonitor_FuelLevel_PWM.cpp` translate raw physical metrics—like PWM signals from liquid float sensors or ECU injector pulses—into a virtual 'battery capacity' percentage, allowing the standard MAVLink failsafe logic to handle physical gasoline exhaustion. Write a 'Multi-Pack Virtual Summation Analysis' explaining how `AP_BattMonitor_Sum.cpp` mathematically combines the telemetry from multiple parallel batteries or ESCs into a single, unified power matrix, and detail the specific marine serial parsing logic in `AP_BattMonitor_Torqeedo.cpp` used for high-voltage aquatic drivetrains. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### PWM Liquid Float Sensor Conversion Math (AP_BattMonitor_FuelLevel_PWM.cpp)', '### Parallel Battery Virtual Summation (AP_BattMonitor_Sum.cpp)', and '### Marine Drivetrain Serial Telemetry (AP_BattMonitor_Torqeedo.cpp)'."
+  },
+
+  "Chapter_103_ESC_Telemetry_RPM_Tracking_and_Motor_Diagnostics.md": {
+    "chapter_title": "ESC Telemetry, RPM Tracking, and Motor Health Diagnostics",
+    "files": [
+      "AP_ESC_Telem.cpp",
+      "AP_ESC_Telem.h",
+      "AP_ESC_Telem_Backend.cpp",
+      "AP_ESC_Telem_Backend.h",
+      "AP_ESC_Telem_SITL.cpp",
+      "AP_ESC_Telem_SITL.h",
+      "LogStructure.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Electronic Speed Controller (ESC) telemetry architecture. Write a 'Dynamic RPM Aggregation Formulation' detailing exactly how `AP_ESC_Telem.cpp` polls the individual backends at high speed to extract the live electrical RPM of every active motor, mathematically converting electrical commutation poles into physical mechanical RPM to feed the dynamic Harmonic Notch Filters. Write a 'Motor Health and Simulation Analysis' explaining the inheritance structure in `AP_ESC_Telem_Backend.cpp` that normalizes disparate telemetry points (like phase current and FET temperature) into a unified struct, and detail how `AP_ESC_Telem_SITL.cpp` synthetically generates this telemetry payload during Software-In-The-Loop simulations to test failsafe logic without burning physical hardware. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Dynamic RPM Aggregation for Harmonic Filters (AP_ESC_Telem.cpp)', '### Motor Health and Phase Current Polling (AP_ESC_Telem_Backend.cpp)', and '### SITL Synthetic ESC Data Emulation (AP_ESC_Telem_SITL.cpp)'."
+  },
+
+  "Chapter_104_Autonomous_Glide_Slopes_Flare_Kinematics_and_Deepstall.md": {
+    "chapter_title": "Autonomous Glide Slopes, Flare Kinematics, and Deepstall Aerodynamics",
+    "files": [
+      "AP_Landing.cpp",
+      "AP_Landing.h",
+      "AP_Landing_Slope.cpp",
+      "AP_Landing_Deepstall.cpp",
+      "AP_Landing_Deepstall.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the autonomous fixed-wing landing architecture. Write a 'Glide Slope and Flare Formulation' detailing the exact trigonometry and kinetic energy math in `AP_Landing_Slope.cpp` used to calculate the physical intersection point between the vehicle's current altitude and the optimal descent vector, including the PID logic that simultaneously manages pitch-to-airspeed and throttle-to-altitude during the final flare over the runway. Write a 'Deepstall Aerodynamic Braking Analysis' mathematically explaining how `AP_Landing_Deepstall.cpp` utilizes the EKF wind-estimation vector to continuously recalculate a moving 'stall point' in the sky, intentionally pitching the elevator to extreme angles (e.g., 45 degrees) to completely separate the aerodynamic boundary layer and drop the vehicle vertically into a tight landing zone without stalling early and crashing short of the target. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Kinetic Glide Slope and Flare Matrix (AP_Landing_Slope.cpp)', '### Wind-Compensated Deepstall Actuation (AP_Landing_Deepstall.cpp)', and '### Landing State Machine and Wave-Off Abort Logic (AP_Landing.cpp)'."
+  },
+
+  "Chapter_105_EKF2_Core_Covariance_and_IMU_Bias_Tracking.md": {
+    "chapter_title": "EKF2 Core Covariance Matrix, State Propagation, and IMU Bias Tracking",
+    "files": [
+      "AP_NavEKF2.cpp",
+      "AP_NavEKF2.h",
+      "AP_NavEKF2_core.cpp",
+      "AP_NavEKF2_core.h",
+      "AP_NavEKF2_Control.cpp",
+      "AP_NavEKF2_VehicleStatus.cpp",
+      "AP_NavEKF_GyroBias.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core Extended Kalman Filter 2 (EKF2) state matrices and control architecture. Write a 'State Covariance Propagation Formulation' detailing exactly how `AP_NavEKF2_core.cpp` executes the 24-state prediction equations, propagating the vehicle's position, velocity, and attitude forward in time based purely on raw IMU delta-angles and delta-velocities before any GPS correction occurs. Write a 'Dynamic Gyro Bias Tracking Analysis' mathematically explaining the algorithms in `AP_NavEKF_GyroBias.cpp` used to continuously estimate and subtract the microscopic thermal drift of the silicon gyroscopes in real-time, preventing the integration math from accumulating artificial attitude errors over long flights. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### 24-State Covariance Matrix Propagation (AP_NavEKF2_core.cpp)', '### IMU Delta-Angle Bias Learning (AP_NavEKF_GyroBias.cpp)', and '### EKF Mode Arbitration and Fallback Logic (AP_NavEKF2_Control.cpp)'."
+  },
+
+  "Chapter_106_Global_Fusion_GPS_Magnetometer_and_Air_Data.md": {
+    "chapter_title": "Global Sensor Fusion: GPS Kinematics, Magnetometer 3D Vectors, and Air Data",
+    "files": [
+      "AP_NavEKF2_PosVelFusion.cpp",
+      "AP_NavEKF2_MagFusion.cpp",
+      "AP_NavEKF2_AirDataFusion.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the global navigation sensor fusion equations within EKF2. Write a 'GPS Velocity and Position Innovation Formulation' detailing the exact matrix algebra in `AP_NavEKF2_PosVelFusion.cpp` used to calculate the 'innovation' (the difference between the EKF's predicted location and the actual GPS measurement), computing the Kalman Gain required to pull the state matrix back to reality without introducing violent physical twitches. Write a '3D Magnetometer and Airspeed Fusion Analysis' mathematically explaining how `AP_NavEKF2_MagFusion.cpp` continuously estimates Earth's magnetic field declination and internal airframe interference, and how `AP_NavEKF2_AirDataFusion.cpp` fuses barometric altitude and pitot-tube true airspeed. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### GPS Position/Velocity Innovation Math (AP_NavEKF2_PosVelFusion.cpp)', '### Earth Magnetic Field and Body Offset Fusion (AP_NavEKF2_MagFusion.cpp)', and '### Barometric and True Airspeed State Correction (AP_NavEKF2_AirDataFusion.cpp)'."
+  },
+
+  "Chapter_107_Indoor_Fusion_Optical_Flow_UWB_Beacons_and_Output.md": {
+    "chapter_title": "Indoor Non-GPS Fusion: Optical Flow, UWB Range Beacons, and EKF Outputs",
+    "files": [
+      "AP_NavEKF2_OptFlowFusion.cpp",
+      "AP_NavEKF2_RngBcnFusion.cpp",
+      "AP_NavEKF2_Measurements.cpp",
+      "AP_NavEKF2_Outputs.cpp",
+      "AP_NavEKF2_Logging.cpp",
+      "LogStructure.h"
+    ],
+    "research_prompt": "Extract the mathematical architecture for indoor, GPS-denied sensor fusion and final state publishing. Write an 'Optical Flow Angular Rate Formulation' detailing how `AP_NavEKF2_OptFlowFusion.cpp` mathematically decouples the vehicle's physical pitch/roll rotation from the raw pixel-shift observed by a downward-facing camera, fusing the resulting pure horizontal velocity vector into the core covariance matrix. Write a 'UWB Range Beacon Multilateration Analysis' explaining the exact geometric algorithms in `AP_NavEKF2_RngBcnFusion.cpp` used to triangulate absolute 3D position from discrete Time-of-Flight distances to fixed Ultra-Wideband anchors, and detail how `AP_NavEKF2_Outputs.cpp` sanitizes and publishes the final stabilized truth vector to the flight controllers attitude loops. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Optical Flow Pixel-Shift to Velocity Math (AP_NavEKF2_OptFlowFusion.cpp)', '### UWB Beacon Range Multilateration (AP_NavEKF2_RngBcnFusion.cpp)', and '### Final State Vector Output Publishing (AP_NavEKF2_Outputs.cpp)'."
+  },
+
+  "Chapter_108_Integrated_RF_Transceivers_SPI_Bit_Banging_and_Protocol_Hopping.md": {
+    "chapter_title": "Integrated RF Transceivers, SPI Bit-Banging, and Protocol Emulation",
+    "files": [
+      "AP_Radio.cpp",
+      "AP_Radio.h",
+      "AP_Radio_backend.cpp",
+      "AP_Radio_backend.h",
+      "AP_Radio_bk2425.cpp",
+      "AP_Radio_bk2425.h",
+      "AP_Radio_cc2500.cpp",
+      "AP_Radio_cc2500.h",
+      "AP_Radio_cypress.cpp",
+      "AP_Radio_cypress.h",
+      "driver_bk2425.cpp",
+      "driver_bk2425.h",
+      "driver_cc2500.cpp",
+      "driver_cc2500.h",
+      "telem_structure.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the direct-to-silicon RF transceiver architecture. Write a 'Frequency Hopping and SPI Arbitration Formulation' detailing exactly how bare-metal drivers like `driver_cc2500.cpp` and `driver_bk2425.cpp` utilize the high-speed SPI bus to physically control the internal state machines of 2.4GHz RF chips, including the microsecond-precise timer interrupts required to synchronize with a transmitter's pseudorandom Frequency Hopping Spread Spectrum (FHSS) algorithm without dropping packets. Write an 'Integrated Protocol Emulation Analysis' mathematically explaining how `AP_Radio_cypress.cpp` and `AP_Radio_cc2500.cpp` unpack raw over-the-air RF payloads (emulating protocols like Spektrum DSMX or FrSky) entirely in software, and detail the memory alignment in `telem_structure.h` used to format and inject vehicle telemetry back into the silicon's outbound transmission queue for bidirectional communication. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Raw SPI Silicon Polling and FHSS Sync (driver_cc2500.cpp)', '### Software-Defined Receiver Protocol Unpacking (AP_Radio_cypress.cpp)', and '### Bidirectional RF Telemetry Struct Packing (telem_structure.h)'."
+  },
+
+  "Chapter_109_Cooperative_RTOS_Scheduling_and_Deterministic_Loop_Timing.md": {
+    "chapter_title": "Cooperative RTOS Scheduling, Deterministic Loop Timing, and CPU Profiling",
+    "files": [
+      "AP_Scheduler.cpp",
+      "AP_Scheduler.h",
+      "PerfInfo.cpp",
+      "PerfInfo.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the cooperative task scheduling and real-time execution architecture. Write a 'Deterministic Task Dispatch Formulation' detailing exactly how `AP_Scheduler.cpp` iterates through a static PROGMEM table of background tasks (e.g., MAVLink routing, terrain paging), mathematically calculating the exact microsecond 'time slip' available after the primary 400Hz attitude loop finishes, guaranteeing that background tasks are immediately paused or deferred if they threaten to overrun the next physics deadline. Write a 'CPU Starvation and Profiling Analysis' explaining how `PerfInfo.cpp` continuously monitors the RTOS for blocking code, tracking loop maximums, minimums, and total CPU load percentage to physically trigger MAVLink warnings or failsafes if a malfunctioning I2C driver begins starving the main execution thread. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Table-Driven Cooperative Task Dispatch (AP_Scheduler.cpp)', '### Time-Slip Arbitration and Fast-Loop Deadlines (AP_Scheduler.cpp)', and '### CPU Starvation and Loop Performance Profiling (PerfInfo.cpp)'."
+  },
+
+  "Chapter_110_In_Flight_AutoTune_System_Identification_and_PID_Optimization.md": {
+    "chapter_title": "In-Flight AutoTune, System Identification, and PID Optimization",
+    "files": [
+      "AP_Tuning.cpp",
+      "AP_Tuning.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the automated in-flight tuning and system identification architecture. Write a 'Kinematic Twitch and Observation Formulation' detailing exactly how `AP_Tuning.cpp` safely injects sharp, mathematical step-inputs into the attitude controllers while maintaining altitude, and records the resulting angular acceleration to physically map the vehicle's moment of inertia. Write a 'PID Gain Optimization Analysis' mathematically explaining the control-theory algorithms used to translate those physical inertia metrics into mathematically perfect Proportional, Integral, Derivative, and Feed-Forward gains based on a user-defined damping profile, ensuring the airframe becomes maximally responsive without crossing the threshold into destructive high-frequency oscillation. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Automated Step-Input Signal Injection (AP_Tuning.cpp)', '### Gyroscopic System Identification Math (AP_Tuning.cpp)', and '### Dynamic PID and Feed-Forward Gain Derivation (AP_Tuning.cpp)'."
+  },
+
+  "Chapter_111_Core_PID_Matrices_Feed_Forward_and_Anti_Windup.md": {
+    "chapter_title": "Core Proportional-Integral-Derivative (PID) Matrices, Feed-Forward, and Anti-Windup",
+    "files": [
+      "PID.cpp",
+      "PID.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core control-theory architecture. Write a 'Proportional and Feed-Forward Error Formulation' detailing exactly how `PID.cpp` calculates instantaneous angular error, and explain how the addition of a Feed-Forward (FF) term completely bypasses the error calculation to push raw pilot stick inputs directly to the motor mixer for zero-latency acrobatic responsiveness. Write a 'Derivative Noise and Integral Anti-Windup Analysis' mathematically explaining the critical safety governors: detail the specific low-pass filters applied to the Derivative (D) term to prevent microscopic gyroscope noise from melting the motor ESCs, and extract the integrator clamping logic (Anti-Windup) used to freeze the Integral (I) term accumulation when the vehicle is resting on the ground, preventing the drone from violently flipping over the millisecond it takes off. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Feed-Forward and Proportional Error Math (PID.cpp)', '### D-Term Low-Pass Filtering and Noise Attenuation (PID.cpp)', and '### I-Term Anti-Windup and Integrator Clamping (PID.cpp)'."
+  },
+
+  "Chapter_112_RC_Channel_Arbitration_PWM_Scaling_and_Switch_Multiplexing.md": {
+    "chapter_title": "Radio Control (RC) Arbitration, PWM Scaling, and Auxiliary Switch Multiplexing",
+    "files": [
+      "RC_Channel.cpp",
+      "RC_Channel.h",
+      "RC_Channels.cpp",
+      "RC_Channels_VarInfo.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core Radio Control (RC) hardware abstraction layer. Write a 'PWM Scaling and Normalization Formulation' detailing exactly how `RC_Channel.cpp` mathematically translates raw, fluctuating 1000-2000 microsecond PWM pulses into strictly normalized kinematic integers (e.g., -4500 to +4500 centi-degrees for roll/pitch, or 0-1000 for throttle), strictly applying center-trims and deadzones to prevent microscopic gimbal wear from causing the drone to drift while the sticks are neutral. Write an 'Auxiliary Switch Multiplexing Analysis' explaining the option-routing architecture in `RC_Channels.cpp` and `RC_Channels_VarInfo.h` that allows the flight controller to dynamically map a single physical RC channel (e.g., Channel 7) to trigger highly complex state-machine overrides, such as deploying parachute releases or forcing an EKF lane switch mid-flight. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### PWM Deadzone and Trim Normalization Math (RC_Channel.cpp)', '### Auxiliary Function Switch Routing (RC_Channels.cpp)', and '### PROGMEM Parameter Mapping for RC Configurations (RC_Channels_VarInfo.h)'."
+  },
+
+  "Chapter_113_Onboard_Lua_Sandboxing_CPP_Bindings_and_Boxed_Numerics.md": {
+    "chapter_title": "Onboard Lua Sandboxing, C++ API Bindings, and Boxed Numerics",
+    "files": [
+      "AP_Scripting.cpp",
+      "AP_Scripting.h",
+      "AP_Scripting_helpers.cpp",
+      "AP_Scripting_helpers.h",
+      "AP_Scripting_CANSensor.cpp",
+      "AP_Scripting_CANSensor.h",
+      "lua_scripts.cpp",
+      "lua_scripts.h",
+      "lua_bindings.cpp",
+      "lua_bindings.h",
+      "lua_boxed_numerics.cpp",
+      "lua_boxed_numerics.h",
+      "lua_repl.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the onboard Lua scripting architecture. Write a 'Real-Time Lua Sandboxing Formulation' detailing exactly how `AP_Scripting.cpp` and `lua_scripts.cpp` allocate an isolated memory heap and execution thread, utilizing strict instruction-count quotas to ensure that a poorly written user script containing an infinite loop is automatically paused before it can stall the primary 400Hz flight physics engine. Write a 'C++ API Binding and Boxed Numeric Analysis' explaining how the auto-generated hooks in `lua_bindings.cpp` map dynamic Lua text calls into static C++ methods, and mathematically detail the memory-safety mechanisms in `lua_boxed_numerics.cpp` used to pass complex 3D matrices (like Quaternions and Vectors) between the interpreted Lua space and the bare-metal C++ framework without triggering memory leaks or segmentation faults. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Isolated Heap Allocation and Execution Quotas (AP_Scripting.cpp)', '### Interpreted-to-Compiled Function Hooking (lua_bindings.cpp)', and '### Boxed Numerics for Safe Pointer Translation (lua_boxed_numerics.cpp)'."
+  },
+
+  "Chapter_114_External_AHRS_Hardware_Offloading_and_Industrial_INS.md": {
+    "chapter_title": "External AHRS Hardware Offloading, VectorNav, and LORD MicroStrain Protocols",
+    "files": [
+      "AP_ExternalAHRS.cpp",
+      "AP_ExternalAHRS.h",
+      "AP_ExternalAHRS_backend.cpp",
+      "AP_ExternalAHRS_backend.h",
+      "AP_ExternalAHRS_LORD.cpp",
+      "AP_ExternalAHRS_LORD.h",
+      "AP_ExternalAHRS_VectorNav.cpp",
+      "AP_ExternalAHRS_VectorNav.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the external Attitude and Heading Reference System (AHRS) hardware offloading architecture. Write an 'Internal EKF Bypass and State Injection Formulation' detailing exactly how `AP_ExternalAHRS.cpp` acts as a master override switch, mathematically pausing the internal NavEKF state prediction matrices and piping external, pre-computed kinematic truths directly into the core vehicle controllers. Write an 'Industrial UART Protocol Analysis' explaining the exact packet structures and checksum validation logic in `AP_ExternalAHRS_VectorNav.cpp` and `AP_ExternalAHRS_LORD.cpp` used to unpack dense, proprietary binary payloads (like the MicroStrain MIP protocol) over high-speed serial links, translating external IEEE 754 floating-point Quaternions and GPS vectors into ArduPilot's native coordinate frame. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Internal NavEKF Override and Direct State Injection (AP_ExternalAHRS.cpp)', '### VectorNav Binary Packet Parsing and Frame Alignment (AP_ExternalAHRS_VectorNav.cpp)', and '### LORD MicroStrain MIP Protocol Arbitration (AP_ExternalAHRS_LORD.cpp)'."
+  },
+
+  "Chapter_115_Master_Navigation_Interface_and_Waypoint_Kinematics.md": {
+    "chapter_title": "Master Navigation Interface, Waypoint Kinematics, and Cross-Track Error",
+    "files": [
+      "AP_Navigation.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the top-level navigation abstraction layer. Write a 'Waypoint Vector Formulation' detailing exactly how `AP_Navigation.h` defines the mathematical interface for calculating the absolute Haversine distance and bearing between the vehicle's current 3D EKF coordinate and the next target mission waypoint. Write a 'Cross-Track Error and Path Arbitration Analysis' explaining how this pure virtual header establishes the strict contract for underlying path-following algorithms (such as the L1 controller for fixed-wing or WPNav for multirotors) to compute the precise lateral acceleration required to pull the vehicle back onto the ideal flight line, ensuring aerodynamic efficiency. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Haversine Distance and Bearing Interface (AP_Navigation.h)', '### Cross-Track Error Vector Math Contract (AP_Navigation.h)', and '### Target Roll/Pitch Abstraction for Path Following (AP_Navigation.h)'."
+  },
+
+  "Chapter_116_Hardware_Abstraction_Silicon_Routing_and_Thermal_IMU_Regulation.md": {
+    "chapter_title": "Hardware Abstraction, Silicon Bus Routing, and Thermal IMU Regulation",
+    "files": [
+      "AP_BoardConfig.cpp",
+      "AP_BoardConfig.h",
+      "board_drivers.cpp",
+      "IMU_heater.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the lowest-level hardware initialization and thermal regulation architecture. Write a 'Silicon Arbitration and GPIO Routing Formulation' detailing exactly how `AP_BoardConfig.cpp` probes the processor upon boot to establish its physical hardware identity (e.g., Holybro vs. CubePilot), dynamically mapping the raw STM32 GPIO pins to establish the correct SPI, I2C, and CAN bus routes before any sensor drivers are allowed to initialize. Write a 'Gyroscopic Thermal Regulation Analysis' mathematically explaining the specific PID control loop executed within `IMU_heater.cpp`, detailing how it utilizes pulse-width modulation (PWM) on an internal heating resistor to keep the silicon IMU die at a mathematically perfect target temperature (e.g., 45°C), entirely eliminating temperature-induced random walk and bias drift in high-altitude freezing environments. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Dynamic STM32 GPIO and Peripheral Bus Routing (AP_BoardConfig.cpp)', '### Target-Specific Silicon Workarounds (board_drivers.cpp)', and '### PID Thermal Regulation of Silicon Gyroscopes (IMU_heater.cpp)'."
+  },
+
+  "Chapter_117_Photogrammetry_Shutter_Triggering_and_Serial_Camera_Payloads.md": {
+    "chapter_title": "Photogrammetry, Shutter Triggering, and Serial Camera Payloads",
+    "files": [
+      "AP_Camera.cpp",
+      "AP_Camera.h",
+      "AP_Camera_Logging.cpp",
+      "AP_Camera_SoloGimbal.cpp",
+      "AP_Camera_SoloGimbal.h",
+      "AP_RunCam.cpp",
+      "AP_RunCam.h",
+      "LogStructure.h"
+    ],
+    "research_prompt": "Perform a forensic extraction of the camera payload and photogrammetry architecture. Write an 'Automated Survey Triggering Formulation' detailing exactly how `AP_Camera.cpp` intercepts the navigation matrices to calculate physical 3D distance traveled, triggering the camera shutter at mathematically precise geometric intervals to guarantee optimal image overlap for orthomosaic mapping. Write a 'Payload Serial Protocol and Event Logging Analysis' explaining how `AP_Camera_Logging.cpp` records the exact EKF attitude and GPS coordinate at the microsecond of shutter actuation to enable flawless post-flight 3D stitching, and detail how `AP_RunCam.cpp` utilizes high-speed UART to inject On-Screen Display (OSD) menu commands and start/stop video recording directly into the serial port of an external FPV camera. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Distance-Based Photogrammetry Trigger Math (AP_Camera.cpp)', '### Shutter Actuation and Microsecond EKF Logging (AP_Camera_Logging.cpp)', and '### RunCam Serial Protocol and OSD Injection (AP_RunCam.cpp)'."
+  },
+
+  "Chapter_118_Inertial_Sensors_DSP_Notch_Filtering_and_Batch_Sampling.md": {
+    "chapter_title": "Inertial Sensors, DSP Harmonic Notch Filtering, and High-Speed Sampling",
+    "files": [
+      "libraries/AP_InertialSensor/AP_InertialSensor.cpp",
+      "libraries/AP_InertialSensor/AP_InertialSensor_Backend.cpp",
+      "libraries/AP_InertialSensor/BatchSampler.cpp",
+      "libraries/AP_InertialSensor/AP_InertialSensor_Logging.cpp",
+      "libraries/Filter/NotchFilter.cpp",
+      "libraries/AP_GyroFFT/AP_GyroFFT.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the core IMU processing pipeline. Write a 'High-Speed DSP and Notch Filter Formulation' detailing exactly how `AP_InertialSensor.cpp` utilizes multi-threading to poll raw SPI silicon at 8kHz, mathematically applying dynamic Harmonic Notch Filters (`NotchFilter.cpp`) driven by real-time motor RPM telemetry to aggressively slice out mechanical chassis resonance before the noise can enter the EKF. Write an 'On-Target FFT and Batch Sampling Analysis' explaining how `BatchSampler.cpp` buffers high-rate raw accelerometer data into RAM and how `AP_GyroFFT.cpp` performs an onboard Fast Fourier Transform to dynamically detect shifting vibration frequencies mid-flight. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### 8kHz SPI Polling and Gyro Decimation (AP_InertialSensor.cpp)', '### Dynamic RPM-Tracked Harmonic Notch Math (NotchFilter.cpp)', and '### In-Flight FFT Vibration Analysis (AP_GyroFFT.cpp)'."
+  },
+
+  "Chapter_119_Global_Positioning_RTK_Injection_and_Magneto_Calibration.md": {
+    "chapter_title": "Global Positioning, RTK Injection, and Magnetometer Calibration",
+    "files": [
+      "libraries/AP_GPS/AP_GPS.cpp",
+      "libraries/AP_GPS/RTCM3_Parser.cpp",
+      "libraries/AP_GPS/AP_GPS_UBLOX.cpp",
+      "libraries/AP_Compass/AP_Compass.cpp",
+      "libraries/AP_Compass/CompassCalibrator.cpp",
+      "libraries/AP_Compass/Compass_learn.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the global coordinate and magnetic tracking systems. Write an 'RTK Kinematic Parsing Formulation' detailing how `AP_GPS_UBLOX.cpp` interprets proprietary UBX binary frames and how `RTCM3_Parser.cpp` ingests Real-Time Kinematic correction data injected from the Ground Station over MAVLink, achieving centimeter-level absolute 3D positioning. Write an 'In-Flight Magnetic Interference Analysis' mathematically explaining how `CompassCalibrator.cpp` calculates a 3D sphere of magnetic offsets (iron distortion), and detail how `Compass_learn.cpp` dynamically maps throttle output to magnetic field deflection, cancelling out the electromagnetic interference generated by the vehicle's own high-amperage power wires. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### U-Blox Binary Parsing and RTCM3 RTK Injection (AP_GPS_UBLOX.cpp)', '### Sphere-Fitting Magnetic Offset Mathematics (CompassCalibrator.cpp)', and '### Dynamic Motor-Interference Cancellation (Compass_learn.cpp)'."
+  },
+
+  "Chapter_120_NavEKF3_DAL_Replay_Facade_and_AHRS_Arbitration.md": {
+    "chapter_title": "NavEKF3, Data Acquisition Logging (DAL), and AHRS Arbitration",
+    "files": [
+      "libraries/AP_NavEKF3/AP_NavEKF3.cpp",
+      "libraries/AP_NavEKF3/AP_NavEKF3_core.cpp",
+      "libraries/AP_DAL/AP_DAL.cpp",
+      "libraries/AP_DAL/AP_DAL_InertialSensor.cpp",
+      "libraries/AP_AHRS/AP_AHRS.cpp",
+      "libraries/AP_AHRS/AP_AHRS_Backend.cpp"
+    ],
+    "research_prompt": "Extract the master Extended Kalman Filter 3 architecture and the offline replay facade. Write an 'AHRS Core Arbitration Formulation' detailing how `AP_AHRS.cpp` acts as the definitive source of truth, comparing the health and innovation variances of multiple concurrent EKF3 cores to seamlessly hot-swap the primary attitude matrix mid-flight if a single core's sensors glitch. Write a 'Data Acquisition Logger (DAL) Replay Analysis' explaining the architectural genius of `AP_DAL.cpp`; detail how the EKF NEVER reads physical sensors directly, but instead reads from the DAL, allowing engineers to record the exact memory structures to a `.BIN` file and later push that log through `Tools/Replay` on a desktop PC, executing the exact same C++ math for offline forensic debugging. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Multi-Core EKF Health Arbitration (AP_AHRS.cpp)', '### EKF3 24-State Innovation Updates (AP_NavEKF3_core.cpp)', and '### The DAL Facade and Offline Log Replay (AP_DAL.cpp)'."
+  },
+
+  "Chapter_121_Path_Planning_Obstacle_Avoidance_and_SmartRTL.md": {
+    "chapter_title": "Path Planning, Obstacle Avoidance, Geofencing, and SmartRTL",
+    "files": [
+      "libraries/AC_WPNav/AC_WPNav.cpp",
+      "libraries/AC_Avoidance/AC_Avoid.cpp",
+      "libraries/AC_Avoidance/AP_OAPathPlanner.cpp",
+      "libraries/AC_Fence/AC_Fence.cpp",
+      "libraries/AP_SmartRTL/AP_SmartRTL.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the global spatial logic and obstacle avoidance arrays. Write an 'Obstacle Avoidance and Pathfinding Formulation' detailing the algorithms in `AP_OAPathPlanner.cpp`, explaining how it utilizes a 'BendyRuler' algorithm or Dijkstra's graph search to mathematically calculate a safe detour around a 3D boundary object mapped by `AC_Avoid`, smoothly integrating the detour into `AC_WPNav` without breaking the kinematic velocity profile. Write a 'Breadcrumb and Geofence Analysis' mathematically explaining the Douglas-Peucker path simplification algorithm in `AP_SmartRTL.cpp` used to continuously prune a massive array of flight coordinates down to the minimum necessary nodes to safely retrace the vehicle's exact path home through a complex environment. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### BendyRuler Obstacle Detour Algorithm (AP_OAPathPlanner.cpp)', '### Complex Polygon Geofence Inclusions (AC_Fence.cpp)', and '### Douglas-Peucker SmartRTL Path Pruning (AP_SmartRTL.cpp)'."
+  },
+
+  "Chapter_122_Rover_Kinematics_Skid_Steering_and_L1_Navigation.md": {
+    "chapter_title": "Rover Kinematics, Skid-Steering, and L1 Lateral Guidance",
+    "files": [
+      "libraries/AR_Motors/AP_MotorsUGV.cpp",
+      "libraries/APM_Control/AR_AttitudeControl.cpp",
+      "libraries/AR_WPNav/AR_WPNav.cpp",
+      "libraries/AP_L1_Control/AP_L1_Control.cpp",
+      "libraries/AP_WheelEncoder/AP_WheelEncoder.cpp"
+    ],
+    "research_prompt": "Extract the specific ground-vehicle kinematics and control theory. Write an 'L1 Lateral Guidance Formulation' detailing exactly how `AP_L1_Control.cpp` calculates the precise lateral acceleration required to pull a wheeled vehicle onto a theoretical line between two GPS waypoints, using ground speed and a damping ratio to prevent S-curve oscillations. Write a 'Rover Motor Mixing and Odometry Analysis' explaining how `AR_AttitudeControl.cpp` processes the heading/speed desires, passing them to `AP_MotorsUGV.cpp` which mathematically decouples forwarding thrust and yaw rotation into independent left/right PWM values for a skid-steering chassis, heavily augmented by slip-data fed back from `AP_WheelEncoder.cpp`. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### L1 Vector Math and Damping Ratios (AP_L1_Control.cpp)', '### Skid-Steer PWM Matrix Decoupling (AP_MotorsUGV.cpp)', and '### Wheel Encoder Quadrature Odometry (AP_WheelEncoder.cpp)'."
+  },
+
+  "Chapter_123_Hardware_Abstraction_Layer_and_Bare_Metal_ChibiOS.md": {
+    "chapter_title": "Hardware Abstraction Layer (HAL) and Bare-Metal ChibiOS",
+    "files": [
+      "libraries/AP_HAL/AP_HAL.cpp",
+      "libraries/AP_HAL_ChibiOS/HAL_ChibiOS_Class.cpp",
+      "libraries/AP_HAL_ChibiOS/UARTDriver.cpp",
+      "libraries/AP_HAL_ChibiOS/I2CDevice.cpp",
+      "libraries/AP_HAL_ChibiOS/RCOutput.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the lowest-level operating system bindings. Write a 'Virtual HAL Polymorphism Formulation' detailing how `AP_HAL.cpp` enforces a strict hardware-agnostic contract (e.g., `hal.uartA->write()`) that completely shields the upper C++ libraries from knowing what physical CPU they are executing on. Write a 'ChibiOS Bare-Metal Execution Analysis' explaining the exact implementation within `AP_HAL_ChibiOS`; detail how `UARTDriver.cpp` utilizes Direct Memory Access (DMA) to stream serial data without interrupting the main CPU, and how `RCOutput.cpp` manipulates raw STM32 hardware timers to generate microsecond-perfect DShot and PWM signals for the motors. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### AP_HAL Virtual Method Tables (AP_HAL.cpp)', '### STM32 DMA UART Ring Buffers (UARTDriver.cpp)', and '### Hardware Timer PWM Generation (RCOutput.cpp)'."
+  },
+
+  "Chapter_124_Flash_Storage_Parameter_Trees_and_DataFlash_Logging.md": {
+    "chapter_title": "Flash Storage, Parameter Trees, and DataFlash Logging",
+    "files": [
+      "libraries/StorageManager/StorageManager.cpp",
+      "libraries/AP_Param/AP_Param.cpp",
+      "libraries/AP_Logger/AP_Logger.cpp",
+      "libraries/AP_Logger/LogStructure.h"
+    ],
+    "research_prompt": "Extract the non-volatile memory and telemetry recording architecture. Write a 'Partitioned Flash Storage Formulation' detailing exactly how `StorageManager.cpp` carves up tiny, raw EEPROM or NOR Flash sectors into strict bounds (e.g., Waypoints, Fence, Parameters) to prevent memory overlap and corruption on embedded boards without full file systems. Write a 'Typed Parameter Tree and High-Speed Logging Analysis' explaining the pointer-based macro tree in `AP_Param.cpp` used to persist float/integer settings across reboots, and detail how `AP_Logger.cpp` manages multi-threaded ring buffers to stream thousands of `LogStructure.h` packets per second directly to an SD card without stalling the primary flight loop. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Static EEPROM Memory Partitioning (StorageManager.cpp)', '### AP_Param Pointer Tree Serialization (AP_Param.cpp)', and '### Non-Blocking DataFlash Ring Buffers (AP_Logger.cpp)'."
+  },
+
+  "Chapter_125_Rover_Vehicle_State_Machine_and_Flight_Modes.md": {
+    "chapter_title": "Rover Vehicle State Machine, Flight Modes, and The Main Loop",
+    "files": [
+      "Rover/Rover.cpp",
+      "Rover/Rover.h",
+      "Rover/system.cpp",
+      "Rover/mode_auto.cpp",
+      "Rover/mode_steering.cpp",
+      "Rover/Steering.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the absolute top-level ArduRover firmware layer. Write a 'Main Loop and Scheduler Dispatch Formulation' detailing exactly how the `Rover.cpp` singleton defines the `scheduler_tasks[]` table, executing the `update_current_mode()` function at precisely 400Hz to drive the entire vehicle state machine. Write a 'Mode Execution and Servo Arbitration Analysis' explaining the inheritance model of the flight modes; detail how `mode_auto.cpp` interprets mission commands into navigational vectors, and how the chain concludes in `Steering.cpp` where `set_servos()` acts as the final gatekeeper, pushing the computed speed and steering arrays to the physical `AP_MotorsUGV` backend. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### The 400Hz Main Loop Scheduler (Rover.cpp)', '### Autonomous Waypoint Execution State Machine (mode_auto.cpp)', and '### The Final Servo Output Gatekeeper (Steering.cpp)'."
+  },
+
+  "Chapter_126_SITL_Simulation_Physics_Models_and_JSON_Backends.md": {
+    "chapter_title": "Software-In-The-Loop (SITL), Physics Models, and JSON Backends",
+    "files": [
+      "libraries/SITL/SITL.cpp",
+      "libraries/SITL/SIM_Rover.cpp",
+      "libraries/SITL/SIM_Multicopter.cpp",
+      "libraries/SITL/SIM_Plane.cpp",
+      "libraries/AP_HAL_SITL/HAL_SITL_Class.cpp",
+      "libraries/AP_HAL_SITL/SITL_State.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the Software-In-The-Loop (SITL) simulation architecture. Write a 'Kinematic Emulation Formulation' detailing exactly how `SIM_Rover.cpp` and `SIM_Multicopter.cpp` mathematically model real-world vehicle dynamics—including aerodynamic drag, motor thrust vectors, and skid-steering friction—allowing the exact same ArduPilot C++ flight code to 'fly' a virtual chassis without modification. Write a 'Sensor Noise and External Physics Analysis' explaining how `SITL_State.cpp` synthetically injects Gaussian noise, random walks, and thermal drift into the virtual IMU and GPS feeds to stress-test the EKF, and detail the JSON interface used to bypass internal physics entirely and sync ArduPilot's execution loop with external, enterprise-grade simulation engines like Gazebo or AirSim. CRITICAL: In the 'C++ Implementation' section, use '###' (H3) headers: '### Aerodynamic and Friction Physics Emulation (SIM_Rover.cpp)', '### Synthetic Sensor Noise and GPS Glitch Injection (SITL_State.cpp)', and '### JSON/TCP External Physics Engine Sync (SITL.cpp)'."
+  },
+
+  "Chapter_127_CI_CD_Autotest_LogAnalyzer_and_Offline_EKF_Replay.md": {
+    "chapter_title": "Automated Testing, LogAnalyzer, and Offline EKF Replay",
+    "files": [
+      "Tools/autotest/sim_vehicle.py",
+      "Tools/autotest/autotest.py",
+      "Tools/Replay/Replay.cpp",
+      "Tools/Replay/LogReader.cpp",
+      "Tools/LogAnalyzer/loganalyzer.py",
+      "Tools/LogAnalyzer/tests/TestEKF.py"
+    ],
+    "research_prompt": "Extract the Python-based CI/CD testing framework and the C++ offline debugging pipeline. Write a 'Deterministic Log Replay Formulation' detailing how `Replay.cpp` parses raw `.BIN` DataFlash logs, specifically unpacking the `AP_DAL` (Data Acquisition) structures to feed historical, microsecond-accurate sensor data back into the EKF matrices running on a desktop PC, allowing developers to mathematically reproduce and debug mid-air crashes without physical hardware. Write an 'Automated Heuristic Log Analysis' explaining the Python architecture in `loganalyzer.py`, detailing how test modules like `TestEKF.py` automatically scan thousands of log lines to detect dangerous vibration levels, magnetic divergence, or failing power supplies before a user even opens a graphing tool. CRITICAL: In the 'C++/Python Implementation' section, use '###' (H3) headers: '### EKF Matrix Recreation via DAL Replay (Replay.cpp)', '### Python Automated Test Suites and Docker CI/CD (autotest.py)', and '### Heuristic Fault Detection and Vibration Profiling (loganalyzer.py)'."
+  },
+
+  "Chapter_128_Git_Submodules_ChibiOS_RTOS_and_DroneCAN_Stack.md": {
+    "chapter_title": "Git Submodules, ChibiOS RTOS, and DroneCAN Infrastructure",
+    "files": [
+      "modules/ChibiOS/os/rt/src/chschd.c",
+      "modules/ChibiOS/os/hal/src/hal_can.c",
+      "modules/DroneCAN/libcanard/canard.c",
+      "modules/mavlink/message_definitions/v1.0/common.xml"
+    ],
+    "research_prompt": "Perform a forensic extraction of ArduPilot's external submodule dependencies. Write an 'RTOS Preemptive Threading Formulation' detailing the core context-switching assembly inside ChibiOS's `chschd.c` that underpins the entire flight controller, allowing high-priority hardware interrupts to safely preempt lower-priority ArduPilot threads. Write a 'DroneCAN and MAVLink Protocol Analysis' explaining the lightweight bit-packing C architecture of `canard.c` used to stream safety-critical actuator commands across a decentralized vehicle bus, and detail how the XML schemas in the `mavlink` submodule auto-generate the massive C++ header structures used by the Ground Control Station telemetry loops. CRITICAL: In the 'Implementation' section, use '###' (H3) headers: '### ChibiOS Thread Context Switching (chschd.c)', '### Libcanard Node Arbitration and Bit-Packing (canard.c)', and '### XML-to-C++ MAVLink Header Generation (common.xml)'."
+  },
+
+  "Chapter_129_Waf_Build_System_and_GTest_Unit_Infrastructure.md": {
+    "chapter_title": "The Waf Build System, Toolchains, and GTest Unit Infrastructure",
+    "files": [
+      "wscript",
+      "Tools/ardupilotwaf/boards.py",
+      "Tools/ardupilotwaf/chibios.py",
+      "tests/test_math.cpp",
+      "tests/test_ekf.cpp"
+    ],
+    "research_prompt": "Perform a forensic extraction of the compilation and unit-testing architecture. Write a 'Cross-Compilation and Waf Formulation' detailing exactly how the Python-based `wscript` and `Tools/ardupilotwaf` modules dynamically configure the GCC ARM toolchain, parsing the `hwdef.dat` files to strip out unused C++ libraries and compile a highly optimized, board-specific binary for a given STM32 target. Write a 'Deterministic Unit Testing Analysis' explaining the Google Test (`gtest`) architecture mapped in the `tests/` directory, detailing how developers utilize `test_math.cpp` to strictly validate the Quaternion/Euler kinematics and prevent regression errors from being merged into the master navigation matrices. CRITICAL: In the 'Build Implementation' section, use '###' (H3) headers: '### Dynamic Python Waf Compilation Rules (wscript)', '### Target-Specific Firmware Stripping and Linking (ardupilotwaf)', and '### Core Matrix Validation via Google Test (test_math.cpp)'."
+  },
+
+  "Chapter_130_ArduRover_Master_Control_Flow_and_Execution_Graph.md": {
+    "chapter_title": "ArduRover Master Control Flow, Call Graphs, and System Architecture",
+    "files": [
+      "Rover/Rover.cpp",
+      "Rover/radio.cpp",
+      "libraries/AP_NavEKF3/AP_NavEKF3_core.cpp",
+      "libraries/AP_Mission/AP_Mission.cpp",
+      "libraries/AR_WPNav/AR_WPNav.cpp",
+      "libraries/APM_Control/AR_AttitudeControl.cpp",
+      "libraries/AR_Motors/AP_MotorsUGV.cpp"
+    ],
+    "research_prompt": "Extract the absolute end-to-end execution graph for the ArduRover architecture. Write an 'Input-to-Kinematic Control Flow Formulation' mathematically tracking a single command through the entire RTOS pipeline: detail how a physical stick movement is parsed by `RC_Channels` at 50Hz, injected into the `update_current_mode()` function at 400Hz, evaluated against the `AP_NavEKF3` position estimate, and translated by `AR_WPNav` into a target heading vector. Write an 'Output Mixing and Actuation Analysis' tracing that target heading down into `AR_AttitudeControl` (where the PID error is calculated) and finally into `AP_MotorsUGV`, where the rotational demand is decoupled into independent differential-drive PWM signals for the left and right wheel ESCs. CRITICAL: In the 'Architecture' section, use '###' (H3) headers: '### 50Hz Asynchronous Input and State Ingestion (Rover::read_radio)', '### 400Hz Kinematic Mission Dispatch (AP_Mission::update)', and '### Differential Output Matrix Actuation (AP_MotorsUGV::output)'."
+  },
+
+  "Chapter_131_Sailboat_WindVane_and_Tack_Gybe_Mechanics.md": {
+    "chapter_title": "Autonomous Sailboats, WindVane Telemetry, and Tack/Gybe Mechanics",
+    "files": [
+      "Rover/sailboat.cpp",
+      "libraries/AP_WindVane/AP_WindVane.cpp"
+    ],
+    "research_prompt": "Extract the wind-powered marine architecture. Write a 'Wind Triangle Formulation' detailing how `AP_WindVane.cpp` calculates apparent vs. true wind vectors, and explain the state-machine in `sailboat.cpp` that overrides standard motor throttles to control a main-sail winch, mathematically calculating the optimal tacking angles to sail upwind without stalling."
+  },
+
+  "Chapter_132_BalanceBots_and_Inverted_Pendulum_Kinematics.md": {
+    "chapter_title": "BalanceBots and Inverted Pendulum Kinematics",
+    "files": [
+      "Rover/balance_bot.cpp",
+      "libraries/AR_Motors/AP_MotorsUGV.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the self-balancing rover logic. Detail how `balance_bot.cpp` fuses EKF pitch data with wheel encoders to run an ultra-fast inverted pendulum PID loop, overriding the standard navigation speed requests to physically accelerate the chassis forward or backward just to keep the mast from hitting the ground."
+  },
+
+  "Chapter_133_Machine_Learning_Cruise_Throttle_Optimization.md": {
+    "chapter_title": "Machine Learning and Cruise Throttle Optimization",
+    "files": [
+      "Rover/cruise_learn.cpp",
+      "libraries/APM_Control/AR_AttitudeControl.cpp"
+    ],
+    "research_prompt": "Extract the onboard self-learning algorithms. Explain how `cruise_learn.cpp` continuously analyzes the delta between requested speed and actual GPS velocity, dynamically rewriting the base throttle parameters in real-time so the rover learns to maintain exactly 2 m/s regardless of payload weight or tire degradation."
+  },
+
+  "Chapter_134_Omnidirectional_Mecanum_Rover_Matrix_Mixing.md": {
+    "chapter_title": "Omnidirectional Mecanum Rover Matrix Mixing",
+    "files": [
+      "libraries/AR_Motors/AP_MotorsUGV.cpp",
+      "libraries/AR_WPNav/AR_WPNav.cpp"
+    ],
+    "research_prompt": "Detail the lateral strafing mathematics. Explain the specific matrix mixing in `AP_MotorsUGV.cpp` used to drive 4 independent Mecanum wheels, allowing the `AR_WPNav` controller to issue true omnidirectional vectors (e.g., strafing perfectly sideways without changing yaw) for complex industrial inspections."
+  },
+
+  "Chapter_135_Torqeedo_Marine_Drives_and_IC_Engine_Generators.md": {
+    "chapter_title": "Torqeedo Marine Drives and Internal Combustion Generators",
+    "files": [
+      "libraries/AP_Torqeedo/AP_Torqeedo.cpp",
+      "libraries/AP_Generator/AP_Generator.cpp"
+    ],
+    "research_prompt": "Extract the industrial powertrain protocols. Detail how `AP_Torqeedo.cpp` handles proprietary CAN bus handshakes with high-voltage marine outboards, and how `AP_Generator.cpp` manages starter-motor sequencing and RPM governors for hybrid gas-electric rovers."
+  },
+
+  "Chapter_136_Swarming_AP_Follow_and_Target_Offset_Math.md": {
+    "chapter_title": "Swarming, AP_Follow, and Target Offset Math",
+    "files": [
+      "libraries/AP_Follow/AP_Follow.cpp",
+      "Rover/mode_follow.cpp"
+    ],
+    "research_prompt": "Extract the multi-vehicle swarming architecture. Detail how `AP_Follow.cpp` intercepts MAVLink GLOBAL_POSITION_INT packets from a lead vehicle, calculating an offset 3D vector and injecting it into `mode_follow.cpp` so a fleet of rovers can maintain a strict geometric formation at 50Hz."
+  },
+
+  "Chapter_137_Visual_Odometry_VIO_and_External_Pose_Ingestion.md": {
+    "chapter_title": "Visual Odometry (VIO) and External Pose Ingestion",
+    "files": [
+      "libraries/AP_VisualOdom/AP_VisualOdom.cpp",
+      "libraries/AP_NavEKF3/AP_NavEKF3_core.cpp"
+    ],
+    "research_prompt": "Detail the integration of companion computer vision. Explain how `AP_VisualOdom.cpp` unpacks 6-DOF pose arrays from Intel T265 cameras or ROS 2 nodes, and how the NavEKF3 consumes this purely optical data to navigate GPS-denied environments like underground mines."
+  },
+
+  "Chapter_138_MultiWii_Serial_Protocol_MSP_and_Digital_OSD.md": {
+    "chapter_title": "MultiWii Serial Protocol (MSP) and Digital OSD",
+    "files": [
+      "libraries/AP_MSP/AP_MSP.cpp",
+      "libraries/AP_OSD/AP_OSD.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the FPV display systems. Detail how `AP_MSP.cpp` tricks DJI or Walksnail digital video transmitters into thinking they are connected to Betaflight, formatting ArduPilot's complex EKF telemetry into lightweight DisplayPort canvases driven by `AP_OSD.cpp`."
+  },
+
+  "Chapter_139_Crossfire_CRSF_and_High_Speed_RC_Telemetry.md": {
+    "chapter_title": "Crossfire (CRSF) and High-Speed RC Telemetry",
+    "files": [
+      "libraries/AP_RCProtocol/AP_RCProtocol_CRSF.cpp",
+      "libraries/AP_RCTelemetry/AP_RCTelemetry.cpp"
+    ],
+    "research_prompt": "Extract the low-latency radio control link. Explain the UART parsing engine in `AP_RCProtocol_CRSF.cpp` capable of 150Hz stick updates, and how `AP_RCTelemetry.cpp` interleaves flight mode and battery data back into the transmitter's downlink."
+  },
+
+  "Chapter_140_Precision_Landing_IRLock_and_Companion_Targeting.md": {
+    "chapter_title": "Precision Landing, IRLock, and Companion Targeting",
+    "files": [
+      "libraries/AP_IRLock/AP_IRLock.cpp",
+      "libraries/AC_PrecLand/AC_PrecLand.cpp"
+    ],
+    "research_prompt": "Detail the optical targeting matrices. Explain how `AP_IRLock.cpp` communicates over I2C to read high-speed infrared beacon pixel coordinates, and how `AC_PrecLand.cpp` translates those 2D pixels into 3D navigation vectors to precisely dock a vehicle."
+  },
+
+  "Chapter_141_DroneCAN_Actuator_Arbitration_and_Node_Mapping.md": {
+    "chapter_title": "DroneCAN Actuator Arbitration and Node Mapping",
+    "files": [
+      "libraries/AP_UAVCAN/AP_UAVCAN.cpp",
+      "libraries/AP_CANManager/AP_CANManager.cpp"
+    ],
+    "research_prompt": "Extract the DroneCAN infrastructure. Explain how `AP_CANManager.cpp` allocates thread priorities for bus polling, and how `AP_UAVCAN.cpp` dynamically maps logical servo outputs to physical CAN node IDs, allowing for infinitely expandable, decentralized hardware architectures."
+  },
+
+  "Chapter_142_Onboard_Lua_Applets_and_Peripheral_Sandboxing.md": {
+    "chapter_title": "Onboard Lua Applets and Peripheral Sandboxing",
+    "files": [
+      "libraries/AP_Scripting/AP_Scripting.cpp",
+      "libraries/AP_Scripting/applets/"
+    ],
+    "research_prompt": "Deep dive into the edge-computing engine. Detail how Lua scripts loaded via `AP_Scripting.cpp` can interface directly with the CAN bus or I2C lines to parse proprietary sensors on the fly, without requiring a custom C++ firmware compilation."
+  },
+
+  "Chapter_143_MAVLink_FTP_and_Onboard_Filesystem_Management.md": {
+    "chapter_title": "MAVLink FTP and Onboard Filesystem Management",
+    "files": [
+      "libraries/GCS_MAVLink/GCS_FTP.cpp",
+      "libraries/AP_Filesystem/AP_Filesystem.cpp"
+    ],
+    "research_prompt": "Extract the remote administration layer. Explain how `GCS_FTP.cpp` implements burst-reads and CRC checks over MAVLink, allowing a Ground Station to browse, download logs, and upload Lua scripts to the SD card via `AP_Filesystem.cpp` while the vehicle is in flight."
+  },
+
+  "Chapter_144_NMEA_Output_and_Marine_Chartplotter_Integration.md": {
+    "chapter_title": "NMEA Output and Marine Chartplotter Integration",
+    "files": [
+      "libraries/AP_NMEA_Output/AP_NMEA_Output.cpp",
+      "libraries/AP_SerialManager/AP_SerialManager.cpp"
+    ],
+    "research_prompt": "Detail the legacy marine hardware integrations. Explain how `AP_NMEA_Output.cpp` translates the EKF's global coordinates back into standard NMEA 0183 sentences (like GGA and RMC) to feed physical depth sounders and commercial chartplotters mounted on boats."
+  },
+
+  "Chapter_145_Multi_Zone_Temperature_Calibration_and_IMU_Drift.md": {
+    "chapter_title": "Multi-Zone Temperature Calibration and IMU Drift",
+    "files": [
+      "libraries/AP_TempCalibration/AP_TempCalibration.cpp",
+      "libraries/AP_InertialSensor/AP_InertialSensor_tempcal.cpp"
+    ],
+    "research_prompt": "Reverse-engineer the extreme-environment physics. Explain how `AP_TempCalibration.cpp` utilizes offline 3rd-order polynomial curves to correct raw gyroscope and accelerometer drift across a -40C to +85C temperature gradient."
+  },
+
+  "Chapter_146_Advanced_Failsafe_State_Machines_and_Geo_Sequences.md": {
+    "chapter_title": "Advanced Failsafe State Machines and Geo-Sequences",
+    "files": [
+      "libraries/AP_AdvancedFailsafe/AP_AdvancedFailsafe.cpp",
+      "Rover/failsafe.cpp"
+    ],
+    "research_prompt": "Extract the industrial failsafe architecture. Detail how `AP_AdvancedFailsafe.cpp` moves beyond simple 'Return to Launch', executing complex, programmable geometric sequences (like pulling parachutes, killing engines, or driving to designated safe-zones) when critical subsystems fail."
+  },
+
+  "Chapter_147_Crash_Detection_Tip_Over_and_EKF_Variance_Watchdogs.md": {
+    "chapter_title": "Crash Detection, Tip-Over, and EKF Variance Watchdogs",
+    "files": [
+      "Rover/crash_check.cpp",
+      "Rover/ekf_check.cpp"
+    ],
+    "research_prompt": "Detail the kinematic death-sensors. Explain the mathematics in `crash_check.cpp` that detects prolonged physical inversions without corresponding RC inputs (confirming a rover roll-over), and how `ekf_check.cpp` monitors compass variance to trigger emergency manual-fallback modes."
+  },
+
+  "Chapter_148_DataFlash_Log_Structure_and_High_Bandwidth_Ring_Buffers.md": {
+    "chapter_title": "DataFlash Log Structure and High-Bandwidth Ring Buffers",
+    "files": [
+      "libraries/AP_Logger/AP_Logger.cpp",
+      "libraries/AP_Logger/LogStructure.h"
+    ],
+    "research_prompt": "Extract the forensic logging engine. Detail how `AP_Logger.cpp` utilizes non-blocking circular DMA buffers to flush megabytes of high-speed PID and EKF structs (`LogStructure.h`) to the SD card, guaranteeing data recovery even if the main CPU completely hard-faults mid-flight."
+  },
+
+  "Chapter_149_ROS_2_DDS_Integration_and_Micro_XRCE_Offloading.md": {
+    "chapter_title": "ROS 2 DDS Integration and Micro XRCE Offloading",
+    "files": [
+      "libraries/AP_DDS/AP_DDS.cpp",
+      "libraries/AP_DDS/AP_DDS_Client.cpp"
+    ],
+    "research_prompt": "Extract the modern enterprise API. Detail the implementation of the Data Distribution Service (DDS), explaining how `AP_DDS_Client.cpp` translates ArduPilot’s internal state directly into ROS 2 topics, allowing Nvidia Jetson companion computers to execute complex AI navigation loops over Ethernet."
+  },
+
+  "Chapter_150_The_ArduPilot_Compile_Time_ROMFS_and_Memory_Map.md": {
+    "chapter_title": "The ArduPilot Compile-Time ROMFS and Memory Map",
+    "files": [
+      "libraries/AP_ROMFS/AP_ROMFS.cpp",
+      "Tools/ardupilotwaf/romfs.py"
+    ],
+    "research_prompt": "Reverse-engineer the final firmware packing mechanism. Explain how `romfs.py` intercepts font files, Lua scripts, and default parameter lists, compiling them directly into a compressed C-array embedded in the `.hex` binary, allowing `AP_ROMFS.cpp` to read files without a physical SD card."
+  }
+}

@@ -1,0 +1,2364 @@
+{
+  "Chapter_04_Newton_Raphson.md": {
+    "chapter_title": "Newton-Raphson Iteration",
+    "files": [
+      "src/maths/ni/niniter.c"
+    ],
+    "research_prompt": "Analyze the C code and extract the core SPICE numerical algorithm (Newton-Raphson, convergence checks). Extract the underlying math."
+  },
+  "Chapter_05_Device_Limiters.md": {
+    "chapter_title": "Device Limiting Functions",
+    "files": [
+      "src/include/ngspice/devdefs.h",
+      "src/spicelib/devices/devsup.c",
+      "src/spicelib/devices/dev.c"
+    ],
+    "research_prompt": "Read the header, support, and dev files in sequence. Mathematically reverse-engineer DEVpnjlim, DEVfetlim, and DEVlimitlog. Extract the EXACT algebraic transformations applied to vnew and vold. Map the C code operators directly to mathematical equations. Do not hallucinate."
+  },
+  "Chapter_06_Core_Analysis.md": {
+    "chapter_title": "Core Analysis Routines: Setup, OP, and Transient",
+    "files": [
+      "src/spicelib/analysis/cktsetup.c",
+      "src/spicelib/analysis/cktop.c",
+      "src/spicelib/analysis/dctran.c"
+    ],
+    "research_prompt": "Analyze the circuit setup, operating point (DC), and transient analysis algorithms. Extract the mathematics of how time steps are calculated (e.g., in dctran.c) and how the initial operating point is found. Map the C structs to the mathematical simulation loops."
+  },
+  "Chapter_07_Linear_and_Controlled_Sources.md": {
+    "chapter_title": "Device Models: Inductors and VCVS",
+    "files": [
+      "src/spicelib/devices/ind/indsetup.c",
+      "src/spicelib/devices/ind/indload.c",
+      "src/spicelib/devices/vcvs/vcvsload.c"
+    ],
+    "research_prompt": "Analyze the setup and load routines for Inductors and Voltage-Controlled Voltage Sources (VCVS). Extract the exact matrix stamping mathematics (how they populate the Modified Nodal Analysis matrix). Show how the integration method affects inductor stamping."
+  },
+  "Chapter_08_BJT_Mathematics.md": {
+    "chapter_title": "Bipolar Junction Transistor (BJT) Implementation",
+    "files": [
+      "src/include/ngspice/devdefs.h",
+      "src/spicelib/devices/bjt/bjttemp.c",
+      "src/spicelib/devices/bjt/bjtload.c"
+    ],
+    "research_prompt": "Read the header first, then the temperature dependence, then the load routine. Extract the exact BJT mathematical model implemented in Ngspice (likely Gummel-Poon). Document the temperature adjustment equations and the final Jacobian matrix stamping derivatives."
+  },
+  "Chapter_09_MOS1_Mathematics.md": {
+    "chapter_title": "MOSFET Level 1 Implementation",
+    "files": [
+      "src/include/ngspice/devdefs.h",
+      "src/spicelib/devices/mos1/mos1par.c",
+      "src/spicelib/devices/mos1/mos1temp.c",
+      "src/spicelib/devices/mos1/mos1load.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand parameters, temperature adjustments, and matrix loading. Extract the exact Level 1 MOSFET equations (Shichman-Hodges model) implemented here, including drain current in linear/saturation regions and their partial derivatives. CRITICAL EXTRACTION: You MUST explicitly document the Newton-Raphson limiting and state logic inside `mos1load.c`. Specifically extract and explain: 1. The PMOS initialization and polarity handling (how voltages/currents are inverted). 2. The S/D swap logic (how Source and Drain are mathematically swapped when Vds < 0). 3. The MOSFET NR Limiting logic: extract the exact `DEVfetlim` call pattern used to limit vgs and vgd between iterations. Map exactly how mos1load orchestrates this limiting before computing the final conductances."
+  },
+  "Chapter_10_NI_Lifecycle.md": {
+    "chapter_title": "Numerical Iteration: System Initialization and Teardown",
+    "files": [
+      "src/maths/ni/niinit.c",
+      "src/maths/ni/nireinit.c",
+      "src/maths/ni/nidest.c"
+    ],
+    "research_prompt": "Analyze the initialization, re-initialization, and destruction routines for the Newton Iteration (NI) structures. Extract the memory management logic and explain how the sparse matrix pointers (SMP) are bound to the circuit iteration states."
+  },
+  "Chapter_11_NI_Iteration_Control.md": {
+    "chapter_title": "Numerical Iteration: AC, DC, and Transient Control",
+    "files": [
+      "src/maths/ni/niiter.c",
+      "src/maths/ni/niaciter.c",
+      "src/maths/ni/niditer.c"
+    ],
+    "research_prompt": "Analyze the core iteration loops. Compare how AC iteration (niaciter.c) differs from generic/DC iteration (niiter.c/niditer.c). Extract the specific mathematical conditions that trigger a successful iteration versus a rejected time step or non-convergence."
+  },
+  "Chapter_12_NI_Integration_Methods.md": {
+    "chapter_title": "Numerical Integration: Predictors and Time Stepping",
+    "files": [
+      "src/maths/ni/niinteg.c",
+      "src/maths/ni/nipred.c",
+      "src/maths/ni/nicomcof.c",
+      "src/maths/ni/nipzmeth.c"
+    ],
+    "research_prompt": "Analyze the numerical integration routines. Extract the exact mathematical formulas used for the predictor steps and the computation of integration coefficients (e.g., Trapezoidal rule vs. Gear's method). Explain how truncation error limits the time step."
+  },
+  "Chapter_13_NI_Convergence_and_Sensitivity.md": {
+    "chapter_title": "Numerical Iteration: Convergence and Sensitivity",
+    "files": [
+      "src/maths/ni/niconv.c",
+      "src/maths/ni/nisenre.c"
+    ],
+    "research_prompt": "Analyze the convergence checking and sensitivity re-evaluation routines. Extract the mathematical tolerances (absolute and relative) used in niconv.c to determine if the node voltages and device currents have successfully converged to a solution."
+  },
+  "Chapter_14_Sparse_Data_Structures.md": {
+    "chapter_title": "Sparse Matrix: Data Structures and Memory Allocation",
+    "files": [
+      "src/maths/sparse/spconfig.h",
+      "src/maths/sparse/spdefs.h",
+      "src/maths/sparse/spalloc.c",
+      "src/maths/sparse/spbuild.c"
+    ],
+    "research_prompt": "Analyze the header files and memory allocation routines for the Sparse Matrix solver. Extract the exact C struct layouts used to represent the sparse matrix (e.g., orthogonal linked lists, fill-ins). Explain the mathematical mapping of a 2D matrix coordinate (row, col) into this 1D pointer-based memory structure."
+  },
+  "Chapter_15_Sparse_Factorization_Math.md": {
+    "chapter_title": "Sparse Matrix: LU Factorization and Solution",
+    "files": [
+      "src/maths/sparse/spfactor.c",
+      "src/maths/sparse/spsolve.c"
+    ],
+    "research_prompt": "Analyze the core mathematical solver. Extract the exact algorithms used for LU Decomposition (spfactor.c) and Forward/Backward Substitution (spsolve.c). Document the pivoting strategy (e.g., Markowitz criterion, threshold pivoting) used to maintain numerical stability and minimize fill-ins. Extract the mathematical formulas as implemented in the C code."
+  },
+  "Chapter_16_Sparse_API_and_Utilities.md": {
+    "chapter_title": "Sparse Matrix: SMP Interface and Utilities",
+    "files": [
+      "src/maths/sparse/spsmp.c",
+      "src/maths/sparse/spextra.c",
+      "src/maths/sparse/sputils.c",
+      "src/maths/sparse/spoutput.c"
+    ],
+    "research_prompt": "Analyze the Sparse Matrix Package (SMP) interface and utility functions. Extract the mathematics for determinant calculation and matrix scaling. Explain how spsmp.c acts as the translation layer between Ngspice's generic circuit nodes and the isolated Sparse solver engine."
+  },
+  "Chapter_17_Complex_Math_Arithmetic.md": {
+    "chapter_title": "Complex Mathematics: Data Structures and Core Arithmetic",
+    "files": [
+      "src/maths/cmaths/cmath.h",
+      "src/maths/cmaths/cmath1.c",
+      "src/maths/cmaths/cmath2.c"
+    ],
+    "research_prompt": "Analyze the header and core arithmetic files for Ngspice's complex number library. Extract the C struct used to define a complex number. Extract the mathematical formulas implemented for complex addition, subtraction, multiplication, division, magnitude, and phase calculation."
+  },
+  "Chapter_18_Complex_Math_Transcendentals.md": {
+    "chapter_title": "Complex Mathematics: Advanced Functions",
+    "files": [
+      "src/maths/cmaths/cmath3.c",
+      "src/maths/cmaths/cmath4.c"
+    ],
+    "research_prompt": "Analyze the advanced complex mathematics routines. Extract the exact algorithms and formulas used to compute complex exponentials, logarithms, square roots, and trigonometric/hyperbolic functions. Note any specific numerical stability tricks or branch-cut handling used in the C code."
+  },
+  "Chapter_19_Complex_Math_Validation.md": {
+    "chapter_title": "Complex Mathematics: Validation and Edge Cases",
+    "files": [
+      "src/maths/cmaths/test_cx_mag.c",
+      "src/maths/cmaths/test_cx_ph.c",
+      "src/maths/cmaths/test_cx_cph.c",
+      "src/maths/cmaths/test_cx_j.c"
+    ],
+    "research_prompt": "Analyze the unit test suite for the complex math library. Do not just list the tests; extract the specific mathematical edge cases being validated (e.g., phase unwrapping in test_cx_cph.c, zero-magnitude handling). Explain what these tests reveal about the required precision and stability for AC circuit simulation."
+  },
+  "Chapter_20_Derivative_Arithmetic.md": {
+    "chapter_title": "Analytical Derivatives: Core Arithmetic and Equality",
+    "files": [
+      "src/maths/deriv/plusder.c",
+      "src/maths/deriv/multder.c",
+      "src/maths/deriv/timesder.c",
+      "src/maths/deriv/divderiv.c",
+      "src/maths/deriv/equalder.c"
+    ],
+    "research_prompt": "Analyze the core arithmetic derivative functions used for behavioral modeling and expression parsing. Extract the exact C structs used to pass the value and derivative chains. Extract the mathematical implementation of the chain rule for addition, multiplication, and division as written in the C code."
+  },
+  "Chapter_21_Derivative_Powers_Roots.md": {
+    "chapter_title": "Analytical Derivatives: Powers, Roots, and Exponentials",
+    "files": [
+      "src/maths/deriv/expderiv.c",
+      "src/maths/deriv/powderiv.c",
+      "src/maths/deriv/cubeder.c",
+      "src/maths/deriv/sqrtder.c",
+      "src/maths/deriv/invderiv.c"
+    ],
+    "research_prompt": "Analyze the derivative implementations for power, exponential, and inverse functions. Extract the specific chain rule mathematics applied in the C code for e^x, x^y, x^3, square roots, and inverses (1/x). Pay special attention to and document how domain limits or mathematical singularities (like evaluating the derivative of sqrt(0)) are safely handled in the C code."
+  },
+  "Chapter_22_Derivative_Trigonometry.md": {
+    "chapter_title": "Analytical Derivatives: Trigonometric Functions",
+    "files": [
+      "src/maths/deriv/cosderiv.c",
+      "src/maths/deriv/tanderiv.c",
+      "src/maths/deriv/atander.c"
+    ],
+    "research_prompt": "Analyze the trigonometric derivative functions. Extract the specific mathematical transformations and chain rule applications for cosine, tangent, and arctangent as implemented in the Ngspice C code. Document how the structs maintain the derivative chain through these transcendental functions."
+  },
+  "Chapter_23_Fast_Fourier_Transforms.md": {
+    "chapter_title": "Signal Processing: Fast Fourier Transforms (FFT)",
+    "files": [
+      "src/maths/fft/fftlib.h",
+      "src/maths/fft/fftlib.c",
+      "src/maths/fft/fftext.c"
+    ],
+    "research_prompt": "Analyze the Fast Fourier Transform (FFT) implementation used for spectral analysis. Extract the core algorithm (e.g., Cooley-Tukey) used to convert time-domain signals into the frequency domain. Extract the mathematical implementation of the complex butterfly operations, bit-reversal sorting, and any windowing functions found in the C code."
+  },
+  "Chapter_24_Dense_Matrix_Operations.md": {
+    "chapter_title": "Linear Algebra: Dense Matrix Utilities (Matlib)",
+    "files": [
+      "src/maths/misc/matlib.h",
+      "src/maths/misc/matlib.c"
+    ],
+    "research_prompt": "Analyze the general matrix library (matlib). Note that this is distinct from the main Sparse MNA solver and handles dense matrix linear algebra. Extract the C structs used to define these matrices. Extract the specific mathematical algorithms implemented for matrix inversion, multiplication, determinant calculation, and scaling."
+  },
+  "Chapter_25_Polynomial_Core.md": {
+    "chapter_title": "Polynomial Mathematics: Evaluation and Differentiation",
+    "files": [
+      "src/maths/poly/poly.h",
+      "src/maths/poly/polyeval.c",
+      "src/maths/poly/polyderiv.c"
+    ],
+    "research_prompt": "Analyze the core polynomial header and C routines. Extract the C data structures used to represent a polynomial (likely arrays of coefficients). Extract the exact algebraic algorithms implemented for evaluating a polynomial at a given point (e.g., Horner's method) and for computing the analytical derivative of the polynomial."
+  },
+  "Chapter_26_Polynomial_Fitting_and_Interpolation.md": {
+    "chapter_title": "Polynomial Mathematics: Curve Fitting and Interpolation",
+    "files": [
+      "src/maths/poly/polyfit.h",
+      "src/maths/poly/polyfit.c",
+      "src/maths/poly/interpolate.h",
+      "src/maths/poly/interpolate.c"
+    ],
+    "research_prompt": "Analyze the curve fitting and data interpolation routines. Extract the specific mathematical methods used for interpolation (e.g., cubic splines, linear interpolation) and curve fitting (e.g., Least Squares). Document the mathematical formulation the C code uses to solve for the polynomial coefficients based on raw data points."
+  },
+  "Chapter_27_Floating_Point_Precision.md": {
+    "chapter_title": "Numerical Utilities: Floating-Point Precision and IEEE 754 Safety",
+    "files": [
+      "src/maths/misc/accuracy.h",
+      "src/maths/misc/accuracy.c",
+      "src/maths/misc/equality.c",
+      "src/maths/misc/isinf.c",
+      "src/maths/misc/isnan.c",
+      "src/maths/misc/logb.c",
+      "src/maths/misc/scalb.c"
+    ],
+    "research_prompt": "Analyze the floating-point precision and safety utilities. Extract the mathematical logic used for safe floating-point equality comparisons (e.g., combining absolute and relative tolerances in equality.c). Document how Ngspice handles IEEE 754 edge cases like Infinity and NaN to prevent solver crashes, and extract the logic for radix scaling (scalb) and exponent extraction (logb)."
+  },
+  "Chapter_28_Statistical_Distributions.md": {
+    "chapter_title": "Numerical Utilities: Probability and Statistical Distributions",
+    "files": [
+      "src/maths/misc/randnumb.c",
+      "src/maths/misc/norm.h",
+      "src/maths/misc/norm.c",
+      "src/maths/misc/bernoull.h",
+      "src/maths/misc/bernoull.c"
+    ],
+    "research_prompt": "Analyze the random number generation and statistical distribution routines, which form the basis for Noise and Monte Carlo analyses. Extract the exact algorithms used to generate Uniform random numbers. Extract the mathematical transformations used to convert uniform noise into Normal (Gaussian) distributions (e.g., Box-Muller transform, if used) and Bernoulli distributions."
+  },
+  "Chapter_29_MOS1_Structures_and_API.md": {
+    "chapter_title": "MOS1: Data Structures and SPICE API",
+    "files": [
+      "src/spicelib/devices/mos1/mos1defs.h",
+      "src/spicelib/devices/mos1/mos1init.c",
+      "src/spicelib/devices/mos1/mos1.c",
+      "src/spicelib/devices/mos1/mos1dest.c"
+    ],
+    "research_prompt": "Analyze the core headers and initialization boilerplate for the MOS1 device. Extract the `sMOS1instance` and `sMOS1model` C structs. Explain how the device binds itself to the Ngspice generic device API (SPICEdev). Document the memory destruction logic."
+  },
+  "Chapter_30_MOS1_Parameters_and_Setup.md": {
+    "chapter_title": "MOS1: Parameter Parsing and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/mos1/mos1set.c",
+      "src/spicelib/devices/mos1/mos1mpar.c",
+      "src/spicelib/devices/mos1/mos1mask.c",
+      "src/spicelib/devices/mos1/mos1ask.c"
+    ],
+    "research_prompt": "Analyze the parameter binding and setup routines. Extract how user-defined SPICE deck parameters (like W, L, VTO) are mapped into the C structs. Extract the `mos1set.c` logic that allocates the Sparse Matrix Pointers (SMP) for the drain, gate, source, and bulk nodes."
+  },
+  "Chapter_31_MOS1_AC_and_Noise.md": {
+    "chapter_title": "MOS1: Small-Signal AC, Pole-Zero, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/mos1/mos1acld.c",
+      "src/spicelib/devices/mos1/mos1pzld.c",
+      "src/spicelib/devices/mos1/mos1noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations. Extract the exact small-signal AC matrix stamping mathematics from `mos1acld.c` (how transconductance and capacitances are loaded into the complex matrix). Extract the thermal and flicker noise generation equations implemented in `mos1noi.c`."
+  },
+  "Chapter_32_MOS1_Transient_and_Convergence.md": {
+    "chapter_title": "MOS1: Transient Control and Convergence Checking",
+    "files": [
+      "src/spicelib/devices/mos1/mos1trun.c",
+      "src/spicelib/devices/mos1/mos1conv.c",
+      "src/spicelib/devices/mos1/mos1ic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines. Extract the exact mathematical formulation for Local Truncation Error (LTE) calculated in `mos1trun.c` to control the transient time step. Extract the mathematical tolerances used in `mos1conv.c` to verify if the MOSFET has successfully converged during Newton-Raphson iterations."
+  },
+  "Chapter_33_MOS1_Sensitivity_and_Distortion.md": {
+    "chapter_title": "MOS1: Sensitivity and Distortion Analysis",
+    "files": [
+      "src/spicelib/devices/mos1/mos1sld.c",
+      "src/spicelib/devices/mos1/mos1sset.c",
+      "src/spicelib/devices/mos1/mos1dist.c"
+    ],
+    "research_prompt": "Analyze the advanced analytical routines. Extract the adjoint matrix loading mathematics used for Sensitivity analysis (`mos1sld.c`). Extract the Volterra series or Taylor expansion mathematics used to calculate harmonic distortion (`mos1dist.c`)."
+  },
+  "Chapter_34_MOS2_Core_Mathematics.md": {
+    "chapter_title": "MOSFET Level 2: Core Mathematics and DC Load",
+    "files": [
+      "src/include/ngspice/devdefs.h",
+      "src/spicelib/devices/mos2/mos2par.c",
+      "src/spicelib/devices/mos2/mos2temp.c",
+      "src/spicelib/devices/mos2/mos2load.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand MOS2 parameters, temperature adjustments, and matrix loading. Extract the exact Level 2 Grove-Frohman equations. Specifically derive the mathematical formulations for threshold voltage (Vto) considering short/narrow-channel geometry (delta, gamma). Extract the exact piecewise functions defining the transition boundaries between subthreshold, linear, and velocity-saturated regions. Document the Meyer capacitance charge-model equations implemented in the C code. CRITICAL EXTRACTION: Extract the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics directly from the C loops."
+  },
+  "Chapter_35_MOS2_Structures_and_API.md": {
+    "chapter_title": "MOS2: Data Structures and SPICE API",
+    "files": [
+      "src/spicelib/devices/mos2/mos2defs.h",
+      "src/spicelib/devices/mos2/mos2init.c",
+      "src/spicelib/devices/mos2/mos2.c",
+      "src/spicelib/devices/mos2/mos2dest.c"
+    ],
+    "research_prompt": "Analyze the core headers and initialization boilerplate for the MOS2 device. Extract the `sMOS2instance` and `sMOS2model` C structs. Explicitly document how the internal parasitic nodes (e.g., drain/source ohmic resistances) are topologically represented compared to the external terminal nodes. Explain the state-vector memory allocation (the `here->MOS2states` array) used to track voltages and charges across Newton iterations."
+  },
+  "Chapter_36_MOS2_Parameters_and_Setup.md": {
+    "chapter_title": "MOS2: Parameter Parsing and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/mos2/mos2set.c",
+      "src/spicelib/devices/mos2/mos2mpar.c",
+      "src/spicelib/devices/mos2/mos2mask.c",
+      "src/spicelib/devices/mos2/mos2ask.c"
+    ],
+    "research_prompt": "Analyze the parameter binding and setup routines. Extract the exact algebraic formulas used to compute effective channel length/width (L_eff, W_eff) and the default initializations for missing SPICE parameters. Document the temperature degradation formulas for carrier mobility and saturation velocity. Detail the Sparse Matrix Pointer (SMP) allocation for both the main transconductance matrix and the parasitic resistor sub-matrix."
+  },
+  "Chapter_37_MOS2_AC_and_Noise.md": {
+    "chapter_title": "MOS2: Small-Signal AC, Pole-Zero, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/mos2/mos2acld.c",
+      "src/spicelib/devices/mos2/mos2pzld.c",
+      "src/spicelib/devices/mos2/mos2noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations. Extract the precise small-signal AC matrix stamping mathematics from `mos2acld.c`. Document how the non-reciprocal Meyer transcapacitances (Cgs, Cgd, Cgb) are integrated into the complex admittance matrix. For `mos2noi.c`, extract the integral formulas for thermal channel noise and 1/f flicker noise, noting exactly how the Level 2 model factors velocity saturation into the noise floor."
+  },
+  "Chapter_38_MOS2_Transient_and_Convergence.md": {
+    "chapter_title": "MOS2: Transient Control and Convergence Checking",
+    "files": [
+      "src/spicelib/devices/mos2/mos2trun.c",
+      "src/spicelib/devices/mos2/mos2conv.c",
+      "src/spicelib/devices/mos2/mos2ic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines. Extract the numerical integration coupling for the Meyer charge model, documenting how nonlinear gate/bulk charges are differentiated with respect to time to yield transient currents. Extract the exact mathematical formulation for Local Truncation Error (LTE) used to constrain the time step, and the specific `mos2conv.c` voltage/charge tolerance bounds that define a converged Newton step."
+  },
+  "Chapter_39_MOS2_Sensitivity_and_Distortion.md": {
+    "chapter_title": "MOS2: Sensitivity and Distortion Analysis",
+    "files": [
+      "src/spicelib/devices/mos2/mos2sld.c",
+      "src/spicelib/devices/mos2/mos2sset.c",
+      "src/spicelib/devices/mos2/mos2dist.c"
+    ],
+    "research_prompt": "Analyze the advanced analytical routines. Extract the adjoint matrix loading mathematics used for Sensitivity analysis (`mos2sld.c`). For `mos2dist.c`, extract the specific Taylor series multidimensional partial derivatives (up to 3rd order) used to populate the Volterra series matrices for harmonic distortion prediction."
+  },
+  "Chapter_40_MOS3_Core_Mathematics.md": {
+    "chapter_title": "MOSFET Level 3: Semi-Empirical Mathematics and DC Load",
+    "files": [
+      "src/include/ngspice/devdefs.h",
+      "src/spicelib/devices/mos3/mos3par.c",
+      "src/spicelib/devices/mos3/mos3temp.c",
+      "src/spicelib/devices/mos3/mos3load.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand MOS3 parameters, temperature adjustments, and matrix loading. Extract the exact Level 3 semi-empirical MOSFET equations. CRITICAL EXTRACTION: Specifically derive and document the mathematical formulations for Drain-Induced Barrier Lowering (DIBL) using the ETA parameter, mobility degradation using the THETA parameter, and saturation control using the KAPPA parameter. Extract the specific piecewise functions that define the linear and saturation regions. Document the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics directly from the mos3load.c loops."
+  },
+  "Chapter_41_MOS3_Structures_and_API.md": {
+    "chapter_title": "MOS3: Data Structures and SPICE API",
+    "files": [
+      "src/spicelib/devices/mos3/mos3defs.h",
+      "src/spicelib/devices/mos3/mos3init.c",
+      "src/spicelib/devices/mos3/mos3.c",
+      "src/spicelib/devices/mos3/mos3dest.c"
+    ],
+    "research_prompt": "Analyze the core headers and initialization boilerplate for the MOS3 device. Extract the `sMOS3instance` and `sMOS3model` C structs. Explain how the internal parasitic nodes are represented and how the state-vector memory (`here->MOS3states`) is allocated to track voltages and charges across Newton iterations for the semi-empirical model."
+  },
+  "Chapter_42_MOS3_Parameters_and_Setup.md": {
+    "chapter_title": "MOS3: Parameter Parsing and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/mos3/mos3set.c",
+      "src/spicelib/devices/mos3/mos3mpar.c",
+      "src/spicelib/devices/mos3/mos3mask.c",
+      "src/spicelib/devices/mos3/mos3ask.c"
+    ],
+    "research_prompt": "Analyze the parameter binding and setup routines. Extract how user-defined SPICE deck parameters for Level 3 (especially VMAX, THETA, ETA, KAPPA) are mapped into the C structs. Extract the precise algebraic formulas used to compute effective channel dimensions and temperature degradation. Detail the Sparse Matrix Pointer (SMP) allocation in mos3set.c."
+  },
+  "Chapter_43_MOS3_AC_and_Noise.md": {
+    "chapter_title": "MOS3: Small-Signal AC, Pole-Zero, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/mos3/mos3acld.c",
+      "src/spicelib/devices/mos3/mos3pzld.c",
+      "src/spicelib/devices/mos3/mos3noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations. Extract the exact small-signal AC matrix stamping mathematics from `mos3acld.c`. Document how the Meyer transcapacitances are integrated into the complex admittance matrix. For `mos3noi.c`, extract the thermal and flicker noise equations, paying special attention to how the Level 3 empirical parameters influence the noise floor calculations."
+  },
+  "Chapter_44_MOS3_Transient_and_Convergence.md": {
+    "chapter_title": "MOS3: Transient Control and Convergence Checking",
+    "files": [
+      "src/spicelib/devices/mos3/mos3trun.c",
+      "src/spicelib/devices/mos3/mos3conv.c",
+      "src/spicelib/devices/mos3/mos3ic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines. Extract the numerical integration coupling for the transient charges, documenting how nonlinear gate/bulk charges are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) used to constrain the time step in `mos3trun.c`, and the specific convergence tolerance bounds defined in `mos3conv.c`."
+  },
+  "Chapter_45_MOS3_Sensitivity_and_Distortion.md": {
+    "chapter_title": "MOS3: Sensitivity and Distortion Analysis",
+    "files": [
+      "src/spicelib/devices/mos3/mos3sld.c",
+      "src/spicelib/devices/mos3/mos3sset.c",
+      "src/spicelib/devices/mos3/mos3dist.c"
+    ],
+    "research_prompt": "Analyze the advanced analytical routines. Extract the adjoint matrix loading mathematics used for Sensitivity analysis (`mos3sld.c`). For `mos3dist.c`, extract the specific Taylor series partial derivatives (up to 3rd order) used to populate the Volterra series matrices for harmonic distortion prediction based on the semi-empirical Level 3 equations."
+  },
+  "Chapter_46_MOS6_Core_Mathematics.md": {
+    "chapter_title": "MOSFET Level 6: Sakurai-Newton Digital Model and DC Load",
+    "files": [
+      "src/include/ngspice/devdefs.h",
+      "src/spicelib/devices/mos6/mos6par.c",
+      "src/spicelib/devices/mos6/mos6temp.c",
+      "src/spicelib/devices/mos6/mos6load.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand MOS6 parameters, temperature adjustments, and matrix loading. Extract the exact Level 6 Sakurai-Newton empirical equations. CRITICAL EXTRACTION: Document the specific mathematical implementation of the 'alpha-power law' velocity saturation model. Extract how the parameters KV, NV, KC, and NC are mathematically combined to calculate the drain current in linear and saturation regions. Note the absence of subthreshold modeling (as this is a digital-focused model) and extract the NR Limiting logic (`DEVfetlim`) from mos6load.c."
+  },
+  "Chapter_47_MOS6_Structures_and_Setup.md": {
+    "chapter_title": "MOS6: Data Structures, API, and Parameter Setup",
+    "files": [
+      "src/spicelib/devices/mos6/mos6defs.h",
+      "src/spicelib/devices/mos6/mos6init.c",
+      "src/spicelib/devices/mos6/mos6set.c",
+      "src/spicelib/devices/mos6/mos6mpar.c",
+      "src/spicelib/devices/mos6/mos6mask.c"
+    ],
+    "research_prompt": "Analyze the core headers, API bindings, and parameter setup routines for the MOS6 device. Extract the `sMOS6instance` and `sMOS6model` C structs. Explain how the unique Sakurai-Newton parameters (KV, NV, KC, NC, LAMDA) are parsed and bound to the model struct. Detail the Sparse Matrix Pointer (SMP) allocation in mos6set.c, comparing its parasitic resistance topology to earlier MOS levels."
+  },
+  "Chapter_48_MOS6_Transient_and_Convergence.md": {
+    "chapter_title": "MOS6: Transient Control and Convergence Checking",
+    "files": [
+      "src/spicelib/devices/mos6/mos6trun.c",
+      "src/spicelib/devices/mos6/mos6conv.c",
+      "src/spicelib/devices/mos6/mos6ic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for the MOS6 digital model. Extract the mathematical formulation for Local Truncation Error (LTE) used to constrain the time step in `mos6trun.c`. Extract the specific convergence tolerance bounds defined in `mos6conv.c`. Document the capacitance and charge modeling used here for transient integration, noting any simplifications made for digital switching speed."
+  },
+  "Chapter_49_MOS9_Core_Mathematics.md": {
+    "chapter_title": "MOSFET Level 9 (Philips): Core Mathematics and Smooth Transitions",
+    "files": [
+      "src/include/ngspice/devdefs.h",
+      "src/spicelib/devices/mos9/mos9par.c",
+      "src/spicelib/devices/mos9/mos9temp.c",
+      "src/spicelib/devices/mos9/mos9load.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand MOS9 parameters, temperature scaling, and matrix loading. Extract the exact Philips MOS9 model equations. CRITICAL EXTRACTION: Document the specific smoothing functions (often hyperbolic or exponential blends) used to ensure continuous derivatives across subthreshold, linear, and saturation boundaries. Extract the complex temperature dependence equations from mos9temp.c. Document the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics implemented in mos9load.c."
+  },
+  "Chapter_50_MOS9_Structures_and_API.md": {
+    "chapter_title": "MOS9: Data Structures and SPICE API",
+    "files": [
+      "src/spicelib/devices/mos9/mos9defs.h",
+      "src/spicelib/devices/mos9/mos9init.c",
+      "src/spicelib/devices/mos9/mos9.c",
+      "src/spicelib/devices/mos9/mos9dest.c"
+    ],
+    "research_prompt": "Analyze the core headers and initialization boilerplate for the Philips MOS9 device. Extract the `sMOS9instance` and `sMOS9model` C structs. Explain how the internal parasitic nodes are represented and how the state-vector memory (`here->MOS9states`) is allocated to track voltages and charges across Newton iterations."
+  },
+  "Chapter_51_MOS9_Parameters_and_Setup.md": {
+    "chapter_title": "MOS9: Parameter Parsing and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/mos9/mos9set.c",
+      "src/spicelib/devices/mos9/mos9mpar.c",
+      "src/spicelib/devices/mos9/mos9mask.c",
+      "src/spicelib/devices/mos9/mos9ask.c"
+    ],
+    "research_prompt": "Analyze the parameter binding and setup routines. The MOS9 model has an exceptionally large parameter set for geometry and temperature. Extract how these user-defined SPICE deck parameters are mapped into the C structs. Detail the Sparse Matrix Pointer (SMP) allocation in mos9set.c for both the main nodes and parasitic resistances."
+  },
+  "Chapter_52_MOS9_AC_and_Noise.md": {
+    "chapter_title": "MOS9: Small-Signal AC, Pole-Zero, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/mos9/mos9acld.c",
+      "src/spicelib/devices/mos9/mos9pzld.c",
+      "src/spicelib/devices/mos9/mos9noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations. Extract the exact small-signal AC matrix stamping mathematics from `mos9acld.c`. For `mos9noi.c`, extract the thermal and flicker noise equations. Pay special attention to how the Philips model formulates the 1/f noise and thermal channel noise differently from the older Berkeley models (Levels 1-3)."
+  },
+  "Chapter_53_MOS9_Transient_and_Convergence.md": {
+    "chapter_title": "MOS9: Transient Control and Charge Conservation",
+    "files": [
+      "src/spicelib/devices/mos9/mos9trun.c",
+      "src/spicelib/devices/mos9/mos9conv.c",
+      "src/spicelib/devices/mos9/mos9ic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines. Extract the numerical integration coupling for the transient charges. MOS9 relies heavily on charge-conserving mathematics—document how the terminal charges are calculated and differentiated. Extract the mathematical formulation for Local Truncation Error (LTE) used to constrain the time step in `mos9trun.c`, and the specific convergence tolerance bounds in `mos9conv.c`."
+  },
+  "Chapter_54_MOS9_Sensitivity_and_Distortion.md": {
+    "chapter_title": "MOS9: Sensitivity and Distortion Analysis",
+    "files": [
+      "src/spicelib/devices/mos9/mos9sld.c",
+      "src/spicelib/devices/mos9/mos9sset.c",
+      "src/spicelib/devices/mos9/mos9dist.c"
+    ],
+    "research_prompt": "Analyze the advanced analytical routines. Extract the adjoint matrix loading mathematics used for Sensitivity analysis (`mos9sld.c`). For `mos9dist.c`, extract the specific Taylor series partial derivatives used to populate the Volterra series matrices. Note how the smooth derivative functions of the MOS9 model improve the reliability of these distortion calculations compared to earlier models."
+  },
+  "Chapter_55_BSIM3_Core_Mathematics.md": {
+    "chapter_title": "BSIM3: Core Deep Submicron Mathematics and DC Load",
+    "files": [
+      "src/spicelib/devices/bsim3/bsim3def.h",
+      "src/spicelib/devices/bsim3/b3par.c",
+      "src/spicelib/devices/bsim3/b3temp.c",
+      "src/spicelib/devices/bsim3/b3ld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM3 parameters, temperature adjustments, and matrix loading. Extract the core BSIM3 deep submicron equations. CRITICAL EXTRACTION: Document the mathematical formulations for threshold voltage roll-off, Drain-Induced Barrier Lowering (DIBL), and vertical-field mobility degradation. Extract the continuous current equations used to bridge the subthreshold and strong inversion regions. Document the NR Limiting logic, PMOS polarity inversion, and Source/Drain swap mechanics implemented in b3ld.c."
+  },
+  "Chapter_56_BSIM3_Parameter_Binning_and_Setup.md": {
+    "chapter_title": "BSIM3: Parameter Binning and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/bsim3/b3set.c",
+      "src/spicelib/devices/bsim3/b3mpar.c",
+      "src/spicelib/devices/bsim3/b3mask.c",
+      "src/spicelib/devices/bsim3/b3ask.c",
+      "src/spicelib/devices/bsim3/b3check.c"
+    ],
+    "research_prompt": "Analyze the parameter binding and setup routines for BSIM3. BSIM3 introduced complex parameter binning for different channel lengths and widths. Extract the exact algebraic formulas used in `b3set.c` to calculate effective geometry (L_eff, W_eff) and how the model parameters are scaled or 'binned' based on these geometries. Document the parameter bounds-checking logic found in `b3check.c` and parameter querying in `b3mask.c`."
+  },
+  "Chapter_57_BSIM3_AC_and_Noise.md": {
+    "chapter_title": "BSIM3: Small-Signal AC, Capacitance, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/bsim3/b3acld.c",
+      "src/spicelib/devices/bsim3/b3pzld.c",
+      "src/spicelib/devices/bsim3/b3noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations. Extract the exact small-signal AC matrix stamping mathematics from `b3acld.c`. BSIM3 uses a highly complex capacitance model (often the BSIM3v3 charge model)—document how the transcapacitances are calculated and integrated into the complex admittance matrix. For `b3noi.c`, extract the thermal and 1/f flicker noise equations, noting how they incorporate the deep submicron parameters."
+  },
+  "Chapter_58_BSIM3_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM3: Transient Control and Charge Conservation",
+    "files": [
+      "src/spicelib/devices/bsim3/b3trunc.c",
+      "src/spicelib/devices/bsim3/b3cvtest.c",
+      "src/spicelib/devices/bsim3/b3getic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines. Extract the numerical integration coupling for the BSIM3 charge model, documenting how terminal charges are calculated, conserved, and differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) used to constrain the time step in `b3trunc.c`, and the specific Newton-Raphson convergence testing limits implemented in `b3cvtest.c`."
+  },
+  "Chapter_59_BSIM3_API_Lifecycle_and_SOA.md": {
+    "chapter_title": "BSIM3: API Binding, Memory Lifecycle, and Safe Operating Area",
+    "files": [
+      "src/spicelib/devices/bsim3/bsim3init.c",
+      "src/spicelib/devices/bsim3/b3.c",
+      "src/spicelib/devices/bsim3/b3dest.c",
+      "src/spicelib/devices/bsim3/b3del.c",
+      "src/spicelib/devices/bsim3/b3mdel.c",
+      "src/spicelib/devices/bsim3/b3soachk.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, memory destruction, and reliability routines for the BSIM3 device. Explain how `bsim3init.c` and `b3.c` bind the BSIM3 functions to the core Ngspice device array (`SPICEdev`). Document the memory management logic used to free instances and models. CRITICAL EXTRACTION: Analyze `b3soachk.c` and document the exact Safe Operating Area (SOA) voltage boundary checks implemented to warn designers about potential oxide breakdown or punch-through conditions."
+  },
+  "Chapter_60_BSIM1_Core_Mathematics.md": {
+    "chapter_title": "BSIM1: Core Empirical Mathematics and Evaluation",
+    "files": [
+      "src/spicelib/devices/bsim1/bsim1def.h",
+      "src/spicelib/devices/bsim1/b1par.c",
+      "src/spicelib/devices/bsim1/b1temp.c",
+      "src/spicelib/devices/bsim1/b1eval.c",
+      "src/spicelib/devices/bsim1/b1ld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM1 parameters, temperature adjustments, and evaluation. Extract the core BSIM1 empirical equations. CRITICAL EXTRACTION: Focus heavily on `b1eval.c`, which isolates the main device physics. Extract the mathematical formulations for threshold voltage, mobility degradation, and drain current. Document the continuous current equations used to bridge regions. Extract the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics implemented in `b1ld.c`."
+  },
+  "Chapter_61_BSIM1_Parameter_Setup.md": {
+    "chapter_title": "BSIM1: Parameter Parsing and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/bsim1/b1set.c",
+      "src/spicelib/devices/bsim1/b1mpar.c",
+      "src/spicelib/devices/bsim1/b1mask.c",
+      "src/spicelib/devices/bsim1/b1ask.c"
+    ],
+    "research_prompt": "Analyze the parameter binding and setup routines for the original BSIM1 model. Extract the algebraic formulas used in `b1set.c` to calculate effective channel length and width based on user-supplied parameters and process geometry offsets. Document how the Sparse Matrix Pointers (SMP) are allocated."
+  },
+  "Chapter_62_BSIM1_AC_Noise_and_Capacitance.md": {
+    "chapter_title": "BSIM1: Capacitance Modeling, AC, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/bsim1/b1moscap.c",
+      "src/spicelib/devices/bsim1/b1acld.c",
+      "src/spicelib/devices/bsim1/b1pzld.c",
+      "src/spicelib/devices/bsim1/b1noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations and capacitance modeling. CRITICAL EXTRACTION: Analyze `b1moscap.c` to document the exact algebraic formulation of the BSIM1 capacitance model (which was a significant evolution from the older Meyer models). Extract the small-signal AC matrix stamping mathematics from `b1acld.c`. For `b1noi.c`, extract the thermal and flicker noise equations."
+  },
+  "Chapter_63_BSIM1_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM1: Transient Control and Convergence",
+    "files": [
+      "src/spicelib/devices/bsim1/b1trunc.c",
+      "src/spicelib/devices/bsim1/b1cvtest.c",
+      "src/spicelib/devices/bsim1/b1getic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM1. Extract the numerical integration coupling for the charge model, documenting how charges are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) used to constrain the time step in `b1trunc.c`, and the specific Newton-Raphson convergence testing limits implemented in `b1cvtest.c`."
+  },
+  "Chapter_64_BSIM1_Distortion_Analysis.md": {
+    "chapter_title": "BSIM1: Harmonic Distortion Analysis",
+    "files": [
+      "src/spicelib/devices/bsim1/b1dset.c",
+      "src/spicelib/devices/bsim1/b1disto.c"
+    ],
+    "research_prompt": "Analyze the distortion analysis routines for BSIM1. Extract the specific Taylor series partial derivatives (up to 3rd order) used to populate the Volterra series matrices for harmonic distortion prediction, as implemented in `b1disto.c`. Document how `b1dset.c` prepares device state and parameters for distortion evaluation."
+  },
+  "Chapter_66_BSIM2_Core_Mathematics.md": {
+    "chapter_title": "BSIM2: Improved Subthreshold and Empirical Mathematics",
+    "files": [
+      "src/spicelib/devices/bsim2/bsim2def.h",
+      "src/spicelib/devices/bsim2/b2par.c",
+      "src/spicelib/devices/bsim2/b2temp.c",
+      "src/spicelib/devices/bsim2/b2eval.c",
+      "src/spicelib/devices/bsim2/b2ld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM2 parameters, temperature adjustments, and evaluation. Extract the core BSIM2 empirical equations. CRITICAL EXTRACTION: Focus heavily on `b2eval.c`. BSIM2 was designed to fix BSIM1's inaccuracies in subthreshold conduction and output resistance. Extract the exact mathematical formulations used to model the subthreshold current region and output conductance. Document the continuous current equations used to bridge these regions. Extract the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics implemented in `b2ld.c`."
+  },
+  "Chapter_67_BSIM2_Parameter_Setup.md": {
+    "chapter_title": "BSIM2: Parameter Parsing and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/bsim2/b2set.c",
+      "src/spicelib/devices/bsim2/b2mpar.c",
+      "src/spicelib/devices/bsim2/b2mask.c",
+      "src/spicelib/devices/bsim2/b2ask.c"
+    ],
+    "research_prompt": "Analyze the parameter binding and setup routines for the BSIM2 model. Extract the algebraic formulas used in `b2set.c` to calculate effective channel length and width based on user-supplied parameters and process geometry offsets. Document how the Sparse Matrix Pointers (SMP) are allocated for the device matrix stamps."
+  },
+  "Chapter_68_BSIM2_AC_Noise_and_Capacitance.md": {
+    "chapter_title": "BSIM2: Capacitance Modeling, AC, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/bsim2/b2moscap.c",
+      "src/spicelib/devices/bsim2/b2acld.c",
+      "src/spicelib/devices/bsim2/b2pzld.c",
+      "src/spicelib/devices/bsim2/b2noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations and capacitance modeling for BSIM2. CRITICAL EXTRACTION: Analyze `b2moscap.c` to document the exact algebraic formulation of the BSIM2 capacitance model. Extract the small-signal AC matrix stamping mathematics from `b2acld.c`, detailing how the transconductances are loaded. For `b2noi.c`, extract the thermal and flicker noise equations."
+  },
+  "Chapter_69_BSIM2_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM2: Transient Control and Convergence",
+    "files": [
+      "src/spicelib/devices/bsim2/b2trunc.c",
+      "src/spicelib/devices/bsim2/b2cvtest.c",
+      "src/spicelib/devices/bsim2/b2getic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM2. Extract the numerical integration coupling for the charge model, documenting how charges are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) used to constrain the time step in `b2trunc.c`, and the specific Newton-Raphson convergence testing limits implemented in `b2cvtest.c`."
+  },
+  "Chapter_70_BSIM2_API_and_Lifecycle.md": {
+    "chapter_title": "BSIM2: API Binding and Memory Lifecycle",
+    "files": [
+      "src/spicelib/devices/bsim2/bsim2init.c",
+      "src/spicelib/devices/bsim2/b2.c",
+      "src/spicelib/devices/bsim2/b2dest.c",
+      "src/spicelib/devices/bsim2/b2del.c",
+      "src/spicelib/devices/bsim2/b2mdel.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and memory destruction routines for the BSIM2 device. Explain how `bsim2init.c` and `b2.c` bind the BSIM2 functions to the core Ngspice `SPICEdev` array. Document the memory management logic used to free instances and models."
+  },
+  "Chapter_71_BSIM4_Core_Mathematics.md": {
+    "chapter_title": "BSIM4: Nanometer Physics, Gate Leakage, and DC Load",
+    "files": [
+      "src/spicelib/devices/bsim4/bsim4def.h",
+      "src/spicelib/devices/bsim4/b4par.c",
+      "src/spicelib/devices/bsim4/b4temp.c",
+      "src/spicelib/devices/bsim4/b4ld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM4 parameters, temperature scaling, and matrix loading. Extract the core BSIM4 nanometer equations. CRITICAL EXTRACTION: Document the mathematical formulations for quantum mechanical tunneling (Gate Leakage currents: Igc, Igb, Igd, Igs). Extract the advanced mobility degradation and pocket implant (halo) formulations. Document the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics implemented in `b4ld.c`."
+  },
+  "Chapter_72_BSIM4_Geometry_and_Parameter_Setup.md": {
+    "chapter_title": "BSIM4: Layout-Dependent Effects, Geometry, and Setup",
+    "files": [
+      "src/spicelib/devices/bsim4/b4set.c",
+      "src/spicelib/devices/bsim4/b4mpar.c",
+      "src/spicelib/devices/bsim4/b4mask.c",
+      "src/spicelib/devices/bsim4/b4ask.c",
+      "src/spicelib/devices/bsim4/b4check.c",
+      "src/spicelib/devices/bsim4/b4geo.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, binning, and geometry routines for the BSIM4 model. CRITICAL EXTRACTION: Focus heavily on `b4geo.c`. BSIM4 introduced layout-dependent parasitics. Extract the specific mathematics used to calculate Shallow Trench Isolation (STI) stress effects and Well Proximity Effects (WPE) on mobility and threshold voltage. Document the parameter bounds-checking logic found in `b4check.c` and how Sparse Matrix Pointers (SMP) are allocated."
+  },
+  "Chapter_73_BSIM4_AC_RF_and_Noise.md": {
+    "chapter_title": "BSIM4: RF Modeling, Advanced Capacitance, and Noise",
+    "files": [
+      "src/spicelib/devices/bsim4/b4acld.c",
+      "src/spicelib/devices/bsim4/b4pzld.c",
+      "src/spicelib/devices/bsim4/b4noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations, which in BSIM4 are heavily optimized for RF (Radio Frequency) design. Extract the small-signal AC matrix stamping mathematics from `b4acld.c`, detailing the inclusion of gate resistance and substrate network parasitics. CRITICAL EXTRACTION: For `b4noi.c`, document the holistic thermal noise model and the Induced Gate Noise (IGN) equations, which are unique and defining features of BSIM4."
+  },
+  "Chapter_74_BSIM4_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM4: Transient Control and Charge Conservation",
+    "files": [
+      "src/spicelib/devices/bsim4/b4trunc.c",
+      "src/spicelib/devices/bsim4/b4cvtest.c",
+      "src/spicelib/devices/bsim4/b4getic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM4. Extract the numerical integration coupling for the advanced charge model, documenting how terminal charges (including the new gate leakage charges) are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) in `b4trunc.c` and the specific Newton-Raphson convergence limits in `b4cvtest.c`."
+  },
+  "Chapter_75_BSIM4_API_and_SOA.md": {
+    "chapter_title": "BSIM4: API Binding, Memory Lifecycle, and SOA",
+    "files": [
+      "src/spicelib/devices/bsim4/bsim4init.c",
+      "src/spicelib/devices/bsim4/b4.c",
+      "src/spicelib/devices/bsim4/b4dest.c",
+      "src/spicelib/devices/bsim4/b4del.c",
+      "src/spicelib/devices/bsim4/b4mdel.c",
+      "src/spicelib/devices/bsim4/b4soachk.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and Safe Operating Area (SOA) routines for BSIM4. Explain how `bsim4init.c` and `b4.c` bind the functions to the core Ngspice array. Document the memory destruction logic. Extract the logic from `b4soachk.c` and document the exact Safe Operating Area voltage boundary checks implemented to warn designers about oxide breakdown in nanometer geometries."
+  },
+  "Chapter_76_BSIMCMG_Core_Mathematics.md": {
+    "chapter_title": "BSIM-CMG: FinFET Physics, Surface Potential, and DC Load",
+    "files": [
+      "src/spicelib/devices/bsimcmg/bsimcmgdef.h",
+      "src/spicelib/devices/bsimcmg/bsimcmgpar.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgtemp.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM-CMG parameters, temperature scaling, and matrix loading. Extract the core 3D FinFET mathematical equations. CRITICAL EXTRACTION: BSIM-CMG is a surface potential-based model. Extract the exact algebraic/numerical formulation used to calculate the surface potential (ignoring the legacy Vth-based approaches). Document the mathematics for Quantum Mechanical (QM) confinement effects and volume inversion. Extract the NR Limiting logic (`DEVfetlim`) and Source/Drain swap mechanics implemented in `bsimcmgld.c`."
+  },
+  "Chapter_77_BSIMCMG_3D_Geometry_and_Setup.md": {
+    "chapter_title": "BSIM-CMG: 3D Geometry, Fin Parameters, and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/bsimcmg/bsimcmgset.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgmpar.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgmask.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgask.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgcheck.c"
+    ],
+    "research_prompt": "Analyze the parameter binding and setup routines for the multi-gate BSIM-CMG model. CRITICAL EXTRACTION: Focus heavily on the 3D geometric math. Extract the exact formulas used to calculate effective width and channel dimensions based on Fin Height (HFIN), Fin Thickness (TFIN), and Number of Fins (NFIN). Document how the Sparse Matrix Pointers (SMP) are allocated for this complex multi-node topology."
+  },
+  "Chapter_78_BSIMCMG_AC_Fringe_Capacitance_and_Noise.md": {
+    "chapter_title": "BSIM-CMG: Fringe Capacitance, AC, and Noise Modeling",
+    "files": [
+      "src/spicelib/devices/bsimcmg/bsimcmgacld.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgpzld.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgnoi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the FinFET model. Extract the small-signal AC matrix stamping mathematics from `bsimcmgacld.c`. CRITICAL EXTRACTION: In multi-gate devices, parasitic fringe capacitance is a massive factor. Document the exact algebraic models used to calculate inner and outer fringe capacitances between the 3D gate and the source/drain fins. For `bsimcmgnoi.c`, extract the advanced thermal noise and flicker noise equations."
+  },
+  "Chapter_79_BSIMCMG_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM-CMG: Transient Control and Charge Conservation",
+    "files": [
+      "src/spicelib/devices/bsimcmg/bsimcmgtrunc.c",
+      "src/spicelib/devices/bsimcmg/bsimcmgcvtest.c",
+      "src/spicelib/devices/bsimcmg/bsimcmggetic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM-CMG. Extract the numerical integration coupling for the surface-potential-based charge model, documenting how terminal charges are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) used to constrain the time step in `bsimcmgtrunc.c`, and the specific Newton-Raphson convergence testing limits implemented in `bsimcmgcvtest.c`."
+  },
+  "Chapter_80_BSIM4v5_Core_Mathematics.md": {
+    "chapter_title": "BSIM4v5: Nanometer Physics Revision and DC Load",
+    "files": [
+      "src/spicelib/devices/bsim4v5/bsim4v5def.h",
+      "src/spicelib/devices/bsim4v5/b4v5par.c",
+      "src/spicelib/devices/bsim4v5/b4v5temp.c",
+      "src/spicelib/devices/bsim4v5/b4v5ld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM4v5 parameters, temperature scaling, and matrix loading. Extract the core BSIM4v5 equations. CRITICAL EXTRACTION: Document the mathematical formulations for quantum mechanical tunneling (Gate Leakage currents), asymmetric source/drain resistances, and mobility degradation. Note any specific mathematical updates made in this v5 revision compared to earlier BSIM4 iterations. Document the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and S/D swap mechanics in `b4v5ld.c`."
+  },
+  "Chapter_81_BSIM4v5_Geometry_and_Parameter_Setup.md": {
+    "chapter_title": "BSIM4v5: Layout-Dependent Effects, Geometry, and Setup",
+    "files": [
+      "src/spicelib/devices/bsim4v5/b4v5set.c",
+      "src/spicelib/devices/bsim4v5/b4v5mpar.c",
+      "src/spicelib/devices/bsim4v5/b4v5mask.c",
+      "src/spicelib/devices/bsim4v5/b4v5ask.c",
+      "src/spicelib/devices/bsim4v5/b4v5check.c",
+      "src/spicelib/devices/bsim4v5/b4v5geo.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, binning, and geometry routines for the BSIM4v5 model. CRITICAL EXTRACTION: Focus heavily on `b4v5geo.c`. Extract the specific mathematics used to calculate Shallow Trench Isolation (STI) stress effects and Well Proximity Effects (WPE). Document the parameter bounds-checking logic found in `b4v5check.c` and how Sparse Matrix Pointers (SMP) are allocated."
+  },
+  "Chapter_82_BSIM4v5_AC_RF_and_Noise.md": {
+    "chapter_title": "BSIM4v5: RF Modeling, Capacitance, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/bsim4v5/b4v5acld.c",
+      "src/spicelib/devices/bsim4v5/b4v5pzld.c",
+      "src/spicelib/devices/bsim4v5/b4v5noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the BSIM4v5 model. Extract the small-signal AC matrix stamping mathematics from `b4v5acld.c`, detailing the inclusion of gate resistance. CRITICAL EXTRACTION: For `b4v5noi.c`, document the holistic thermal noise model and the Induced Gate Noise (IGN) equations. Highlight the specific 'tnoimod' or 'fnoimod' (noise model selectors) implementations found in this v5 revision."
+  },
+  "Chapter_83_BSIM4v5_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM4v5: Transient Control and Charge Conservation",
+    "files": [
+      "src/spicelib/devices/bsim4v5/b4v5trunc.c",
+      "src/spicelib/devices/bsim4v5/b4v5cvtest.c",
+      "src/spicelib/devices/bsim4v5/b4v5getic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM4v5. Extract the numerical integration coupling for the advanced charge model, documenting how terminal charges are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) in `b4v5trunc.c` and the specific Newton-Raphson convergence limits in `b4v5cvtest.c`."
+  },
+  "Chapter_84_BSIM4v5_API_and_SOA.md": {
+    "chapter_title": "BSIM4v5: API Binding, Memory Lifecycle, and SOA",
+    "files": [
+      "src/spicelib/devices/bsim4v5/bsim4v5init.c",
+      "src/spicelib/devices/bsim4v5/b4v5.c",
+      "src/spicelib/devices/bsim4v5/b4v5dest.c",
+      "src/spicelib/devices/bsim4v5/b4v5del.c",
+      "src/spicelib/devices/bsim4v5/b4v5mdel.c",
+      "src/spicelib/devices/bsim4v5/b4v5soachk.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and Safe Operating Area (SOA) routines for BSIM4v5. Explain how `bsim4v5init.c` and `b4v5.c` bind the functions to the core Ngspice array. Document the memory destruction logic. Extract the logic from `b4v5soachk.c` and document the exact Safe Operating Area voltage boundary checks implemented."
+  },
+  "Chapter_85_BSIM4v6_Core_Mathematics.md": {
+    "chapter_title": "BSIM4v6: Nanometer Physics Revision and DC Load",
+    "files": [
+      "src/spicelib/devices/bsim4v6/bsim4v6def.h",
+      "src/spicelib/devices/bsim4v6/b4v6par.c",
+      "src/spicelib/devices/bsim4v6/b4v6temp.c",
+      "src/spicelib/devices/bsim4v6/b4v6ld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM4v6 parameters, temperature scaling, and matrix loading. Extract the core BSIM4v6 equations. CRITICAL EXTRACTION: Document the mathematical formulations for quantum mechanical tunneling (Gate Leakage currents), asymmetric source/drain resistances, and mobility degradation. Note any specific mathematical updates or continuous scaling improvements made in this v6 revision. Document the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics in `b4v6ld.c`."
+  },
+  "Chapter_86_BSIM4v6_Geometry_and_Parameter_Setup.md": {
+    "chapter_title": "BSIM4v6: Layout-Dependent Effects, Geometry, and Setup",
+    "files": [
+      "src/spicelib/devices/bsim4v6/b4v6set.c",
+      "src/spicelib/devices/bsim4v6/b4v6mpar.c",
+      "src/spicelib/devices/bsim4v6/b4v6mask.c",
+      "src/spicelib/devices/bsim4v6/b4v6ask.c",
+      "src/spicelib/devices/bsim4v6/b4v6check.c",
+      "src/spicelib/devices/bsim4v6/b4v6geo.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, binning, and geometry routines for the BSIM4v6 model. CRITICAL EXTRACTION: Focus heavily on `b4v6geo.c`. Extract the specific mathematics used to calculate Shallow Trench Isolation (STI) stress effects and Well Proximity Effects (WPE), paying close attention to the refined stress models introduced in v6. Document the parameter bounds-checking logic found in `b4v6check.c` and how Sparse Matrix Pointers (SMP) are allocated."
+  },
+  "Chapter_87_BSIM4v6_AC_RF_and_Noise.md": {
+    "chapter_title": "BSIM4v6: RF Modeling, Capacitance, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/bsim4v6/b4v6acld.c",
+      "src/spicelib/devices/bsim4v6/b4v6pzld.c",
+      "src/spicelib/devices/bsim4v6/b4v6noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the BSIM4v6 model. Extract the small-signal AC matrix stamping mathematics from `b4v6acld.c`, detailing the inclusion of gate resistance. CRITICAL EXTRACTION: For `b4v6noi.c`, document the holistic thermal noise model and the Induced Gate Noise (IGN) equations. Specifically highlight the refined flicker (1/f) noise equations and any noise model selector updates found in this v6 revision."
+  },
+  "Chapter_88_BSIM4v6_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM4v6: Transient Control and Charge Conservation",
+    "files": [
+      "src/spicelib/devices/bsim4v6/b4v6trunc.c",
+      "src/spicelib/devices/bsim4v6/b4v6cvtest.c",
+      "src/spicelib/devices/bsim4v6/b4v6getic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM4v6. Extract the numerical integration coupling for the advanced charge model, documenting how terminal charges are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) in `b4v6trunc.c` and the specific Newton-Raphson convergence limits in `b4v6cvtest.c`."
+  },
+  "Chapter_89_BSIM4v6_API_and_SOA.md": {
+    "chapter_title": "BSIM4v6: API Binding, Memory Lifecycle, and SOA",
+    "files": [
+      "src/spicelib/devices/bsim4v6/bsim4v6init.c",
+      "src/spicelib/devices/bsim4v6/b4v6.c",
+      "src/spicelib/devices/bsim4v6/b4v6dest.c",
+      "src/spicelib/devices/bsim4v6/b4v6del.c",
+      "src/spicelib/devices/bsim4v6/b4v6mdel.c",
+      "src/spicelib/devices/bsim4v6/b4v6soachk.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and Safe Operating Area (SOA) routines for BSIM4v6. Explain how `bsim4v6init.c` and `b4v6.c` bind the functions to the core Ngspice array. Document the memory destruction logic. Extract the logic from `b4v6soachk.c` and document the exact Safe Operating Area voltage boundary checks implemented."
+  },
+  "Chapter_90_BSIM4v7_Core_Mathematics.md": {
+    "chapter_title": "BSIM4v7: Final Planar Physics Revision and DC Load",
+    "files": [
+      "src/spicelib/devices/bsim4v7/bsim4v7def.h",
+      "src/spicelib/devices/bsim4v7/b4v7par.c",
+      "src/spicelib/devices/bsim4v7/b4v7temp.c",
+      "src/spicelib/devices/bsim4v7/b4v7ld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM4v7 parameters, temperature scaling, and matrix loading. Extract the core BSIM4v7 equations. CRITICAL EXTRACTION: Document the mathematical formulations for quantum mechanical tunneling, trap-assisted tunneling (if present), and mobility degradation. Pay special attention to any final mathematical refinements made to the DC equations in this v7 revision compared to earlier versions. Document the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics in `b4v7ld.c`."
+  },
+  "Chapter_91_BSIM4v7_Geometry_and_Parameter_Setup.md": {
+    "chapter_title": "BSIM4v7: Layout-Dependent Effects, Geometry, and Setup",
+    "files": [
+      "src/spicelib/devices/bsim4v7/b4v7set.c",
+      "src/spicelib/devices/bsim4v7/b4v7mpar.c",
+      "src/spicelib/devices/bsim4v7/b4v7mask.c",
+      "src/spicelib/devices/bsim4v7/b4v7ask.c",
+      "src/spicelib/devices/bsim4v7/b4v7check.c",
+      "src/spicelib/devices/bsim4v7/b4v7geo.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, binning, and geometry routines for the BSIM4v7 model. CRITICAL EXTRACTION: Focus heavily on `b4v7geo.c`. Extract the specific mathematics used to calculate Shallow Trench Isolation (STI) stress effects and Well Proximity Effects (WPE), noting any ultimate refinements added for late-stage planar nodes. Document the parameter bounds-checking logic found in `b4v7check.c` and how Sparse Matrix Pointers (SMP) are allocated."
+  },
+  "Chapter_92_BSIM4v7_AC_RF_and_Noise.md": {
+    "chapter_title": "BSIM4v7: RF Modeling, Capacitance, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/bsim4v7/b4v7acld.c",
+      "src/spicelib/devices/bsim4v7/b4v7pzld.c",
+      "src/spicelib/devices/bsim4v7/b4v7noi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the BSIM4v7 model. Extract the small-signal AC matrix stamping mathematics from `b4v7acld.c`, detailing the inclusion of gate and substrate resistances. CRITICAL EXTRACTION: For `b4v7noi.c`, document the holistic thermal noise model and the Induced Gate Noise (IGN) equations. Highlight any final tweaks to the flicker (1/f) noise equations or noise model selectors implemented in the v7 revision."
+  },
+  "Chapter_93_BSIM4v7_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM4v7: Transient Control and Charge Conservation",
+    "files": [
+      "src/spicelib/devices/bsim4v7/b4v7trunc.c",
+      "src/spicelib/devices/bsim4v7/b4v7cvtest.c",
+      "src/spicelib/devices/bsim4v7/b4v7getic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM4v7. Extract the numerical integration coupling for the advanced charge model, documenting how terminal charges are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) in `b4v7trunc.c` and the specific Newton-Raphson convergence limits in `b4v7cvtest.c`."
+  },
+  "Chapter_94_BSIM4v7_API_and_SOA.md": {
+    "chapter_title": "BSIM4v7: API Binding, Memory Lifecycle, and SOA",
+    "files": [
+      "src/spicelib/devices/bsim4v7/bsim4v7init.c",
+      "src/spicelib/devices/bsim4v7/b4v7.c",
+      "src/spicelib/devices/bsim4v7/b4v7dest.c",
+      "src/spicelib/devices/bsim4v7/b4v7del.c",
+      "src/spicelib/devices/bsim4v7/b4v7mdel.c",
+      "src/spicelib/devices/bsim4v7/b4v7soachk.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and Safe Operating Area (SOA) routines for BSIM4v7. Explain how `bsim4v7init.c` and `b4v7.c` bind the functions to the core Ngspice array. Document the memory destruction logic. Extract the logic from `b4v7soachk.c` and document the exact Safe Operating Area voltage boundary checks implemented for these deep submicron nodes."
+  },
+  "Chapter_95_BSIM4SOI_Core_Mathematics_and_FBE.md": {
+    "chapter_title": "BSIM4SOI: Silicon-On-Insulator Physics, Floating Body, and DC Load",
+    "files": [
+      "src/spicelib/devices/b4soi/b4soidef.h",
+      "src/spicelib/devices/b4soi/b4soipar.c",
+      "src/spicelib/devices/b4soi/b4soitemp.c",
+      "src/spicelib/devices/b4soi/b4soild.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM4SOI parameters, temperature scaling, and matrix loading. Extract the core Silicon-On-Insulator (SOI) equations. CRITICAL EXTRACTION: Document the mathematical formulations for the Floating Body Effect (FBE), impact ionization, and the Parasitic BJT action. Extract the equations governing self-heating (thermal network) if the temperature node is active. Document the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics implemented in `b4soild.c`."
+  },
+  "Chapter_96_BSIM4SOI_Geometry_and_Parameter_Setup.md": {
+    "chapter_title": "BSIM4SOI: BOX Geometry, Body Contacts, and Setup",
+    "files": [
+      "src/spicelib/devices/b4soi/b4soiset.c",
+      "src/spicelib/devices/b4soi/b4soimpar.c",
+      "src/spicelib/devices/b4soi/b4soimask.c",
+      "src/spicelib/devices/b4soi/b4soiask.c",
+      "src/spicelib/devices/b4soi/b4soicheck.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, binning, and geometry routines for the BSIM4SOI model. CRITICAL EXTRACTION: Document how SOI-specific geometry parameters like Silicon Film Thickness (TSI) and Buried Oxide Thickness (TBOX) are processed. Extract the topology setup in `b4soiset.c`, detailing how the Sparse Matrix Pointers (SMP) are allocated for the standard nodes, the floating body node, and the optional thermal nodes."
+  },
+  "Chapter_97_BSIM4SOI_AC_RF_and_Noise.md": {
+    "chapter_title": "BSIM4SOI: SOI Capacitance, RF, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/b4soi/b4soiacld.c",
+      "src/spicelib/devices/b4soi/b4soipzld.c",
+      "src/spicelib/devices/b4soi/b4soinoi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the BSIM4SOI model. Extract the small-signal AC matrix stamping mathematics from `b4soiacld.c`. CRITICAL EXTRACTION: Detail how the complex transcapacitances of the Buried Oxide (BOX) and the floating body are integrated into the admittance matrix. For `b4soinoi.c`, extract the thermal, flicker, and shot noise equations, specifically highlighting noise contributions from body-contact resistance and impact ionization."
+  },
+  "Chapter_98_BSIM4SOI_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM4SOI: Transient Control, Charge, and Thermal Integration",
+    "files": [
+      "src/spicelib/devices/b4soi/b4soitrunc.c",
+      "src/spicelib/devices/b4soi/b4soicvtest.c",
+      "src/spicelib/devices/b4soi/b4soigetic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM4SOI. Extract the numerical integration coupling for the advanced SOI charge model. Document how terminal charges, including the floating body charge and dynamic thermal node capacitance, are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) in `b4soitrunc.c` and the specific Newton-Raphson convergence limits in `b4soicvtest.c`."
+  },
+  "Chapter_99_BSIM4SOI_API_and_SOA.md": {
+    "chapter_title": "BSIM4SOI: API Binding, Memory Lifecycle, and SOA",
+    "files": [
+      "src/spicelib/devices/b4soi/b4soiinit.c",
+      "src/spicelib/devices/b4soi/b4soi.c",
+      "src/spicelib/devices/b4soi/b4soidest.c",
+      "src/spicelib/devices/b4soi/b4soidel.c",
+      "src/spicelib/devices/b4soi/b4soimdel.c",
+      "src/spicelib/devices/b4soi/b4soisoachk.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and Safe Operating Area (SOA) routines for BSIM4SOI. Explain how `b4soiinit.c` and `b4soi.c` bind the functions to the core Ngspice array. Document the memory destruction logic. Extract the logic from `b4soisoachk.c` and document the exact Safe Operating Area voltage boundary checks implemented, paying attention to SOI-specific breakdown mechanisms."
+  },
+  "Chapter_100_BSIM3SOIDD_Core_Mathematics.md": {
+    "chapter_title": "BSIM3SOI-DD: Dynamic Depletion Physics and DC Load",
+    "files": [
+      "src/spicelib/devices/b3soidd/b3soidddef.h",
+      "src/spicelib/devices/b3soidd/b3soiddpar.c",
+      "src/spicelib/devices/b3soidd/b3soiddtemp.c",
+      "src/spicelib/devices/b3soidd/b3soiddld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM3SOI-DD parameters, temperature scaling, and matrix loading. Extract the core Dynamic Depletion (DD) SOI equations. CRITICAL EXTRACTION: The defining feature of this model is its ability to dynamically transition between Partially Depleted (PD) and Fully Depleted (FD) states. Extract the exact algebraic formulation used to calculate the dynamic depletion depth based on bias voltages. Document the mathematical handling of the Floating Body Effect (FBE) and impact ionization. Extract the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics implemented in `b3soiddld.c`."
+  },
+  "Chapter_101_BSIM3SOIDD_Geometry_and_Setup.md": {
+    "chapter_title": "BSIM3SOI-DD: SOI Geometry, Body Contacts, and Setup",
+    "files": [
+      "src/spicelib/devices/b3soidd/b3soiddset.c",
+      "src/spicelib/devices/b3soidd/b3soiddmpar.c",
+      "src/spicelib/devices/b3soidd/b3soiddmask.c",
+      "src/spicelib/devices/b3soidd/b3soiddask.c",
+      "src/spicelib/devices/b3soidd/b3soiddcheck.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, binning, and geometry routines for the BSIM3SOI-DD model. CRITICAL EXTRACTION: Document how SOI-specific geometry parameters like Silicon Film Thickness (TSI) and Buried Oxide Thickness (TBOX) are processed and verified against physical limits. Extract the topology setup in `b3soiddset.c`, detailing how the Sparse Matrix Pointers (SMP) are allocated for the active nodes, the floating body node, and the substrate."
+  },
+  "Chapter_102_BSIM3SOIDD_AC_and_Noise.md": {
+    "chapter_title": "BSIM3SOI-DD: Capacitance, AC, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/b3soidd/b3soiddacld.c",
+      "src/spicelib/devices/b3soidd/b3soiddpzld.c",
+      "src/spicelib/devices/b3soidd/b3soiddnoi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the BSIM3SOI-DD model. Extract the small-signal AC matrix stamping mathematics from `b3soiddacld.c`. CRITICAL EXTRACTION: Detail how the front-gate, back-gate (substrate through BOX), and body transcapacitances are calculated under dynamic depletion conditions and integrated into the admittance matrix. For `b3soiddnoi.c`, extract the thermal, flicker, and shot noise equations, noting any specific body-related noise currents."
+  },
+  "Chapter_103_BSIM3SOIDD_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM3SOI-DD: Transient Control and Charge Integration",
+    "files": [
+      "src/spicelib/devices/b3soidd/b3soiddtrunc.c",
+      "src/spicelib/devices/b3soidd/b3soiddcvtest.c",
+      "src/spicelib/devices/b3soidd/b3soiddgetic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM3SOI-DD. Extract the numerical integration coupling for the advanced SOI charge model. Document how terminal charges, specifically focusing on the dynamic body charge, are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) in `b3soiddtrunc.c` and the specific Newton-Raphson convergence limits in `b3soiddcvtest.c`."
+  },
+  "Chapter_104_BSIM3SOIDD_API_Binding.md": {
+    "chapter_title": "BSIM3SOI-DD: API Binding and Memory Lifecycle",
+    "files": [
+      "src/spicelib/devices/b3soidd/b3soiddinit.c",
+      "src/spicelib/devices/b3soidd/b3soidd.c",
+      "src/spicelib/devices/b3soidd/b3soidddest.c",
+      "src/spicelib/devices/b3soidd/b3soidddel.c",
+      "src/spicelib/devices/b3soidd/b3soiddmdel.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and memory management routines for the BSIM3SOI-DD device. Explain how `b3soiddinit.c` and `b3soidd.c` bind the functions to the core Ngspice `SPICEdev` array. Document the memory allocation and destruction logic used to safely construct and tear down instances and models within the simulator."
+  },
+  "Chapter_105_BSIM3SOIFD_Core_Mathematics.md": {
+    "chapter_title": "BSIM3SOI-FD: Fully Depleted Physics and DC Load",
+    "files": [
+      "src/spicelib/devices/b3soifd/b3soifddef.h",
+      "src/spicelib/devices/b3soifd/b3soifdpar.c",
+      "src/spicelib/devices/b3soifd/b3soifdtemp.c",
+      "src/spicelib/devices/b3soifd/b3soifdld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM3SOI-FD parameters, temperature scaling, and matrix loading. Extract the core Fully Depleted (FD) SOI equations. CRITICAL EXTRACTION: The defining feature of this model is the assumption that the silicon film is entirely depleted. Extract the exact algebraic formulation used to model the intense electrostatic coupling between the front gate and the back gate (substrate). Document how the threshold voltage equations are modified for the fully depleted state compared to standard bulk models. Extract the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics implemented in `b3soifdld.c`."
+  },
+  "Chapter_106_BSIM3SOIFD_Geometry_and_Setup.md": {
+    "chapter_title": "BSIM3SOI-FD: Thin-Film Geometry and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/b3soifd/b3soifdset.c",
+      "src/spicelib/devices/b3soifd/b3soifdmpar.c",
+      "src/spicelib/devices/b3soifd/b3soifdmask.c",
+      "src/spicelib/devices/b3soifd/b3soifdask.c",
+      "src/spicelib/devices/b3soifd/b3soifdcheck.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, binning, and geometry routines for the BSIM3SOI-FD model. CRITICAL EXTRACTION: Document how the ultra-thin SOI-specific geometry parameters like Silicon Film Thickness (TSI) and Buried Oxide Thickness (TBOX) are processed and strictly verified. Extract the topology setup in `b3soifdset.c`, detailing how the Sparse Matrix Pointers (SMP) are allocated, specifically noting the topological differences required when a floating body node is no longer the primary concern."
+  },
+  "Chapter_107_BSIM3SOIFD_AC_and_Noise.md": {
+    "chapter_title": "BSIM3SOI-FD: Coupled Capacitance, AC, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/b3soifd/b3soifdacld.c",
+      "src/spicelib/devices/b3soifd/b3soifdpzld.c",
+      "src/spicelib/devices/b3soifd/b3soifdnoi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the BSIM3SOI-FD model. Extract the small-signal AC matrix stamping mathematics from `b3soifdacld.c`. CRITICAL EXTRACTION: Detail how the strong capacitive coupling between the front-gate, thin silicon film, and back-gate (substrate) is mathematically formulated and integrated into the admittance matrix. For `b3soifdnoi.c`, extract the thermal, flicker, and shot noise equations, noting how the fully depleted approximation impacts the noise floor."
+  },
+  "Chapter_108_BSIM3SOIFD_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM3SOI-FD: Transient Control and Charge Integration",
+    "files": [
+      "src/spicelib/devices/b3soifd/b3soifdtrunc.c",
+      "src/spicelib/devices/b3soifd/b3soifdcvtest.c",
+      "src/spicelib/devices/b3soifd/b3soifdgetic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM3SOI-FD. Extract the numerical integration coupling for the Fully Depleted charge model. Document how terminal charges are conserved and differentiated to yield transient currents within the constraints of an ultra-thin film. Extract the mathematical formulation for Local Truncation Error (LTE) in `b3soifdtrunc.c` and the specific Newton-Raphson convergence limits in `b3soifdcvtest.c`."
+  },
+  "Chapter_109_BSIM3SOIFD_API_Binding.md": {
+    "chapter_title": "BSIM3SOI-FD: API Binding and Memory Lifecycle",
+    "files": [
+      "src/spicelib/devices/b3soifd/b3soifdinit.c",
+      "src/spicelib/devices/b3soifd/b3soifd.c",
+      "src/spicelib/devices/b3soifd/b3soifddest.c",
+      "src/spicelib/devices/b3soifd/b3soifddel.c",
+      "src/spicelib/devices/b3soifd/b3soifdmdel.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and memory management routines for the BSIM3SOI-FD device. Explain how `b3soifdinit.c` and `b3soifd.c` bind the functions to the core Ngspice `SPICEdev` array. Document the memory allocation and destruction logic used to safely construct and tear down instances and models within the simulator."
+  },
+  "Chapter_110_BSIM3SOIPD_Core_Mathematics.md": {
+    "chapter_title": "BSIM3SOI-PD: Partially Depleted Physics and DC Load",
+    "files": [
+      "src/spicelib/devices/b3soipd/b3soipddef.h",
+      "src/spicelib/devices/b3soipd/b3soipdpar.c",
+      "src/spicelib/devices/b3soipd/b3soipdtemp.c",
+      "src/spicelib/devices/b3soipd/b3soipdld.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BSIM3SOI-PD parameters, temperature scaling, and matrix loading. Extract the core Partially Depleted (PD) SOI equations. CRITICAL EXTRACTION: The defining feature of this model is the permanent existence of a neutral body region. Extract the exact algebraic formulation used to model the Floating Body Effect (FBE), the 'kink effect' in the I-V characteristics, and the impact ionization currents that charge the body. Document the parasitic BJT action equations. Extract the NR Limiting logic (`DEVfetlim`), PMOS polarity inversion, and Source/Drain swap mechanics implemented in `b3soipdld.c`."
+  },
+  "Chapter_111_BSIM3SOIPD_Geometry_and_Setup.md": {
+    "chapter_title": "BSIM3SOI-PD: Thick-Film Geometry and Matrix Setup",
+    "files": [
+      "src/spicelib/devices/b3soipd/b3soipdset.c",
+      "src/spicelib/devices/b3soipd/b3soipdmpar.c",
+      "src/spicelib/devices/b3soipd/b3soipdmask.c",
+      "src/spicelib/devices/b3soipd/b3soipdask.c",
+      "src/spicelib/devices/b3soipd/b3soipdcheck.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, binning, and geometry routines for the BSIM3SOI-PD model. CRITICAL EXTRACTION: Document how SOI-specific geometry parameters like Silicon Film Thickness (TSI) and Buried Oxide Thickness (TBOX) are processed, specifically noting how the limits differ from the Fully Depleted model. Extract the topology setup in `b3soipdset.c`, detailing how the Sparse Matrix Pointers (SMP) are allocated for the active nodes, the persistent floating body node, and the substrate."
+  },
+  "Chapter_112_BSIM3SOIPD_AC_and_Noise.md": {
+    "chapter_title": "BSIM3SOI-PD: Body Capacitance, AC, and Noise Analysis",
+    "files": [
+      "src/spicelib/devices/b3soipd/b3soipdacld.c",
+      "src/spicelib/devices/b3soipd/b3soipdpzld.c",
+      "src/spicelib/devices/b3soipd/b3soipdnoi.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the BSIM3SOI-PD model. Extract the small-signal AC matrix stamping mathematics from `b3soipdacld.c`. CRITICAL EXTRACTION: Detail how the transcapacitances of the neutral floating body are calculated and integrated into the complex admittance matrix. For `b3soipdnoi.c`, extract the thermal, flicker, and shot noise equations, paying special attention to the excess noise generated by the floating body and impact ionization currents."
+  },
+  "Chapter_113_BSIM3SOIPD_Transient_and_Convergence.md": {
+    "chapter_title": "BSIM3SOI-PD: Transient Control and Charge Integration",
+    "files": [
+      "src/spicelib/devices/b3soipd/b3soipdtrunc.c",
+      "src/spicelib/devices/b3soipd/b3soipdcvtest.c",
+      "src/spicelib/devices/b3soipd/b3soipdgetic.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for BSIM3SOI-PD. Extract the numerical integration coupling for the Partially Depleted charge model. Document how terminal charges, specifically focusing on the persistent floating body charge, are conserved and differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) in `b3soipdtrunc.c` and the specific Newton-Raphson convergence limits in `b3soipdcvtest.c`."
+  },
+  "Chapter_114_BSIM3SOIPD_API_Binding.md": {
+    "chapter_title": "BSIM3SOI-PD: API Binding and Memory Lifecycle",
+    "files": [
+      "src/spicelib/devices/b3soipd/b3soipdinit.c",
+      "src/spicelib/devices/b3soipd/b3soipd.c",
+      "src/spicelib/devices/b3soipd/b3soipddest.c",
+      "src/spicelib/devices/b3soipd/b3soipddel.c",
+      "src/spicelib/devices/b3soipd/b3soipdmdel.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and memory management routines for the BSIM3SOI-PD device. Explain how `b3soipdinit.c` and `b3soipd.c` bind the functions to the core Ngspice `SPICEdev` array. Document the memory allocation and destruction logic used to safely construct and tear down instances and models within the simulator."
+  },
+  "Chapter_115_BJT_Core_Mathematics_and_Gummel_Poon.md": {
+    "chapter_title": "BJT: Gummel-Poon Physics and DC Load",
+    "files": [
+      "src/spicelib/devices/bjt/bjtdefs.h",
+      "src/spicelib/devices/bjt/bjtparam.c",
+      "src/spicelib/devices/bjt/bjttemp.c",
+      "src/spicelib/devices/bjt/bjtload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand BJT parameters, temperature scaling, and matrix loading. Extract the core Bipolar Junction Transistor equations based on the Gummel-Poon and Ebers-Moll models. CRITICAL EXTRACTION: Document the specific mathematical formulations for the Forward/Reverse Early Effect (VAF, VAR), High-Level Injection knee currents (IKF, IKR), and non-ideal base recombination currents (ISE, ISC). Extract the NR Limiting logic (`DEVpnjlim`) used to restrict exponential voltage steps across the Base-Emitter and Base-Collector junctions to prevent numeric overflow in `bjtload.c`."
+  },
+  "Chapter_116_BJT_Setup_API_and_SOA.md": {
+    "chapter_title": "BJT: Matrix Setup, API Binding, and Safe Operating Area",
+    "files": [
+      "src/spicelib/devices/bjt/bjtsetup.c",
+      "src/spicelib/devices/bjt/bjtmask.c",
+      "src/spicelib/devices/bjt/bjtmpar.c",
+      "src/spicelib/devices/bjt/bjtask.c",
+      "src/spicelib/devices/bjt/bjtgetic.c",
+      "src/spicelib/devices/bjt/bjtinit.c",
+      "src/spicelib/devices/bjt/bjt.c",
+      "src/spicelib/devices/bjt/bjtdel.c",
+      "src/spicelib/devices/bjt/bjtmdel.c",
+      "src/spicelib/devices/bjt/bjtdest.c",
+      "src/spicelib/devices/bjt/bjtsoachk.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix setup, and API lifecycle routines for the BJT model. CRITICAL EXTRACTION: In `bjtsetup.c`, detail how the Sparse Matrix Pointers (SMP) are allocated, paying special attention to the internal parasitic nodes created when Base, Emitter, and Collector resistances (RB, RE, RC) are defined. Document the API bindings in `bjtinit.c`, the memory destruction logic, and the voltage boundary checks implemented in `bjtsoachk.c`."
+  },
+  "Chapter_117_BJT_AC_and_Noise.md": {
+    "chapter_title": "BJT: AC Analysis, Junction Capacitance, and Noise",
+    "files": [
+      "src/spicelib/devices/bjt/bjtacld.c",
+      "src/spicelib/devices/bjt/bjtpzld.c",
+      "src/spicelib/devices/bjt/bjtnoise.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain implementations for the BJT model. Extract the small-signal AC matrix stamping mathematics from `bjtacld.c`. CRITICAL EXTRACTION: Document how the small-signal transconductances (gm, gpi, gmu) and the depletion/diffusion capacitances are calculated and loaded into the complex matrix. For `bjtnoise.c`, extract the thermal, shot, and flicker (1/f) noise equations, highlighting how shot noise uniquely scales with the DC base and collector currents."
+  },
+  "Chapter_118_BJT_Transient_and_Convergence.md": {
+    "chapter_title": "BJT: Transient Control and Charge Storage",
+    "files": [
+      "src/spicelib/devices/bjt/bjttrunc.c",
+      "src/spicelib/devices/bjt/bjtconv.c"
+    ],
+    "research_prompt": "Analyze the time-domain control routines for the BJT. Extract the numerical integration coupling for the BJT charge model. Document how terminal charges—specifically diffusion charges related to forward and reverse transit times (TF, TR)—are differentiated to yield transient currents. Extract the mathematical formulation for Local Truncation Error (LTE) in `bjttrunc.c` and the specific PN-junction current convergence limits in `bjtconv.c`."
+  },
+  "Chapter_119_BJT_Sensitivity_and_Distortion.md": {
+    "chapter_title": "BJT: Sensitivity and Harmonic Distortion Analysis",
+    "files": [
+      "src/spicelib/devices/bjt/bjtdisto.c",
+      "src/spicelib/devices/bjt/bjtdset.c",
+      "src/spicelib/devices/bjt/bjtdset.h",
+      "src/spicelib/devices/bjt/bjtsload.c",
+      "src/spicelib/devices/bjt/bjtsset.c",
+      "src/spicelib/devices/bjt/bjtsacl.c",
+      "src/spicelib/devices/bjt/bjtsupd.c",
+      "src/spicelib/devices/bjt/bjtsprt.c"
+    ],
+    "research_prompt": "Analyze the advanced analytical routines for the BJT model. Extract the adjoint matrix loading mathematics and parameter update logic used for Sensitivity analysis across the `bjts*.c` files. For `bjtdisto.c` and `bjtdset.c`, extract the specific Taylor series multidimensional partial derivatives (up to 3rd order) used to evaluate the Volterra series matrices for predicting harmonic distortion in the Gummel-Poon bipolar equations."
+  },
+  "Chapter_120_Capacitor_Core_Mathematics_and_DC.md": {
+    "chapter_title": "Capacitor: Device Physics, Temperature, and Transient Load",
+    "files": [
+      "src/spicelib/devices/cap/capdefs.h",
+      "src/spicelib/devices/cap/capparam.c",
+      "src/spicelib/devices/cap/captemp.c",
+      "src/spicelib/devices/cap/capload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand Capacitor parameters, temperature scaling, and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: A SPICE capacitor is often non-linear. Extract the exact polynomial or voltage-dependent equations used to calculate capacitance if the user defines it as a function of voltage. Document the temperature dependence equations found in `captemp.c`. Extract how the transient current ($I = C * dV/dt$) is numerically integrated and loaded into the main sparse matrix in `capload.c`."
+  },
+  "Chapter_121_Capacitor_Setup_API_and_SOA.md": {
+    "chapter_title": "Capacitor: Matrix Setup, API Binding, and Safe Operating Area",
+    "files": [
+      "src/spicelib/devices/cap/capsetup.c",
+      "src/spicelib/devices/cap/capmask.c",
+      "src/spicelib/devices/cap/capmpar.c",
+      "src/spicelib/devices/cap/capask.c",
+      "src/spicelib/devices/cap/capgetic.c",
+      "src/spicelib/devices/cap/capinit.c",
+      "src/spicelib/devices/cap/cap.c",
+      "src/spicelib/devices/cap/capdel.c",
+      "src/spicelib/devices/cap/capmdel.c",
+      "src/spicelib/devices/cap/capdest.c",
+      "src/spicelib/devices/cap/capsoachk.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix setup, and API lifecycle routines for the Capacitor model. CRITICAL EXTRACTION: In `capsetup.c`, detail how the Sparse Matrix Pointers (SMP) are allocated for the positive and negative terminals. Document how initial conditions (IC) are parsed and bound to the state vectors. Extract the API bindings in `capinit.c`, the memory destruction logic, and the specific over-voltage breakdown checks implemented in `capsoachk.c`."
+  },
+  "Chapter_122_Capacitor_AC_and_Transient_Control.md": {
+    "chapter_title": "Capacitor: AC Analysis and Transient Time-Stepping",
+    "files": [
+      "src/spicelib/devices/cap/capacld.c",
+      "src/spicelib/devices/cap/cappzld.c",
+      "src/spicelib/devices/cap/captrunc.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain and time-domain control routines for the Capacitor. Extract the exact small-signal AC matrix stamping mathematics from `capacld.c`, detailing how the complex admittance ($j \\omega C$) is loaded into the complex matrix. CRITICAL EXTRACTION: Capacitors are primary drivers of transient time-stepping. Extract the exact mathematical formulation for Local Truncation Error (LTE) in `captrunc.c`. Document how the capacitor's charge integration history dictates the maximum allowable time step."
+  },
+  "Chapter_123_Capacitor_Sensitivity_Analysis.md": {
+    "chapter_title": "Capacitor: Sensitivity Analysis",
+    "files": [
+      "src/spicelib/devices/cap/capsacl.c",
+      "src/spicelib/devices/cap/capsload.c",
+      "src/spicelib/devices/cap/capsset.c",
+      "src/spicelib/devices/cap/capsupd.c",
+      "src/spicelib/devices/cap/capsprt.c"
+    ],
+    "research_prompt": "Analyze the analytical routines for the Capacitor model used in Sensitivity Analysis. Extract the adjoint matrix loading mathematics found in `capsload.c` and parameter update logic across the `caps*.c` files. Document exactly how the sensitivity of a circuit node voltage with respect to a change in the capacitance value is mathematically derived and stored."
+  },
+  "Chapter_124_Inductor_Core_Mathematics_and_DC.md": {
+    "chapter_title": "Inductor: Device Physics, Temperature, and Branch Current Matrix",
+    "files": [
+      "src/spicelib/devices/ind/inddefs.h",
+      "src/spicelib/devices/ind/indparam.c",
+      "src/spicelib/devices/ind/indtemp.c",
+      "src/spicelib/devices/ind/indload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand Inductor parameters, temperature scaling, and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: SPICE uses Modified Nodal Analysis (MNA). Extract exactly how `indload.c` stamps the Norton equivalent companion model into the sparse matrix, specifically detailing the extra branch equation required to solve for the inductor current. Document any polynomial equations for voltage/current-dependent inductance and the temperature scaling formulas in `indtemp.c`."
+  },
+  "Chapter_125_Mutual_Inductance_and_Transformers.md": {
+    "chapter_title": "Mutual Inductance: Magnetic Coupling and Transformer Setup",
+    "files": [
+      "src/spicelib/devices/ind/mutparam.c",
+      "src/spicelib/devices/ind/muttemp.c",
+      "src/spicelib/devices/ind/mutsetup.c",
+      "src/spicelib/devices/ind/mutask.c"
+    ],
+    "research_prompt": "Analyze the Mutual Inductor (`mut`) device files, which simulate magnetic coupling between two separate inductors. Extract the mathematical formulations used to link the two coils. CRITICAL EXTRACTION: Document how the coupling coefficient ($k$) is processed to calculate mutual inductance ($M = k \\sqrt{L_1 L_2}$). In `mutsetup.c`, detail how the Sparse Matrix Pointers (SMP) cross-link the branch current equations of the two independent inductor devices."
+  },
+  "Chapter_126_Inductor_AC_and_Transient_Control.md": {
+    "chapter_title": "Inductor & Mutual: AC Analysis and Transient Time-Stepping",
+    "files": [
+      "src/spicelib/devices/ind/indacld.c",
+      "src/spicelib/devices/ind/indpzld.c",
+      "src/spicelib/devices/ind/mutacld.c",
+      "src/spicelib/devices/ind/mutpzld.c",
+      "src/spicelib/devices/ind/indtrunc.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain and time-domain control routines for both Independent and Mutual Inductors. Extract the exact small-signal AC matrix stamping mathematics from `indacld.c` and `mutacld.c`, detailing how complex impedance ($j \\omega L$ and $j \\omega M$) is loaded into the complex branch equations. CRITICAL EXTRACTION: Extract the mathematical formulation for Local Truncation Error (LTE) in `indtrunc.c`. Document how the inductor's flux/current history dictates the maximum allowable time step."
+  },
+  "Chapter_127_Inductor_API_Setup_and_Sensitivity.md": {
+    "chapter_title": "Inductor & Mutual: API Binding, Topology, and Sensitivity",
+    "files": [
+      "src/spicelib/devices/ind/indsetup.c",
+      "src/spicelib/devices/ind/indmask.c",
+      "src/spicelib/devices/ind/indmpar.c",
+      "src/spicelib/devices/ind/indask.c",
+      "src/spicelib/devices/ind/indinit.c",
+      "src/spicelib/devices/ind/ind.c",
+      "src/spicelib/devices/ind/inddel.c",
+      "src/spicelib/devices/ind/indmdel.c",
+      "src/spicelib/devices/ind/inddest.c",
+      "src/spicelib/devices/ind/mutdel.c",
+      "src/spicelib/devices/ind/mutmdel.c",
+      "src/spicelib/devices/ind/mutdest.c",
+      "src/spicelib/devices/ind/indsload.c",
+      "src/spicelib/devices/ind/indsacl.c",
+      "src/spicelib/devices/ind/indsset.c",
+      "src/spicelib/devices/ind/indsupd.c",
+      "src/spicelib/devices/ind/indsprt.c",
+      "src/spicelib/devices/ind/mutsset.c",
+      "src/spicelib/devices/ind/mutsprt.c"
+    ],
+    "research_prompt": "Analyze the setup, memory management, and analytical sensitivity routines. In `indsetup.c`, detail how initial conditions (IC) are parsed and bound to branch or state vectors, and how SMP entries are wired for the inductor's auxiliary branch unknown. Document parameter masks, model/instance queries, and ask paths in `indmask.c`, `indmpar.c`, and `indask.c`. Extract API registration and instance/model teardown in `indinit.c`, `ind.c`, `inddel.c`, `indmdel.c`, `inddest.c`, and the mutual counterparts `mutdel.c`, `mutmdel.c`, `mutdest.c`. CRITICAL EXTRACTION: Extract adjoint matrix loading in `indsload.c` and `indsacl.c`, plus parameter-update and reporting logic in `indsset.c`, `indsupd.c`, `indsprt.c`, `mutsset.c`, and `mutsprt.c`, including how mutual topology references the two coupled inductors."
+  },
+  "Chapter_128_Diode_Core_Mathematics_and_DC.md": {
+    "chapter_title": "Diode: Shockley Physics, Breakdown, and DC Load",
+    "files": [
+      "src/spicelib/devices/dio/diodefs.h",
+      "src/spicelib/devices/dio/dioparam.c",
+      "src/spicelib/devices/dio/diotemp.c",
+      "src/spicelib/devices/dio/dioload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand Diode parameters, temperature scaling, and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: Document the implementation of the ideal Shockley diode equation alongside non-ideal factors like emission coefficient (N) and high-injection knee currents (IKF). Extract the exact mathematical modeling used for reverse Zener breakdown (BV, IBV). Document the NR Limiting logic (`DEVpnjlim`) used to restrict exponential voltage steps to prevent numeric overflow during DC iterations in `dioload.c`."
+  },
+  "Chapter_129_Diode_Setup_API_and_SOA.md": {
+    "chapter_title": "Diode: Matrix Setup, API Binding, and Safe Operating Area",
+    "files": [
+      "src/spicelib/devices/dio/diosetup.c",
+      "src/spicelib/devices/dio/diomask.c",
+      "src/spicelib/devices/dio/diompar.c",
+      "src/spicelib/devices/dio/dioask.c",
+      "src/spicelib/devices/dio/diogetic.c",
+      "src/spicelib/devices/dio/dioinit.c",
+      "src/spicelib/devices/dio/dio.c",
+      "src/spicelib/devices/dio/diodel.c",
+      "src/spicelib/devices/dio/diomdel.c",
+      "src/spicelib/devices/dio/diodest.c",
+      "src/spicelib/devices/dio/diosoachk.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix setup, and API lifecycle routines for the Diode model. CRITICAL EXTRACTION: In `diosetup.c`, detail how the Sparse Matrix Pointers (SMP) are allocated, specifically focusing on the creation of the internal parasitic node when a series resistance (RS) is defined. Document the API bindings in `dioinit.c`, the memory destruction logic, and the voltage boundary checks (forward and reverse breakdown limits) implemented in `diosoachk.c`."
+  },
+  "Chapter_130_Diode_AC_Noise_and_Transient.md": {
+    "chapter_title": "Diode: Capacitance, Noise, and Transient Control",
+    "files": [
+      "src/spicelib/devices/dio/dioacld.c",
+      "src/spicelib/devices/dio/diopzld.c",
+      "src/spicelib/devices/dio/dionoise.c",
+      "src/spicelib/devices/dio/diotrunc.c",
+      "src/spicelib/devices/dio/dioconv.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain and time-domain control routines for the Diode. Extract the small-signal AC matrix stamping mathematics from `dioacld.c`. CRITICAL EXTRACTION: Document how junction depletion capacitance and diffusion capacitance (driven by Transit Time, TT) are mathematically formulated. For `dionoise.c`, extract the thermal, shot, and flicker noise equations. Extract the mathematical formulation for Local Truncation Error (LTE) in `diotrunc.c` and the specific current-based convergence limits in `dioconv.c`."
+  },
+  "Chapter_131_Diode_Sensitivity_and_Distortion.md": {
+    "chapter_title": "Diode: Sensitivity and Harmonic Distortion Analysis",
+    "files": [
+      "src/spicelib/devices/dio/diodisto.c",
+      "src/spicelib/devices/dio/diodset.c",
+      "src/spicelib/devices/dio/diosload.c",
+      "src/spicelib/devices/dio/diosacl.c",
+      "src/spicelib/devices/dio/diosset.c",
+      "src/spicelib/devices/dio/diosupd.c",
+      "src/spicelib/devices/dio/diosprt.c"
+    ],
+    "research_prompt": "Analyze the advanced analytical routines for the Diode model. Extract the adjoint matrix loading mathematics and parameter update logic used for Sensitivity analysis across the `dios*.c` files. For `diodisto.c` and `diodset.c`, extract the specific Taylor series multidimensional partial derivatives (up to 3rd order) used to evaluate the Volterra series matrices for predicting harmonic distortion across the exponential PN junction."
+  },
+  "Chapter_132_Resistor_Core_Mathematics_and_DC.md": {
+    "chapter_title": "Resistor: Ohm's Law, Temperature Scaling, and DC Load",
+    "files": [
+      "src/spicelib/devices/res/resdefs.h",
+      "src/spicelib/devices/res/resparam.c",
+      "src/spicelib/devices/res/restemp.c",
+      "src/spicelib/devices/res/resload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand Resistor parameters, temperature scaling, and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: Document how the ideal conductance ($G = 1/R$) is calculated. Extract the polynomial formulas used for voltage-dependent (non-linear) resistors. In `restemp.c`, extract the precise equations used to scale resistance based on temperature, including the first and second-order temperature coefficients (TCE1, TCE2). Detail how the DC conductances are stamped into the sparse matrix in `resload.c`."
+  },
+  "Chapter_133_Resistor_Geometry_Setup_and_SOA.md": {
+    "chapter_title": "Resistor: Geometry, Matrix Setup, API, and SOA",
+    "files": [
+      "src/spicelib/devices/res/ressetup.c",
+      "src/spicelib/devices/res/resmask.c",
+      "src/spicelib/devices/res/resmpar.c",
+      "src/spicelib/devices/res/resask.c",
+      "src/spicelib/devices/res/resinit.c",
+      "src/spicelib/devices/res/res.c",
+      "src/spicelib/devices/res/resdel.c",
+      "src/spicelib/devices/res/resmdel.c",
+      "src/spicelib/devices/res/resdest.c",
+      "src/spicelib/devices/res/ressoachk.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix setup, and API lifecycle routines for the Resistor model. CRITICAL EXTRACTION: Focus on how geometric parameters (Length, Width) are combined with sheet resistance (RSH) to compute the final device resistance in `ressetup.c`. Detail how the Sparse Matrix Pointers (SMP) are allocated. Document the API bindings in `resinit.c`, the memory destruction logic, and the maximum power dissipation/voltage breakdown checks implemented in `ressoachk.c`."
+  },
+  "Chapter_134_Resistor_Noise_and_Pole_Zero.md": {
+    "chapter_title": "Resistor: Thermal Noise and Pole-Zero Analysis",
+    "files": [
+      "src/spicelib/devices/res/respzld.c",
+      "src/spicelib/devices/res/resnoise.c"
+    ],
+    "research_prompt": "Analyze the noise and small-signal frequency-domain implementations for the Resistor. CRITICAL EXTRACTION: Resistors are the primary source of noise in electronics. Detail the exact formulation used in `resnoise.c` to generate Johnson-Nyquist thermal noise ($4kTR \\Delta f$) and, if applicable, 1/f flicker noise. Document how the resistor's conductance is loaded into the specialized matrix used for Pole-Zero analysis in `respzld.c`."
+  },
+  "Chapter_135_Resistor_Sensitivity_Analysis.md": {
+    "chapter_title": "Resistor: Sensitivity Analysis",
+    "files": [
+      "src/spicelib/devices/res/ressacl.c",
+      "src/spicelib/devices/res/ressload.c",
+      "src/spicelib/devices/res/ressset.c",
+      "src/spicelib/devices/res/ressprt.c"
+    ],
+    "research_prompt": "Analyze the advanced analytical routines for the Resistor model. Extract the adjoint matrix loading mathematics and parameter update logic used for Sensitivity analysis across the `ress*.c` files. Document how Ngspice calculates the mathematical sensitivity of a circuit's output voltage with respect to a change in the value of a specific resistor."
+  },
+  "Chapter_136_Tra_Core_Mathematics_and_DC.md": {
+    "chapter_title": "Transmission Line: Characteristic Impedance and DC Load",
+    "files": [
+      "src/spicelib/devices/tra/tradefs.h",
+      "src/spicelib/devices/tra/traparam.c",
+      "src/spicelib/devices/tra/tratemp.c",
+      "src/spicelib/devices/tra/traload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand Transmission Line parameters, temperature scaling, and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: Document how the characteristic impedance ($Z_0$) and propagation delay ($T_D$) are parsed and calculated from physical parameters like length and normalized delay. In `traload.c`, extract exactly how the delayed state variables (from past time steps) are used to calculate the present-time equivalent current sources for the Norton companion model stamped into the matrix."
+  },
+  "Chapter_137_Tra_Setup_API_and_Memory.md": {
+    "chapter_title": "Transmission Line: Matrix Setup, API Binding, and Memory",
+    "files": [
+      "src/spicelib/devices/tra/trasetup.c",
+      "src/spicelib/devices/tra/traask.c",
+      "src/spicelib/devices/tra/trainit.c",
+      "src/spicelib/devices/tra/tra.c",
+      "src/spicelib/devices/tra/tradel.c",
+      "src/spicelib/devices/tra/tramdel.c",
+      "src/spicelib/devices/tra/tradest.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix setup, and API lifecycle routines for the Transmission Line model. CRITICAL EXTRACTION: In `trasetup.c`, detail how the Sparse Matrix Pointers (SMP) are allocated for the four nodes (two ports) and any internal branch equations. Document the API bindings in `trainit.c`, and specifically detail the memory allocation/destruction logic required to safely set up the device in the SPICE core."
+  },
+  "Chapter_138_Tra_Transient_History_and_AC.md": {
+    "chapter_title": "Transmission Line: Delay Buffers, AC, and Transient Control",
+    "files": [
+      "src/spicelib/devices/tra/traacld.c",
+      "src/spicelib/devices/tra/traacct.c",
+      "src/spicelib/devices/tra/tratrunc.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain and time-domain control routines for the Transmission Line. Extract the exact small-signal AC matrix stamping mathematics from `traacld.c`, detailing how the complex phase shift ($e^{-j \\omega T_D}$) is mathematically formulated and loaded into the admittance matrix. CRITICAL EXTRACTION: Transmission lines rely on history. Analyze `traacct.c` (the Accept routine) to document how past time-points are accepted and stored in the delay buffer queue. Finally, extract the mathematical formulation for Local Truncation Error (LTE) in `tratrunc.c`, documenting how the simulator restricts the time step to ensure it doesn't accidentally 'jump over' a delayed pulse."
+  },
+  "Chapter_139_Txl_Core_Mathematics_and_Lossy_Load.md": {
+    "chapter_title": "Lossy Transmission Line: Convolution Math and DC Load",
+    "files": [
+      "src/spicelib/devices/txl/txldefs.h",
+      "src/spicelib/devices/txl/txlparam.c",
+      "src/spicelib/devices/txl/txlfbr.c",
+      "src/spicelib/devices/txl/txlload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand Lossy Transmission Line parameters and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: Focus heavily on `txlfbr.c`. Document the mathematical implementation of the impulse response, recursive convolution, or specific lossy propagation formulas used to model frequency-dependent attenuation and dispersion. In `txlload.c`, extract how the lossy state variables (Resistance and Conductance per unit length) are combined with past time-step histories to generate the present-time Norton equivalent companion model for the sparse matrix."
+  },
+  "Chapter_140_Txl_Setup_API_and_Memory.md": {
+    "chapter_title": "Lossy Transmission Line: Matrix Setup, API Binding, and Memory",
+    "files": [
+      "src/spicelib/devices/txl/txlsetup.c",
+      "src/spicelib/devices/txl/txlmask.c",
+      "src/spicelib/devices/txl/txlmpar.c",
+      "src/spicelib/devices/txl/txlask.c",
+      "src/spicelib/devices/txl/txlinit.h",
+      "src/spicelib/devices/txl/txlext.h",
+      "src/spicelib/devices/txl/txlitf.h",
+      "src/spicelib/devices/txl/txlinit.c",
+      "src/spicelib/devices/txl/txl.c",
+      "src/spicelib/devices/txl/txldel.c",
+      "src/spicelib/devices/txl/txlmdel.c",
+      "src/spicelib/devices/txl/txldest.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix setup, and API lifecycle routines for the Lossy Transmission Line model. CRITICAL EXTRACTION: In `txlsetup.c`, detail how the Sparse Matrix Pointers (SMP) are allocated for the multi-port system, accounting for the internal nodes necessary for lossy branch equations. Document the API bindings in `txlinit.c`, and detail the memory allocation and destruction logic required to manage the extensive convolution history buffers."
+  },
+  "Chapter_141_Txl_Transient_Acceptance_and_History.md": {
+    "chapter_title": "Lossy Transmission Line: History Buffers and Transient Acceptance",
+    "files": [
+      "src/spicelib/devices/txl/txlacct.c"
+    ],
+    "research_prompt": "Analyze the time-domain control and state-saving routines for the Lossy Transmission Line. CRITICAL EXTRACTION: Lossy transmission lines rely heavily on convolution integrals over past states. Analyze `txlacct.c` (the Accept routine) to document the exact mathematical mechanism used to accept converged time-points, update the delay/convolution buffers, and shift the historical voltage/current states forward in time."
+  },
+  "Chapter_142_Switch_Core_Mathematics_and_Smoothing.md": {
+    "chapter_title": "Voltage-Controlled Switch: Continuous Resistance Smoothing and DC Load",
+    "files": [
+      "src/spicelib/devices/sw/swdefs.h",
+      "src/spicelib/devices/sw/swparam.c",
+      "src/spicelib/devices/sw/swmparam.c",
+      "src/spicelib/devices/sw/swload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand the Voltage-Controlled Switch parameters and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: SPICE cannot handle instantaneous discrete resistance jumps. Focus entirely on `swload.c` and extract the exact mathematical smoothing function (polynomial, blending, or hysteresis logic) used to continuously transition the device's conductance between R_ON and R_OFF as the control voltage crosses the threshold (V_TH). Document how this dynamic conductance is stamped into the sparse matrix."
+  },
+  "Chapter_143_Switch_Setup_API_and_Memory.md": {
+    "chapter_title": "Switch: Matrix Setup, Topology, and API Binding",
+    "files": [
+      "src/spicelib/devices/sw/swsetup.c",
+      "src/spicelib/devices/sw/swmask.c",
+      "src/spicelib/devices/sw/swask.c",
+      "src/spicelib/devices/sw/swinit.c",
+      "src/spicelib/devices/sw/sw.c",
+      "src/spicelib/devices/sw/swdelete.c",
+      "src/spicelib/devices/sw/swmdel.c",
+      "src/spicelib/devices/sw/swdest.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix setup, and API lifecycle routines for the Voltage-Controlled Switch model. CRITICAL EXTRACTION: In `swsetup.c`, detail how the Sparse Matrix Pointers (SMP) are allocated for the four nodes: the two switch terminals and the two control voltage terminals. Document the API bindings in `swinit.c`, and detail the memory allocation and destruction logic required to manage the device."
+  },
+  "Chapter_144_Switch_AC_Noise_and_Transient.md": {
+    "chapter_title": "Switch: AC Conductance, Thermal Noise, and Transient Truncation",
+    "files": [
+      "src/spicelib/devices/sw/swacload.c",
+      "src/spicelib/devices/sw/swpzload.c",
+      "src/spicelib/devices/sw/swnoise.c",
+      "src/spicelib/devices/sw/swtrunc.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain, noise, and time-domain control routines for the Switch. Extract the small-signal AC matrix stamping mathematics from `swacload.c`. CRITICAL EXTRACTION: Even though it is a switch, it has physical resistance. Document how `swnoise.c` calculates the thermal Johnson noise of the active state resistance. Finally, extract the mathematical formulation for Local Truncation Error (LTE) in `swtrunc.c`. Explain why the simulator must artificially cut the time step to successfully resolve the sharp (but continuous) transition between ON and OFF states during a transient simulation."
+  },
+  "Chapter_145_URC_Core_Mathematics_and_Expansion.md": {
+    "chapter_title": "Uniform RC Line: Mathematical Approximation and Subcircuit Expansion",
+    "files": [
+      "src/spicelib/devices/urc/urcdefs.h",
+      "src/spicelib/devices/urc/urcparam.c",
+      "src/spicelib/devices/urc/urcsetup.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand the Uniform Distributed RC Line (URC) parameters and matrix setup. Extract the core mathematical formulations. CRITICAL EXTRACTION: The URC does not have its own matrix load file. Instead, it is expanded into a lumped ladder network. Focus entirely on `urcsetup.c`. Extract the exact mathematical approximation algorithm used to calculate the number of lumps (segments) based on the frequency characteristics (FMAX), and document how the internal nodes, resistors, and capacitors are dynamically instantiated and injected into the SPICE matrix."
+  },
+  "Chapter_146_URC_Setup_API_and_Memory.md": {
+    "chapter_title": "Uniform RC Line: Parameter Binding and API Lifecycle",
+    "files": [
+      "src/spicelib/devices/urc/urcmask.c",
+      "src/spicelib/devices/urc/urcmpar.c",
+      "src/spicelib/devices/urc/urcask.c",
+      "src/spicelib/devices/urc/urcext.h",
+      "src/spicelib/devices/urc/urcinit.h",
+      "src/spicelib/devices/urc/urcitf.h",
+      "src/spicelib/devices/urc/urcinit.c",
+      "src/spicelib/devices/urc/urc.c",
+      "src/spicelib/devices/urc/urcdel.c",
+      "src/spicelib/devices/urc/urcmdel.c",
+      "src/spicelib/devices/urc/urcdest.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, querying, and API lifecycle routines for the URC model. Explain how the geometric and physical parameters (Length, Resistance per square, Capacitance per square) are mapped to the device structs. Document the API bindings in `urcinit.c`, and detail the memory allocation and destruction logic required to manage the URC device, ensuring that all dynamically created internal lumped components are properly accounted for."
+  },
+  "Chapter_147_ISRC_Core_Mathematics_and_RHS_Load.md": {
+    "chapter_title": "Independent Current Source: Transient Functions and RHS Matrix Load",
+    "files": [
+      "src/spicelib/devices/isrc/isrcdefs.h",
+      "src/spicelib/devices/isrc/isrcpar.c",
+      "src/spicelib/devices/isrc/isrctemp.c",
+      "src/spicelib/devices/isrc/isrcload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand Independent Current Source parameters and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: Unlike passive components, independent sources load the Right-Hand Side (RHS) known-current vector. Focus heavily on `isrcload.c`. Extract exactly how the time-domain functions (SINE, PULSE, EXP, SFFM, PWL) are evaluated at the current transient time step ($t$) and how that calculated value is stamped into the RHS vector of the MNA matrix. Note any specific temperature dependencies found in `isrctemp.c`."
+  },
+  "Chapter_148_ISRC_AC_and_Transient_Breakpoints.md": {
+    "chapter_title": "Independent Current Source: AC Load and Transient Breakpoints",
+    "files": [
+      "src/spicelib/devices/isrc/isrcacld.c",
+      "src/spicelib/devices/isrc/isrcacct.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain and time-domain control routines for the Independent Current Source. Extract the exact small-signal AC matrix stamping mathematics from `isrcacld.c`, detailing how the complex AC magnitude and phase are loaded into the complex RHS vector. CRITICAL EXTRACTION: Analyze `isrcacct.c` (the Accept routine). Document the crucial breakpoint-generation logic. Explain how the simulator actively registers future time-points (like the corners of a PULSE or PWL wave) to force the transient integration engine to land exactly on discontinuous edges."
+  },
+  "Chapter_149_ISRC_API_Setup_and_Memory.md": {
+    "chapter_title": "Independent Current Source: Parameter Binding and API Lifecycle",
+    "files": [
+      "src/spicelib/devices/isrc/isrcask.c",
+      "src/spicelib/devices/isrc/isrcext.h",
+      "src/spicelib/devices/isrc/isrcinit.h",
+      "src/spicelib/devices/isrc/isrcitf.h",
+      "src/spicelib/devices/isrc/isrcinit.c",
+      "src/spicelib/devices/isrc/isrc.c",
+      "src/spicelib/devices/isrc/isrcdel.c",
+      "src/spicelib/devices/isrc/isrcmdel.c",
+      "src/spicelib/devices/isrc/isrcdest.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, querying, and API lifecycle routines for the Independent Current Source. Explain how the complex array of time-domain parameters (e.g., arrays of time-voltage pairs for PWL) are parsed and mapped to the device structs. Document the API bindings in `isrcinit.c`, and detail the memory allocation and destruction logic required to safely manage these dynamic arrays during the simulation lifecycle."
+  },
+  "Chapter_150_VSRC_Core_Mathematics_and_MNA_Branch.md": {
+    "chapter_title": "Independent Voltage Source: Time-Domain Functions and MNA Branch Matrix",
+    "files": [
+      "src/spicelib/devices/vsrc/vsrcdefs.h",
+      "src/spicelib/devices/vsrc/vsrcpar.c",
+      "src/spicelib/devices/vsrc/vsrctemp.c",
+      "src/spicelib/devices/vsrc/vsrcfbr.c",
+      "src/spicelib/devices/vsrc/vsrcload.c"
+    ],
+    "research_prompt": "Read the files in sequence to understand Independent Voltage Source parameters and matrix loading. Extract the core mathematical formulations. CRITICAL EXTRACTION: A voltage source fundamentally alters the Modified Nodal Analysis (MNA) matrix. Focus heavily on `vsrcload.c`. Extract exactly how the extra branch equation (used to solve for the source's current) is stamped into the sparse matrix. Document how the time-domain functions (SINE, PULSE, EXP, PWL) are evaluated at the current transient time step and loaded into the Right-Hand Side (RHS) vector."
+  },
+  "Chapter_151_VSRC_AC_PoleZero_and_Breakpoints.md": {
+    "chapter_title": "Independent Voltage Source: AC Load, Pole-Zero, and Transient Breakpoints",
+    "files": [
+      "src/spicelib/devices/vsrc/vsrcacld.c",
+      "src/spicelib/devices/vsrc/vsrcacct.c",
+      "src/spicelib/devices/vsrc/vsrcpzs.c",
+      "src/spicelib/devices/vsrc/vsrcpzld.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain, pole-zero, and time-domain control routines for the Independent Voltage Source. Extract the small-signal AC matrix stamping mathematics from `vsrcacld.c`. Document how the Pole-Zero analysis handles the voltage source in `vsrcpzs.c` and `vsrcpzld.c`. CRITICAL EXTRACTION: Analyze `vsrcacct.c` (the Accept routine). Document the crucial breakpoint-generation logic. Explain how the simulator actively registers future time-points (like the corners of a PULSE or PWL wave) to force the transient integration engine to land exactly on discontinuous edges without skipping over them."
+  },
+  "Chapter_152_VSRC_API_Setup_and_Memory.md": {
+    "chapter_title": "Independent Voltage Source: Matrix Setup, API Binding, and Memory",
+    "files": [
+      "src/spicelib/devices/vsrc/vsrcset.c",
+      "src/spicelib/devices/vsrc/vsrcask.c",
+      "src/spicelib/devices/vsrc/vsrcext.h",
+      "src/spicelib/devices/vsrc/vsrcinit.h",
+      "src/spicelib/devices/vsrc/vsrcitf.h",
+      "src/spicelib/devices/vsrc/vsrcinit.c",
+      "src/spicelib/devices/vsrc/vsrc.c",
+      "src/spicelib/devices/vsrc/vsrcdel.c",
+      "src/spicelib/devices/vsrc/vsrcmdel.c",
+      "src/spicelib/devices/vsrc/vsrcdest.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix topology setup, and API lifecycle routines for the Independent Voltage Source. CRITICAL EXTRACTION: In `vsrcset.c`, detail how the Sparse Matrix Pointers (SMP) are allocated, specifically focusing on the creation of the extra row/column required for the MNA branch current equation. Explain how the complex array of time-domain parameters are mapped to the device structs. Document the API bindings in `vsrcinit.c`, and detail the memory allocation and destruction logic required to safely manage these dynamic arrays."
+  },
+  "Chapter_153_Dependent_Sources_Voltage_Controlled_Math.md": {
+    "chapter_title": "Dependent Sources: Voltage-Controlled Mathematics (VCCS, VCVS)",
+    "files": [
+      "src/spicelib/devices/vccs/vccsdefs.h",
+      "src/spicelib/devices/vccs/vccspar.c",
+      "src/spicelib/devices/vccs/vccsload.c",
+      "src/spicelib/devices/vcvs/vcvsdefs.h",
+      "src/spicelib/devices/vcvs/vcvspar.c",
+      "src/spicelib/devices/vcvs/vcvsfbr.c",
+      "src/spicelib/devices/vcvs/vcvsload.c"
+    ],
+    "research_prompt": "Read the files to understand the parameters and matrix loading for the Voltage-Controlled Current Source (VCCS) and Voltage-Controlled Voltage Source (VCVS). CRITICAL EXTRACTION: Contrast how these two devices modify the Modified Nodal Analysis (MNA) matrix. Detail how `vccsload.c` directly stamps the transconductance into the main matrix, whereas `vcvsload.c` creates an additional phantom branch equation to solve for its output current. Document the polynomial evaluation routines found in `vcvsfbr.c` used for non-linear dependent source modeling."
+  },
+  "Chapter_154_Dependent_Sources_Current_Controlled_Math.md": {
+    "chapter_title": "Dependent Sources: Current-Controlled Mathematics (CCCS, CCVS)",
+    "files": [
+      "src/spicelib/devices/cccs/cccsdefs.h",
+      "src/spicelib/devices/cccs/cccspar.c",
+      "src/spicelib/devices/cccs/cccsload.c",
+      "src/spicelib/devices/ccvs/ccvsdefs.h",
+      "src/spicelib/devices/ccvs/ccvspar.c",
+      "src/spicelib/devices/ccvs/ccvsfbr.c",
+      "src/spicelib/devices/ccvs/ccvsload.c"
+    ],
+    "research_prompt": "Read the files to understand the parameters and matrix loading for the Current-Controlled Current Source (CCCS) and Current-Controlled Voltage Source (CCVS). CRITICAL EXTRACTION: Current-controlled devices in SPICE require linking to a measuring voltage source. Document how this link is established. Detail the extreme matrix topology of the CCVS in `ccvsload.c`, explaining how it requires multiple phantom branch equations to solve for both the measuring current and the output voltage. Document the polynomial evaluation routines found in `ccvsfbr.c`."
+  },
+  "Chapter_155_Dependent_Sources_Setup_PoleZero_Sensitivity.md": {
+    "chapter_title": "Dependent Sources: Setup, Pole-Zero, and Sensitivity Analysis",
+    "files": [
+      "src/spicelib/devices/vccs/vccsset.c",
+      "src/spicelib/devices/vcvs/vcvsset.c",
+      "src/spicelib/devices/cccs/cccsset.c",
+      "src/spicelib/devices/ccvs/ccvsset.c",
+      "src/spicelib/devices/vccs/vccspzld.c",
+      "src/spicelib/devices/vcvs/vcvspzld.c",
+      "src/spicelib/devices/cccs/cccspzld.c",
+      "src/spicelib/devices/ccvs/ccvspzld.c",
+      "src/spicelib/devices/vccs/vccssacl.c",
+      "src/spicelib/devices/vccs/vccssld.c",
+      "src/spicelib/devices/vccs/vccssset.c",
+      "src/spicelib/devices/vccs/vccssprt.c",
+      "src/spicelib/devices/vcvs/vcvssacl.c",
+      "src/spicelib/devices/vcvs/vcvssld.c",
+      "src/spicelib/devices/vcvs/vcvssset.c",
+      "src/spicelib/devices/vcvs/vcvssprt.c",
+      "src/spicelib/devices/cccs/cccssacl.c",
+      "src/spicelib/devices/cccs/cccssld.c",
+      "src/spicelib/devices/cccs/cccssset.c",
+      "src/spicelib/devices/cccs/cccssprt.c",
+      "src/spicelib/devices/ccvs/ccvssacl.c",
+      "src/spicelib/devices/ccvs/ccvssld.c",
+      "src/spicelib/devices/ccvs/ccvssset.c",
+      "src/spicelib/devices/ccvs/ccvssprt.c"
+    ],
+    "research_prompt": "Analyze the setup, Pole-Zero, and advanced analytical sensitivity routines for all four dependent sources. In the `*set.c` files, document the allocation of the Sparse Matrix Pointers (SMP), contrasting the pointer counts between voltage-controlled and current-controlled sources. Extract the pole-zero loading mathematics from the `*pzld.c` files. Finally, summarize the adjoint matrix loading mathematics and parameter update logic used for Sensitivity analysis across the `*sacl.c`, `*sld.c`, and `*sset.c` files."
+  },
+  "Chapter_156_Dependent_Sources_API_and_Memory.md": {
+    "chapter_title": "Dependent Sources: API Binding and Memory Lifecycle",
+    "files": [
+      "src/spicelib/devices/vccs/vccsinit.c",
+      "src/spicelib/devices/vccs/vccs.c",
+      "src/spicelib/devices/vccs/vccsdel.c",
+      "src/spicelib/devices/vccs/vccsmdel.c",
+      "src/spicelib/devices/vccs/vccsdest.c",
+      "src/spicelib/devices/vccs/vccsask.c",
+      "src/spicelib/devices/vcvs/vcvsinit.c",
+      "src/spicelib/devices/vcvs/vcvs.c",
+      "src/spicelib/devices/vcvs/vcvsdel.c",
+      "src/spicelib/devices/vcvs/vcvsmdel.c",
+      "src/spicelib/devices/vcvs/vcvsdest.c",
+      "src/spicelib/devices/vcvs/vcvsask.c",
+      "src/spicelib/devices/cccs/cccsinit.c",
+      "src/spicelib/devices/cccs/cccs.c",
+      "src/spicelib/devices/cccs/cccsdel.c",
+      "src/spicelib/devices/cccs/cccsmdel.c",
+      "src/spicelib/devices/cccs/cccsdest.c",
+      "src/spicelib/devices/cccs/cccsask.c",
+      "src/spicelib/devices/ccvs/ccvsinit.c",
+      "src/spicelib/devices/ccvs/ccvs.c",
+      "src/spicelib/devices/ccvs/ccvsdel.c",
+      "src/spicelib/devices/ccvs/ccvsmdel.c",
+      "src/spicelib/devices/ccvs/ccvsdest.c",
+      "src/spicelib/devices/ccvs/ccvsask.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and memory management routines for the Dependent Source models. Explain how the `*init.c` and `*.c` files bind the functions to the core Ngspice array. Document the memory destruction logic used to cleanly free instances and models."
+  },
+  "Chapter_157_CSW_Core_Mathematics_and_Smoothing.md": {
+    "chapter_title": "Current-Controlled Switch: Smoothing Math and DC Load",
+    "files": [
+      "src/spicelib/devices/csw/cswdefs.h",
+      "src/spicelib/devices/csw/cswparam.c",
+      "src/spicelib/devices/csw/cswmpar.c",
+      "src/spicelib/devices/csw/cswload.c"
+    ],
+    "research_prompt": "Analyze the parameters and matrix loading for the Current-Controlled Switch (CSW). CRITICAL EXTRACTION: Extract the exact mathematical smoothing function (polynomial, blending, or hysteresis logic) used to continuously transition the device's conductance between R_ON and R_OFF as the controlling branch current crosses the specified threshold (I_TH). Document how this dynamic conductance is stamped into the sparse matrix."
+  },
+  "Chapter_158_CSW_Setup_AC_and_Transient.md": {
+    "chapter_title": "Current-Controlled Switch: Setup, API, AC, and Transient",
+    "files": [
+      "src/spicelib/devices/csw/cswsetup.c",
+      "src/spicelib/devices/csw/cswmask.c",
+      "src/spicelib/devices/csw/cswask.c",
+      "src/spicelib/devices/csw/cswinit.c",
+      "src/spicelib/devices/csw/csw.c",
+      "src/spicelib/devices/csw/cswdel.c",
+      "src/spicelib/devices/csw/cswmdel.c",
+      "src/spicelib/devices/csw/cswdest.c",
+      "src/spicelib/devices/csw/cswacld.c",
+      "src/spicelib/devices/csw/cswpzld.c",
+      "src/spicelib/devices/csw/cswnoise.c",
+      "src/spicelib/devices/csw/cswtrunc.c"
+    ],
+    "research_prompt": "Analyze the matrix setup, API binding, and control routines for the Current-Controlled Switch. In `cswsetup.c`, detail how the device establishes a link to the user-specified controlling voltage source to read its branch current. Extract the small-signal AC matrix stamping mathematics from `cswacld.c` and thermal noise modeling in `cswnoise.c`. Finally, extract the mathematical formulation for Local Truncation Error (LTE) in `cswtrunc.c` used to prevent stepping over the sharp continuous ON/OFF transition."
+  },
+  "Chapter_159_CPL_Core_Mathematics_and_Setup.md": {
+    "chapter_title": "Coupled Transmission Lines: Distributed Mathematics and MNA Load",
+    "files": [
+      "src/spicelib/devices/cpl/cpldefs.h",
+      "src/spicelib/devices/cpl/cplparam.c",
+      "src/spicelib/devices/cpl/cplmpar.c",
+      "src/spicelib/devices/cpl/cplsetup.c",
+      "src/spicelib/devices/cpl/cplmask.c",
+      "src/spicelib/devices/cpl/cplask.c",
+      "src/spicelib/devices/cpl/cplload.c"
+    ],
+    "research_prompt": "Analyze the parameter setup and matrix loading for the Coupled Transmission Lines (CPL) model. CRITICAL EXTRACTION: CPL models multi-conductor systems (like ribbon cables). Extract the linear algebra and matrix formulations used to decouple the multi-conductor system into independent transmission modes. In `cplload.c`, document how the delay buffers and characteristic admittance matrices are evaluated and stamped into the sparse MNA matrix to simulate crosstalk and propagation."
+  },
+  "Chapter_160_CPL_API_and_Memory.md": {
+    "chapter_title": "Coupled Transmission Lines: API Binding and Memory Lifecycle",
+    "files": [
+      "src/spicelib/devices/cpl/cplinit.c",
+      "src/spicelib/devices/cpl/cpl.c",
+      "src/spicelib/devices/cpl/cpldel.c",
+      "src/spicelib/devices/cpl/cplmdel.c",
+      "src/spicelib/devices/cpl/cpldest.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and memory management routines for the CPL device. Explain how the files bind the CPL functions to the core Ngspice array. Document the specific memory allocation and destruction logic required to handle the complex, dynamic arrays used for multi-conductor history buffering."
+  },
+  "Chapter_161_VBIC_Core_Mathematics_and_DC.md": {
+    "chapter_title": "VBIC BJT: Advanced Bipolar Physics and DC Load",
+    "files": [
+      "src/spicelib/devices/vbic/vbicdefs.h",
+      "src/spicelib/devices/vbic/vbicparam.c",
+      "src/spicelib/devices/vbic/vbicmpar.c",
+      "src/spicelib/devices/vbic/vbictemp.c",
+      "src/spicelib/devices/vbic/vbicload.c"
+    ],
+    "research_prompt": "Read the files to understand parameters, temperature scaling, and matrix loading for the Vertical Bipolar Inter-Company (VBIC) model. Extract the core mathematical formulations. CRITICAL EXTRACTION: VBIC is vastly superior to the classic Gummel-Poon model. Document the specific equations used for Quasi-Saturation modeling, Parasitic Substrate Transistor action, and Avalanche Breakdown. Extract the self-heating network mathematics (if the thermal node is active) and document how it couples to the DC currents in `vbicload.c`."
+  },
+  "Chapter_162_VBIC_Setup_API_and_SOA.md": {
+    "chapter_title": "VBIC BJT: Matrix Topology, API, and Safe Operating Area",
+    "files": [
+      "src/spicelib/devices/vbic/vbicsetup.c",
+      "src/spicelib/devices/vbic/vbicmask.c",
+      "src/spicelib/devices/vbic/vbicask.c",
+      "src/spicelib/devices/vbic/vbicinit.c",
+      "src/spicelib/devices/vbic/vbic.c",
+      "src/spicelib/devices/vbic/vbicdel.c",
+      "src/spicelib/devices/vbic/vbicmdel.c",
+      "src/spicelib/devices/vbic/vbicdest.c",
+      "src/spicelib/devices/vbic/vbicsoachk.c"
+    ],
+    "research_prompt": "Analyze the parameter binding, matrix setup, and API lifecycle routines for the VBIC model. CRITICAL EXTRACTION: In `vbicsetup.c`, detail how the Sparse Matrix Pointers (SMP) are allocated, paying close attention to the extensive internal parasitic nodes and the optional thermal node. Document the memory destruction logic and the specific voltage/power boundary checks implemented in `vbicsoachk.c`."
+  },
+  "Chapter_163_VBIC_AC_Noise_and_Transient.md": {
+    "chapter_title": "VBIC BJT: AC, Capacitance, Noise, and Transient Control",
+    "files": [
+      "src/spicelib/devices/vbic/vbicacld.c",
+      "src/spicelib/devices/vbic/vbicpzld.c",
+      "src/spicelib/devices/vbic/vbicnoise.c",
+      "src/spicelib/devices/vbic/vbictrunc.c",
+      "src/spicelib/devices/vbic/vbicconv.c",
+      "src/spicelib/devices/vbic/vbicgetic.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain and time-domain control routines for the VBIC model. Extract the small-signal AC matrix stamping mathematics from `vbicacld.c`. For `vbicnoise.c`, extract the thermal, shot, and flicker noise equations, noting any excess noise generated by avalanche breakdown or base-resistance modulation. Extract the mathematical formulation for Local Truncation Error (LTE) in `vbictrunc.c` and the specific PN-junction convergence limits in `vbicconv.c`."
+  },
+  "Chapter_164_HFET_and_MESFET_Core_Mathematics.md": {
+    "chapter_title": "HFET and MESFET: Heterojunction Physics and DC Load",
+    "files": [
+      "src/spicelib/devices/hfet1/hfetdefs.h",
+      "src/spicelib/devices/hfet1/hfetparam.c",
+      "src/spicelib/devices/hfet1/hfetload.c",
+      "src/spicelib/devices/hfet1/hfettemp.c",
+      "src/spicelib/devices/hfet2/hfet2defs.h",
+      "src/spicelib/devices/hfet2/hfet2param.c",
+      "src/spicelib/devices/hfet2/hfet2load.c",
+      "src/spicelib/devices/hfet2/hfet2temp.c"
+    ],
+    "research_prompt": "Analyze the parameters, temperature scaling, and DC load routines for the HFET1 and HFET2 models. Extract the core heterojunction and MESFET mathematical formulations. CRITICAL EXTRACTION: Document how the threshold voltage, gate-leakage currents, and channel length modulation are calculated differently for these III-V materials (like GaAs) compared to standard silicon MOSFETs. Extract the NR Limiting logic used to prevent forward-bias explosion of the Schottky gate."
+  },
+  "Chapter_165_HFET_API_AC_and_Transient.md": {
+    "chapter_title": "HFET and MESFET: Matrix Setup, AC, and Transient Control",
+    "files": [
+      "src/spicelib/devices/hfet1/hfetsetup.c",
+      "src/spicelib/devices/hfet1/hfetinit.c",
+      "src/spicelib/devices/hfet1/hfet.c",
+      "src/spicelib/devices/hfet1/hfetacl.c",
+      "src/spicelib/devices/hfet1/hfetpzl.c",
+      "src/spicelib/devices/hfet1/hfettrunc.c",
+      "src/spicelib/devices/hfet2/hfet2setup.c",
+      "src/spicelib/devices/hfet2/hfet2init.c",
+      "src/spicelib/devices/hfet2/hfet2.c",
+      "src/spicelib/devices/hfet2/hfet2acl.c",
+      "src/spicelib/devices/hfet2/hfet2pzl.c",
+      "src/spicelib/devices/hfet2/hfet2trunc.c"
+    ],
+    "research_prompt": "Analyze the API binding, matrix setup, and dynamic control routines for the HFET models. Detail how the Sparse Matrix Pointers (SMP) are allocated in `hfetsetup.c` and `hfet2setup.c`. Extract the small-signal AC matrix stamping mathematics and document the specific charge differentiation formulations used for Local Truncation Error (LTE) in the `hfettrunc.c` and `hfet2trunc.c` files."
+  },
+  "Chapter_166_JFET_and_Parker_Skellern_Math.md": {
+    "chapter_title": "JFET: Classic Equations and the Parker-Skellern Macro-Model",
+    "files": [
+      "src/spicelib/devices/jfet/jfetdefs.h",
+      "src/spicelib/devices/jfet/jfetpar.c",
+      "src/spicelib/devices/jfet/jfetload.c",
+      "src/spicelib/devices/jfet/jfettemp.c",
+      "src/spicelib/devices/jfet2/jfet2defs.h",
+      "src/spicelib/devices/jfet2/jfet2par.c",
+      "src/spicelib/devices/jfet2/jfet2load.c",
+      "src/spicelib/devices/jfet2/jfet2temp.c",
+      "src/spicelib/devices/jfet2/psmodel.h",
+      "src/spicelib/devices/jfet2/psmodel.c"
+    ],
+    "research_prompt": "Analyze the parameters, temperature scaling, and DC load routines for both the classic JFET and the advanced JFET2 models. CRITICAL EXTRACTION: For the classic JFET, extract the standard Shichman-Hodges depletion mode equations. For JFET2, focus entirely on `psmodel.c`. Document the exact mathematical formulations of the Parker-Skellern model, detailing how it accounts for high-frequency dispersion and complex self-heating in RF devices."
+  },
+  "Chapter_167_JFET_Setup_Noise_and_Transient.md": {
+    "chapter_title": "JFET: Matrix Topology, Noise, and Transient Control",
+    "files": [
+      "src/spicelib/devices/jfet/jfetset.c",
+      "src/spicelib/devices/jfet/jfetinit.c",
+      "src/spicelib/devices/jfet/jfet.c",
+      "src/spicelib/devices/jfet/jfetacld.c",
+      "src/spicelib/devices/jfet/jfetnoi.c",
+      "src/spicelib/devices/jfet/jfettrun.c",
+      "src/spicelib/devices/jfet/jfetdist.c",
+      "src/spicelib/devices/jfet2/jfet2set.c",
+      "src/spicelib/devices/jfet2/jfet2init.c",
+      "src/spicelib/devices/jfet2/jfet2.c",
+      "src/spicelib/devices/jfet2/jfet2acld.c",
+      "src/spicelib/devices/jfet2/jfet2noi.c",
+      "src/spicelib/devices/jfet2/jfet2trun.c"
+    ],
+    "research_prompt": "Analyze the API binding, noise modeling, and dynamic routines for the JFET models. Detail the Sparse Matrix Pointer (SMP) setup in `jfetset.c` and `jfet2set.c`. For `jfetnoi.c` and `jfet2noi.c`, extract the thermal, shot, and flicker noise equations, paying special attention to the gate-junction shot noise. Document the charge integration mathematics found in `jfettrun.c` and `jfet2trun.c`."
+  },
+  "Chapter_168_LTRA_Convolution_and_Delay.md": {
+    "chapter_title": "LTRA: Lossy Transmission Line Convolution and Accept Logic",
+    "files": [
+      "src/spicelib/devices/ltra/ltradefs.h",
+      "src/spicelib/devices/ltra/ltrapar.c",
+      "src/spicelib/devices/ltra/ltratemp.c",
+      "src/spicelib/devices/ltra/ltraset.c",
+      "src/spicelib/devices/ltra/ltraload.c",
+      "src/spicelib/devices/ltra/ltraacct.c",
+      "src/spicelib/devices/ltra/ltratrun.c"
+    ],
+    "research_prompt": "Analyze the LTRA (Lossy Transmission Line) model. CRITICAL EXTRACTION: Unlike standard devices, LTRA relies on Padé approximations and convolution integrals to model dispersion and loss. Extract the exact mathematical implementation of these convolution integrals from `ltraload.c`. Analyze `ltraacct.c` to document how past voltage/current states are buffered, accepted, and fed back into the convolution engine at every transient time step."
+  },
+  "Chapter_169_CIDER_Numerical_1D_2D_Mesh_Setup.md": {
+    "chapter_title": "CIDER Numerical Models: 1D/2D Mesh and Material Parameters",
+    "files": [
+      "src/spicelib/devices/nbjt/nbjtdefs.h",
+      "src/spicelib/devices/nbjt/nbjtparm.c",
+      "src/spicelib/devices/nbjt/nbjtset.c",
+      "src/spicelib/devices/nbjt2/nbjt2def.h",
+      "src/spicelib/devices/nbjt2/nbt2parm.c",
+      "src/spicelib/devices/nbjt2/nbt2set.c",
+      "src/spicelib/devices/numd/numddefs.h",
+      "src/spicelib/devices/numd/numdparm.c",
+      "src/spicelib/devices/numd/numdset.c",
+      "src/spicelib/devices/numd2/numd2def.h",
+      "src/spicelib/devices/numd2/nud2parm.c",
+      "src/spicelib/devices/numd2/nud2set.c",
+      "src/spicelib/devices/numos/numosdef.h",
+      "src/spicelib/devices/numos/nummparm.c",
+      "src/spicelib/devices/numos/nummset.c"
+    ],
+    "research_prompt": "Analyze the parameter and setup files for the CIDER numerical devices (NBJT, NBJT2, NUMD, NUMD2, NUMOS). CRITICAL EXTRACTION: These devices do not use compact analytical equations; they are TCAD mesh solvers. Document how the 1D and 2D spatial grid coordinates, material doping profiles, and boundary conditions are parsed and stored during the `nbjtset.c`, `nbt2set.c`, `numdset.c`, `nud2set.c`, and `nummset.c` routines. Extract the parameter mappings that define the physical finite-difference mesh."
+  },
+  "Chapter_170_CIDER_Numerical_Poisson_Continuity_Load.md": {
+    "chapter_title": "CIDER Numerical Models: Poisson and Continuity Equation MNA Load",
+    "files": [
+      "src/spicelib/devices/nbjt/nbjtload.c",
+      "src/spicelib/devices/nbjt/nbjtdump.c",
+      "src/spicelib/devices/nbjt2/nbt2load.c",
+      "src/spicelib/devices/nbjt2/nbt2dump.c",
+      "src/spicelib/devices/numd/numdload.c",
+      "src/spicelib/devices/numd/numddump.c",
+      "src/spicelib/devices/numd2/nud2load.c",
+      "src/spicelib/devices/numd2/nud2dump.c",
+      "src/spicelib/devices/numos/nummload.c",
+      "src/spicelib/devices/numos/nummdump.c"
+    ],
+    "research_prompt": "Analyze the DC load and internal state dumping routines for the CIDER numerical devices. CRITICAL EXTRACTION: Document how `*load.c` interfaces the internal 1D/2D numerical solvers (which solve Poisson's equation and carrier continuity) with the macroscopic Ngspice MNA sparse matrix. Explain how the boundary terminal currents are numerically integrated over the mesh and stamped into the matrix. Detail the function of the `*dump.c` files, explaining how internal electron, hole, and potential states across the mesh are extracted for user visualization."
+  },
+  "Chapter_171_CIDER_Numerical_Transient_and_AC.md": {
+    "chapter_title": "CIDER Numerical Models: AC Solvers and Transient Time-Stepping",
+    "files": [
+      "src/spicelib/devices/nbjt/nbjttrun.c",
+      "src/spicelib/devices/nbjt/nbjtacld.c",
+      "src/spicelib/devices/nbjt/nbjttemp.c",
+      "src/spicelib/devices/nbjt2/nbt2trun.c",
+      "src/spicelib/devices/nbjt2/nbt2acld.c",
+      "src/spicelib/devices/nbjt2/nbt2temp.c",
+      "src/spicelib/devices/numd/numdtrun.c",
+      "src/spicelib/devices/numd/numdacld.c",
+      "src/spicelib/devices/numd/numdtemp.c",
+      "src/spicelib/devices/numd2/nud2trun.c",
+      "src/spicelib/devices/numd2/nud2acld.c",
+      "src/spicelib/devices/numd2/nud2temp.c",
+      "src/spicelib/devices/numos/nummtrun.c",
+      "src/spicelib/devices/numos/nummacld.c",
+      "src/spicelib/devices/numos/nummtemp.c"
+    ],
+    "research_prompt": "Analyze the frequency-domain, time-domain, and temperature routines for the CIDER numerical devices. Extract how the AC small-signal parameters are numerically derived from the 1D/2D mesh state in `nbjtacld.c`, `nbt2acld.c`, `numdacld.c`, `nud2acld.c`, and `nummacld.c` and stamped into the complex MNA matrix. In `nbjttrun.c`, `nbt2trun.c`, `numdtrun.c`, `nud2trun.c`, and `nummtrun.c`, document how the Local Truncation Error (LTE) is calculated not just for the terminal nodes, but constrained by the internal mesh charge convergence."
+  },
+  "Chapter_172_HFET_and_JFET_API_and_Distortion.md": {
+    "chapter_title": "HFET and JFET: Memory Lifecycle, Interfaces, and Distortion",
+    "files": [
+      "src/spicelib/devices/hfet1/hfet.c",
+      "src/spicelib/devices/hfet1/hfetinit.c",
+      "src/spicelib/devices/hfet1/hfetmask.c",
+      "src/spicelib/devices/hfet1/hfetmpar.c",
+      "src/spicelib/devices/hfet1/hfetask.c",
+      "src/spicelib/devices/hfet1/hfetgetic.c",
+      "src/spicelib/devices/hfet1/hfetext.h",
+      "src/spicelib/devices/hfet1/hfetinit.h",
+      "src/spicelib/devices/hfet1/hfetitf.h",
+      "src/spicelib/devices/hfet2/hfet2.c",
+      "src/spicelib/devices/hfet2/hfet2init.c",
+      "src/spicelib/devices/hfet2/hfet2mask.c",
+      "src/spicelib/devices/hfet2/hfet2mpar.c",
+      "src/spicelib/devices/hfet2/hfet2ask.c",
+      "src/spicelib/devices/hfet2/hfet2getic.c",
+      "src/spicelib/devices/hfet2/hfet2ext.h",
+      "src/spicelib/devices/hfet2/hfet2init.h",
+      "src/spicelib/devices/hfet2/hfet2itf.h",
+      "src/spicelib/devices/jfet/jfet.c",
+      "src/spicelib/devices/jfet/jfetinit.c",
+      "src/spicelib/devices/jfet/jfetmask.c",
+      "src/spicelib/devices/jfet/jfetmpar.c",
+      "src/spicelib/devices/jfet/jfetask.c",
+      "src/spicelib/devices/jfet/jfetic.c",
+      "src/spicelib/devices/jfet/jfetpzld.c",
+      "src/spicelib/devices/jfet/jfetdist.c",
+      "src/spicelib/devices/jfet/jfetdset.c",
+      "src/spicelib/devices/jfet/jfetext.h",
+      "src/spicelib/devices/jfet/jfetinit.h",
+      "src/spicelib/devices/jfet/jfetitf.h",
+      "src/spicelib/devices/jfet2/jfet2.c",
+      "src/spicelib/devices/jfet2/jfet2init.c",
+      "src/spicelib/devices/jfet2/jfet2mask.c",
+      "src/spicelib/devices/jfet2/jfet2mpar.c",
+      "src/spicelib/devices/jfet2/jfet2ask.c",
+      "src/spicelib/devices/jfet2/jfet2ic.c",
+      "src/spicelib/devices/jfet2/jfet2parm.h",
+      "src/spicelib/devices/jfet2/jfet2ext.h",
+      "src/spicelib/devices/jfet2/jfet2init.h",
+      "src/spicelib/devices/jfet2/jfet2itf.h"
+    ],
+    "research_prompt": "Analyze the memory lifecycle, API bindings, and interface headers for the HFET and JFET device families on upstream Ngspice. Note: HFET and JFET do not use the split `*del.c` / `*dest.c` / `*mdel.c` layout seen on some MOS devices; document how instance/model teardown and device-operator registration are handled in `hfet.c`, `hfetinit.c`, `hfet2.c`, `hfet2init.c`, `jfet.c`, `jfetinit.c`, `jfet2.c`, and `jfet2init.c` together with the `*mask.c`, `*mpar.c`, and `*ask.c` paths. CRITICAL EXTRACTION: Document the Volterra series Taylor derivatives used for harmonic distortion analysis in `jfetdist.c` and `jfetdset.c`. Detail how Pole-Zero analysis is accommodated in `jfetpzld.c`."
+  },
+  "Chapter_173_LTRA_API_and_Lifecycle.md": {
+    "chapter_title": "LTRA: API Binding, Memory, and Interface",
+    "files": [
+      "src/spicelib/devices/ltra/ltra.c",
+      "src/spicelib/devices/ltra/ltrainit.c",
+      "src/spicelib/devices/ltra/ltraask.c",
+      "src/spicelib/devices/ltra/ltraext.h",
+      "src/spicelib/devices/ltra/ltrainit.h",
+      "src/spicelib/devices/ltra/ltraitf.h",
+      "src/spicelib/devices/ltra/ltrampar.c",
+      "src/spicelib/devices/ltra/ltramask.c",
+      "src/spicelib/devices/ltra/ltramisc.c"
+    ],
+    "research_prompt": "Analyze the initialization, API binding, and memory management routines for the Lossy Transmission Line (LTRA) device on upstream Ngspice. Note: LTRA omits separate `ltradel.c` / `ltradest.c` / `ltramdel.c`; document how teardown and operator binding are consolidated in `ltra.c` and `ltrainit.c` alongside `ltraask.c`. Explain how these files bind the LTRA functions to the core Ngspice device array. Document allocation and release of history-related state in coordination with `ltraload.c` / `ltraacct.c` / `ltratrun.c` (cross-reference as needed). Document the miscellaneous utility functions in `ltramisc.c`."
+  },
+  "Chapter_174_CIDER_Numerical_API_and_PoleZero.md": {
+    "chapter_title": "CIDER Numerical Models: Memory Lifecycle, API, and Pole-Zero",
+    "files": [
+      "src/spicelib/devices/nbjt/nbjt.c",
+      "src/spicelib/devices/nbjt/nbjtinit.c",
+      "src/spicelib/devices/nbjt/nbjtdel.c",
+      "src/spicelib/devices/nbjt/nbjtmpar.c",
+      "src/spicelib/devices/nbjt/nbjtask.c",
+      "src/spicelib/devices/nbjt/nbjtpzld.c",
+      "src/spicelib/devices/nbjt/nbjtext.h",
+      "src/spicelib/devices/nbjt/nbjtinit.h",
+      "src/spicelib/devices/nbjt/nbjtitf.h",
+      "src/spicelib/devices/nbjt2/nbt2.c",
+      "src/spicelib/devices/nbjt2/nbt2init.c",
+      "src/spicelib/devices/nbjt2/nbt2del.c",
+      "src/spicelib/devices/nbjt2/nbt2mpar.c",
+      "src/spicelib/devices/nbjt2/nbt2ask.c",
+      "src/spicelib/devices/nbjt2/nbt2pzld.c",
+      "src/spicelib/devices/nbjt2/nbjt2ext.h",
+      "src/spicelib/devices/nbjt2/nbt2init.h",
+      "src/spicelib/devices/nbjt2/nbjt2itf.h",
+      "src/spicelib/devices/numd/numd.c",
+      "src/spicelib/devices/numd/numdinit.c",
+      "src/spicelib/devices/numd/numddel.c",
+      "src/spicelib/devices/numd/numdmpar.c",
+      "src/spicelib/devices/numd/numdask.c",
+      "src/spicelib/devices/numd/numdpzld.c",
+      "src/spicelib/devices/numd/numdext.h",
+      "src/spicelib/devices/numd/numdinit.h",
+      "src/spicelib/devices/numd/numditf.h",
+      "src/spicelib/devices/numd2/nud2.c",
+      "src/spicelib/devices/numd2/numd2init.c",
+      "src/spicelib/devices/numd2/nud2del.c",
+      "src/spicelib/devices/numd2/nud2mpar.c",
+      "src/spicelib/devices/numd2/nud2ask.c",
+      "src/spicelib/devices/numd2/nud2pzld.c",
+      "src/spicelib/devices/numd2/numd2ext.h",
+      "src/spicelib/devices/numd2/numd2init.h",
+      "src/spicelib/devices/numd2/numd2itf.h",
+      "src/spicelib/devices/numos/numm.c",
+      "src/spicelib/devices/numos/numosinit.c",
+      "src/spicelib/devices/numos/nummdel.c",
+      "src/spicelib/devices/numos/nummmpar.c",
+      "src/spicelib/devices/numos/nummask.c",
+      "src/spicelib/devices/numos/nummpzld.c",
+      "src/spicelib/devices/numos/numosext.h",
+      "src/spicelib/devices/numos/numosinit.h",
+      "src/spicelib/devices/numos/numositf.h"
+    ],
+    "research_prompt": "Analyze the API boilerplate, memory management, and Pole-Zero logic for the CIDER numerical TCAD solvers on upstream Ngspice. Document mesh and operator teardown in `nbjtdel.c`, `nbt2del.c`, `numddel.c`, `nud2del.c`, and `nummdel.c`, including how dynamic 1D/2D grid state arrays are deallocated. Note: these CIDER families do not provide separate `*dest.c` / `*mdel.c` companions like some compact models; explain where corresponding responsibilities live when absent. Extract how Pole-Zero analysis handles numerical models in `nbjtpzld.c`, `nbt2pzld.c`, `numdpzld.c`, `nud2pzld.c`, and `nummpzld.c`."
+  },
+  "Chapter_176_Simulation_Task_Dispatch.md": {
+    "chapter_title": "Simulation Control: Task Dispatching and DAE State Machine",
+    "files": [
+      "src/spicelib/analysis/analysis.c",
+      "src/spicelib/analysis/analysis.h",
+      "src/spicelib/analysis/cktdojob.c",
+      "src/spicelib/analysis/cktntask.c",
+      "src/spicelib/analysis/cktftask.c",
+      "src/spicelib/analysis/cktnewan.c"
+    ],
+    "research_prompt": "Conduct a rigorous architectural tear-down of the simulation control dispatcher. Write a 'Mathematical Formulation' section detailing how the continuous Differential-Algebraic Equation (DAE) system is abstracted across different analysis domains (DC, AC, TRAN). Write a 'Convergence Analysis' section explaining the state-machine transitions in `cktdojob.c` and how task failure cascades. CRITICAL: In the 'C Implementation' section, you MUST use '###' (H3) sub-headers. Extract exact C structs: '### Task Initialization (cktnewan.c)' (detail the `SPICEanalysis` struct array), '### Job Dispatch Loop (cktdojob.c)' (trace the `CKTcurJob` and `CKTmode` bitmask flags), and '### Analysis Plugin Interface (analysis.c)'."
+  },
+  "Chapter_177_MNA_Node_Mapping.md": {
+    "chapter_title": "Circuit Topology: Dynamic Node Hashing and MNA Ordering",
+    "files": [
+      "src/spicelib/analysis/cktmknod.c",
+      "src/spicelib/analysis/cktneweq.c",
+      "src/spicelib/analysis/cktmapn.c",
+      "src/spicelib/analysis/cktgrnd.c",
+      "src/spicelib/analysis/ckti2nod.c",
+      "src/spicelib/analysis/cktnum2n.c",
+      "src/spicelib/analysis/cktfnode.c",
+      "src/spicelib/analysis/cktnodn.c",
+      "src/spicelib/analysis/cktmkcur.c",
+      "src/spicelib/analysis/cktmkvol.c",
+      "src/spicelib/analysis/cktlnkeq.c"
+    ],
+    "research_prompt": "Reverse-engineer the dynamic matrix mapping and node management routines. Write a 'Mathematical Formulation' section explaining the topological graph algorithms used to map arbitrary physical node strings into consecutive integer indices for the MNA sparse matrix. Write a 'Convergence Analysis' section detailing how node collapsing and Ground (node 0) isolation prevent structural matrix singularity. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Node Allocation and Hashing (cktmknod.c)' (extract the `CKTnode` linked-list traversal), '### Equation Numbering Logic (cktneweq.c)' (detail the `CKTmaxEqnNum` incrementer), and '### Voltage and Current Branch Assignments (cktmkvol.c / cktmkcur.c)'."
+  },
+  "Chapter_178_DC_Analysis_and_Sweeps.md": {
+    "chapter_title": "DC Analysis: Operating Point and Nested Homotopy Sweeps",
+    "files": [
+      "src/spicelib/analysis/dcop.c",
+      "src/spicelib/analysis/dcosetp.c",
+      "src/spicelib/analysis/dcoaskq.c",
+      "src/spicelib/analysis/cktop.c",
+      "src/spicelib/analysis/dctrcurv.c",
+      "src/spicelib/analysis/dctsetp.c",
+      "src/spicelib/analysis/dctaskq.c"
+    ],
+    "research_prompt": "Perform a deep mathematical extraction of the DC Operating Point and Transfer Curve engines. Write a 'Mathematical Formulation' section extracting the rigorous homotopy algorithms: explicitly detail GMIN stepping ($J + G_{min}I$) and Source Stepping ($\\alpha \\cdot b$). Write a 'Convergence Analysis' section documenting the exact residual and delta tolerance checks used to declare Newton-Raphson convergence. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### DC Operating Point Control (cktop.c)' (trace the `NIiterate` calls), '### Nested Sweep Loops (dctrcurv.c)' (extract the multi-dimensional array loops for primary/secondary variables), and '### Parameter Updating (dctsetp.c)'."
+  },
+  "Chapter_179_Transient_Time_Stepping.md": {
+    "chapter_title": "Transient Core: Integration Math and LTE Time-Stepping",
+    "files": [
+      "src/spicelib/analysis/dctran.c",
+      "src/spicelib/analysis/transetp.c",
+      "src/spicelib/analysis/tranaskq.c",
+      "src/spicelib/analysis/traninit.c",
+      "src/spicelib/analysis/ckttrunc.c",
+      "src/spicelib/analysis/cktterr.c",
+      "src/spicelib/analysis/ninteg.c",
+      "src/spicelib/analysis/nevalsrc.c",
+      "src/spicelib/analysis/cktacct.c",
+      "src/spicelib/analysis/cktic.c"
+    ],
+    "research_prompt": "Extract the complete algebraic foundation of the Transient time-domain engine. Write a 'Mathematical Formulation' section documenting the exact Local Truncation Error (LTE) formulas for Trapezoidal and Gear integration, including predictor-corrector derivations. Write a 'Convergence Analysis' section explaining the algorithmic criteria for time-step rejection ($\\Delta t_{new} < \\Delta t_{old}$). CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Transient Loop Orchestration (dctran.c)' (trace the `CKTtime` and `CKTdelta` variables), '### LTE Calculation and Time-Stepping (ckttrunc.c / cktterr.c)', '### State Variable Integration (ninteg.c)' (extract the `CKTag` coefficient array usage), and '### Breakpoint Acceptance (cktacct.c)'."
+  },
+  "Chapter_180_AC_and_Noise_Analysis.md": {
+    "chapter_title": "Frequency Domain: AC Sweeps and Noise Adjoint Solving",
+    "files": [
+      "src/spicelib/analysis/acan.c",
+      "src/spicelib/analysis/acsetp.c",
+      "src/spicelib/analysis/acaskq.c",
+      "src/spicelib/analysis/noisean.c",
+      "src/spicelib/analysis/nsetparm.c",
+      "src/spicelib/analysis/naskq.c",
+      "src/spicelib/analysis/cktnoise.c"
+    ],
+    "research_prompt": "Conduct a strict mathematical tear-down of the Small-Signal Frequency Domain engines. Write a 'Mathematical Formulation' section extracting the linearization equations for complex admittance matrices ($Y = G + j\\omega C$) and rigorously prove the Adjoint Network Method used in Noise Analysis ($Y^T V_{adj} = I_{out}$). Write a 'Convergence Analysis' section explaining matrix conditioning issues at $\\omega \\to 0$ and $\\omega \\to \\infty$. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### AC Frequency Sweeps (acan.c)' (extract `CKTomega` loops), '### Adjoint Matrix Solving (noisean.c)' (detail `SMPsolveAdjoint` calls), and '### Noise Contribution Aggregation (cktnoise.c)'."
+  },
+  "Chapter_181_Pole_Zero_Analysis.md": {
+    "chapter_title": "Pole-Zero Analysis: Complex Eigenvalue Root Extraction",
+    "files": [
+      "src/spicelib/analysis/pzan.c",
+      "src/spicelib/analysis/pzsetp.c",
+      "src/spicelib/analysis/pzaskq.c",
+      "src/spicelib/analysis/cktpzld.c",
+      "src/spicelib/analysis/cktpzset.c",
+      "src/spicelib/analysis/cktpzstr.c"
+    ],
+    "research_prompt": "Reverse-engineer the Pole-Zero (.PZ) engine. Write a 'Mathematical Formulation' section extracting the generalized eigenvalue/root-finding mathematics applied to the complex Laplace variable $s = \\sigma + j\\omega$ within the MNA matrix (e.g., Muller's method). Write a 'Convergence Analysis' section documenting the numerical stability algorithms used to track wandering roots in large sparse systems. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### PZ Matrix Loading (cktpzld.c)' (extract the specific $s$-domain matrix stampings), '### Root Extraction Algorithm (pzan.c)', and '### PZ Setup and Teardown'."
+  },
+  "Chapter_182_Distortion_Analysis.md": {
+    "chapter_title": "Distortion Analysis: Volterra Series and Intermodulation",
+    "files": [
+      "src/spicelib/analysis/distoan.c",
+      "src/spicelib/analysis/dsetparm.c",
+      "src/spicelib/analysis/daskq.c",
+      "src/spicelib/analysis/dloadfns.c",
+      "src/spicelib/analysis/cktdisto.c"
+    ],
+    "research_prompt": "Deep-dive into the Volterra-series Distortion (.DISTO) analysis. Write a 'Mathematical Formulation' section extracting the multi-tone harmonic intermodulation math. Document exactly how 2nd and 3rd order Taylor series multidimensional derivatives are evaluated to populate the Volterra kernels. Write a 'Convergence Analysis' section explaining the amplitude validity limits of the Volterra approximation. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Volterra Matrix Loading (cktdisto.c)', '### Multi-Frequency RHS Assembly (dloadfns.c)' (trace how frequencies like $2\\omega_1 - \\omega_2$ are managed), and '### Distortion Sweep Control (distoan.c)'."
+  },
+  "Chapter_183_Transfer_Function_and_Sensitivity.md": {
+    "chapter_title": "Transfer Function and Sensitivity: Adjoint Network Mechanics",
+    "files": [
+      "src/spicelib/analysis/tfanal.c",
+      "src/spicelib/analysis/tfsetp.c",
+      "src/spicelib/analysis/tfaskq.c",
+      "src/spicelib/analysis/cktsens.c",
+      "src/spicelib/analysis/senssetp.c",
+      "src/spicelib/analysis/sensaskq.c"
+    ],
+    "research_prompt": "Extract the advanced linear algebra from the .TF and .SENS engines. Write a 'Mathematical Formulation' section rigorously defining the Adjoint Matrix method. Prove how $\\partial V_{out} / \\partial p$ (sensitivity to all parameters) is computed in $O(N)$ time by multiplying the adjoint solution vector against the specific $\\partial Y / \\partial p$ perturbations. Write a 'Convergence Analysis' section discussing numerical precision limits of these perturbations. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### TF Matrix Solving (tfanal.c)', '### Adjoint Sensitivity Computation (cktsens.c)', and '### Parameter Perturbation Logic'."
+  },
+  "Chapter_184_Periodic_Steady_State.md": {
+    "chapter_title": "Periodic Steady State (PSS): Shooting Newton Algorithms",
+    "files": [
+      "src/spicelib/analysis/dcpss.c",
+      "src/spicelib/analysis/pssinit.c",
+      "src/spicelib/analysis/psssetp.c",
+      "src/spicelib/analysis/pssaskq.c"
+    ],
+    "research_prompt": "Reverse-engineer the Periodic Steady State (.PSS) RF analysis engine. Write a 'Mathematical Formulation' section extracting the Shooting Newton method equations used to enforce the time-domain boundary condition $x(T_{period}) = x(0)$. Write a 'Convergence Analysis' section detailing the exact residual error vector formulation used to determine if the steady-state orbit has converged. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Shooting Loops and Iteration (dcpss.c)' (trace the transient integration wraps), '### Time-Domain Extrapolation', and '### PSS Matrix Setup'."
+  },
+  "Chapter_185_Device_Loading_and_Assembly.md": {
+    "chapter_title": "Global Matrix Assembly: Device Loading and Temperature Clamping",
+    "files": [
+      "src/spicelib/analysis/cktload.c",
+      "src/spicelib/analysis/cktmcrt.c",
+      "src/spicelib/analysis/dkerproc.c",
+      "src/spicelib/analysis/cluster.c",
+      "src/spicelib/analysis/ckttemp.c"
+    ],
+    "research_prompt": "Analyze the global matrix assembly coordinator. Write a 'Mathematical Formulation' section summarizing how independent device Jacobians are mathematically aggregated into the global MNA matrix. Write a 'Convergence Analysis' section detailing the exact numerical clamping algorithms in `ckttemp.c` used to prevent exponential $e^{v/v_t}$ physics overflows due to extreme temperature bounds. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Device Load Dispatch (cktload.c)' (trace the `DEVload` function pointers), '### Device Kernel Processing (dkerproc.c)', '### Temperature Updates (ckttemp.c)', and '### Matrix Reordering/Clustering (cluster.c)'."
+  },
+  "Chapter_186_Options_and_Parameter_Management.md": {
+    "chapter_title": "State Architecture: Options, Masks, and Parameter Lookups",
+    "files": [
+      "src/spicelib/analysis/cktparam.c",
+      "src/spicelib/analysis/cktmask.c",
+      "src/spicelib/analysis/cktmpar.c",
+      "src/spicelib/analysis/cktsopt.c",
+      "src/spicelib/analysis/cktsetnp.c",
+      "src/spicelib/analysis/cktsetap.c",
+      "src/spicelib/analysis/cktsetbk.c",
+      "src/spicelib/analysis/cktaskaq.c",
+      "src/spicelib/analysis/cktasknq.c",
+      "src/spicelib/analysis/ckttyplk.c",
+      "src/spicelib/analysis/cktfnda.c",
+      "src/spicelib/analysis/cktfndm.c",
+      "src/spicelib/analysis/cktfbran.c"
+    ],
+    "research_prompt": "Extract the internal SPICE parameter passing and type-casting mechanisms. Write a 'Mathematical Formulation' section explaining the generic-to-specific mappings of the `IFvalue` union structure used to pass doubles, strings, and arrays mathematically. Write a 'Convergence Analysis' section describing how option modifications (`reltol`, `abstol`, `gmin` in `cktsopt.c`) immediately mutate solver boundaries. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Option Parsing and Struct Mapping (cktsopt.c)', '### Device and Model Lookups (ckttyplk.c / cktfnda.c)', and '### Parameter Extraction and Masking'."
+  },
+  "Chapter_187_Memory_Teardown_and_Diagnostics.md": {
+    "chapter_title": "Memory Lifecycle: Matrix Teardown and Convergence Diagnostics",
+    "files": [
+      "src/spicelib/analysis/cktdest.c",
+      "src/spicelib/analysis/cktdelt.c",
+      "src/spicelib/analysis/cktdlti.c",
+      "src/spicelib/analysis/cktdltm.c",
+      "src/spicelib/analysis/cktdltn.c",
+      "src/spicelib/analysis/cktclrbk.c",
+      "src/spicelib/analysis/cktdump.c",
+      "src/spicelib/analysis/cktacdum.c",
+      "src/spicelib/analysis/cktbkdum.c",
+      "src/spicelib/analysis/cktncdump.c",
+      "src/spicelib/analysis/cktpname.c",
+      "src/spicelib/analysis/cktpmnam.c",
+      "src/spicelib/analysis/cktnames.c",
+      "src/spicelib/analysis/ckttroub.c"
+    ],
+    "research_prompt": "Analyze the memory lifecycle, teardown, and diagnostic dumping routines. Write a 'Mathematical Formulation' section explaining how the system guarantees total matrix state zeroing to prevent bleed-over between consecutive simulation runs. Write a 'Convergence Analysis' section documenting how `ckttroub.c` algorithmically detects, isolates, and flags non-convergent nodes by analyzing the residual vectors. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Topology Destruction and Unlinking (cktdest.c / cktdelt.c)' (trace the `FREE` and `SMPdestroy` cascades), '### Breakpoint Cleanup (cktclrbk.c)', '### Diagnostic Dumps (cktdump.c)', and '### Troubleshooting Utilities (ckttroub.c)'."
+  },
+  "Chapter_188_Core_Netlist_Parsing_Multi_Pass.md": {
+    "chapter_title": "Netlist Parsing: Multi-Pass Architecture and Subcircuit Expansion",
+    "files": [
+      "src/spicelib/parser/inppas1.c",
+      "src/spicelib/parser/inppas2.c",
+      "src/spicelib/parser/inppas3.c",
+      "src/spicelib/parser/inppas1.h",
+      "src/spicelib/parser/inppas2.h",
+      "src/spicelib/parser/inppas3.h"
+    ],
+    "research_prompt": "Conduct a rigorous architectural tear-down of the SPICE netlist compiler. Write a 'Mathematical Formulation' section detailing the graph-theoretical unrolling of hierarchical `.subckt` definitions into flat memory structures, specifically extracting the node-aliasing algorithms. Write a 'Convergence Analysis' (or Structural Integrity) section explaining how circular dependencies and infinite macro expansions are mathematically prevented or halted. CRITICAL: In the 'C Implementation' section, you MUST use '###' (H3) sub-headers. Extract exact C structs and pointer arithmetic: '### Pass 1: Subcircuit and Macro Expansion (inppas1.c)' (trace the `INPtables` generation), '### Pass 2: Device and Node Instantiation (inppas2.c)', and '### Pass 3: Topology Binding and Reference Resolution (inppas3.c)'."
+  },
+  "Chapter_189_Lexical_Analysis_and_Tokenization.md": {
+    "chapter_title": "Lexical Analysis: Tokenization and Value Extraction",
+    "files": [
+      "src/spicelib/parser/inpgtok.c",
+      "src/spicelib/parser/inpgval.c",
+      "src/spicelib/parser/inpgstr.c",
+      "src/spicelib/parser/inpgtitl.c",
+      "src/spicelib/parser/inpgmod.c"
+    ],
+    "research_prompt": "Reverse-engineer the SPICE netlist lexical analyzer. Write a 'Mathematical Formulation' section explaining the precise numerical algorithms used in `inpgval.c` to parse SPICE scale factors (e.g., Meg, K, u, p, f) and convert them into IEEE 754 floating-point doubles. Write a 'Convergence Analysis' section detailing how malformed syntax, buffer overflows, or out-of-bounds exponents are caught to prevent downstream solver crashes. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Tokenization Engine (inpgtok.c)' (trace the string pointer increments), '### Numeric Value Extraction (inpgval.c)' (extract the mantissa/exponent logic), and '### String, Title, and Model Parsing'."
+  },
+  "Chapter_190_Device_Parsing_Passives_Sources.md": {
+    "chapter_title": "Device Parsing: Passives, Switches, and Independent Sources",
+    "files": [
+      "src/spicelib/parser/inp2r.c",
+      "src/spicelib/parser/inp2c.c",
+      "src/spicelib/parser/inp2l.c",
+      "src/spicelib/parser/inp2k.c",
+      "src/spicelib/parser/inp2v.c",
+      "src/spicelib/parser/inp2i.c",
+      "src/spicelib/parser/inp2w.c",
+      "src/spicelib/parser/inp2s.c"
+    ],
+    "research_prompt": "Perform a deep extraction of the passive component and independent source parsers. Write a 'Mathematical Formulation' section extracting exactly how time-domain source functions (SINE, PULSE, PWL, EXP) are parsed from strings into parametric math arrays via the `IFvalue` struct. Write a 'Convergence Analysis' section explaining how invalid parameter bounds (e.g., negative resistance) are intercepted during parsing. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Resistor and Capacitor Parsing (inp2r.c / inp2c.c)', '### Inductor and Mutual Coupling (inp2l.c / inp2k.c)', and '### Independent Source and Switch Parsing (inp2v.c / inp2i.c / inp2w.c)' (trace the `INPgetTok` calls)."
+  },
+  "Chapter_191_Device_Parsing_Actives_Dependents.md": {
+    "chapter_title": "Device Parsing: Active Semiconductors and Dependent Sources",
+    "files": [
+      "src/spicelib/parser/inp2d.c",
+      "src/spicelib/parser/inp2q.c",
+      "src/spicelib/parser/inp2m.c",
+      "src/spicelib/parser/inp2j.c",
+      "src/spicelib/parser/inp2z.c",
+      "src/spicelib/parser/inp2e.c",
+      "src/spicelib/parser/inp2f.c",
+      "src/spicelib/parser/inp2g.c",
+      "src/spicelib/parser/inp2h.c",
+      "src/spicelib/parser/inp2o.c",
+      "src/spicelib/parser/inp2p.c",
+      "src/spicelib/parser/inp2t.c",
+      "src/spicelib/parser/inp2u.c",
+      "src/spicelib/parser/inp2b.c",
+      "src/spicelib/parser/inp2n.c",
+      "src/spicelib/parser/inp2y.c"
+    ],
+    "research_prompt": "Extract the rigorous parsing logic for complex semiconductor devices and controlled sources. Write a 'Mathematical Formulation' section documenting the syntax mapping from SPICE cards to device geometry constraints (e.g., extracting M1 W=10u L=1u AD=... and mapping them to the specific `GENinstance` fields). Write a 'Convergence Analysis' section explaining model-card resolution safety checks (ensuring a requested model actually exists). CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Dependent Source Parsing (E, F, G, H, B)', '### Diode and BJT Instantiation (inp2d.c / inp2q.c)', and '### MOSFET, JFET, and Transmission Line Instantiation'."
+  },
+  "Chapter_192_Parse_Tree_Behavioral_Modeling.md": {
+    "chapter_title": "Behavioral Modeling: Expression Grammar and Abstract Syntax Trees",
+    "files": [
+      "src/spicelib/parser/inpptree-parser.y",
+      "src/spicelib/parser/inpptree-parser.h",
+      "src/spicelib/parser/inpptree-parser.c",
+      "src/spicelib/parser/inpptree.c",
+      "src/spicelib/parser/ptfuncs.c",
+      "src/spicelib/parser/ifeval.c",
+      "src/spicelib/parser/inpeval.c"
+    ],
+    "research_prompt": "Conduct a strict algorithmic tear-down of the Non-Linear Dependent Source (B-Source) and Behavioral Modeling expression parser. Write a 'Mathematical Formulation' section extracting the exact mathematical operations supported by the grammar (trig, exp, abs, ternaries) and detailing the Reverse Polish or Tree structures used to construct the computable Abstract Syntax Tree (AST). Write a 'Convergence Analysis' section explaining how division-by-zero or transcendental domain limits (e.g., log(0)) in user expressions are mathematically guarded during runtime evaluation. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Yacc/Bison Grammar Definition (inpptree-parser.y)', '### AST Construction and Mapping (inpptree.c)', and '### Runtime Function Evaluation Stack (ptfuncs.c / ifeval.c)'."
+  },
+  "Chapter_193_Model_Binding_and_Options.md": {
+    "chapter_title": "Directive Parsing: Model Binding, Options, and Initial Conditions",
+    "files": [
+      "src/spicelib/parser/inpdomod.c",
+      "src/spicelib/parser/inpdoopt.c",
+      "src/spicelib/parser/inpmkmod.c",
+      "src/spicelib/parser/inplkmod.c",
+      "src/spicelib/parser/inpkmods.c",
+      "src/spicelib/parser/inpdpar.c",
+      "src/spicelib/parser/inpcfix.c",
+      "src/spicelib/parser/inp2dot.c",
+      "src/include/ngspice/cpextern.h"
+    ],
+    "research_prompt": "Reverse-engineer the dot-card (`.model`, `.options`, `.ic`, `.nodeset`) parsing engines. Write a 'Mathematical Formulation' section detailing the exact hash-map or linked-list data structures used to link arbitrary string model names to physical C-struct math models. Write a 'Convergence Analysis' section documenting how parsed option overrides (`RELTOL`, `GMIN`, `ITL1`) physically alter the global sparse matrix solver limits. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Dot-Card Dispatcher (inp2dot.c)', '### Model Parameter Hashing and Binding (inpmkmod.c / inplkmod.c)', and '### Simulator Options Processing (inpdoopt.c)'."
+  },
+  "Chapter_194_Symbol_Tables_and_Errors.md": {
+    "chapter_title": "Parser Core: Symbol Tables, Memory Interfaces, and Error Propagation",
+    "files": [
+      "src/spicelib/parser/ifnewuid.c",
+      "src/spicelib/parser/inperror.c",
+      "src/spicelib/parser/inperrc.c",
+      "src/spicelib/parser/sperror.c",
+      "src/spicelib/parser/inpsymt.c",
+      "src/spicelib/parser/inpaname.c",
+      "src/spicelib/parser/inpapnam.c",
+      "src/spicelib/parser/inppname.c",
+      "src/spicelib/parser/inptyplk.c",
+      "src/spicelib/parser/inpmktmp.c",
+      "src/spicelib/parser/inplist.c",
+      "src/spicelib/parser/inpfindl.c",
+      "src/spicelib/parser/inpfindv.c",
+      "src/spicelib/parser/inpxx.h"
+    ],
+    "research_prompt": "Analyze the low-level memory, Unique Identifier (UID), and error handling architectures of the Ngspice Front-End. Write a 'Mathematical Formulation' section detailing the string hashing algorithms used in `inpsymt.c` to guarantee $O(1)$ globally unique IDs for circuit nodes and devices, preventing namespace collisions. Write a 'Convergence Analysis' section explaining how parser errors are aggregated into the `sperror` framework to gracefully abort the matrix solver setup. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### UID Generation and Symbol Tables (ifnewuid.c / inpsymt.c)', '### Error Handling and String Formatting (inperror.c / sperror.c)', and '### Parser Memory Teardown and Utilities'."
+  },
+"Chapter_195_XSPICE_Code_Model_Preprocessor.md": {
+    "chapter_title": "XSPICE CMPP: Lex/Yacc Compilation of Code Models",
+    "files": [
+      "src/xspice/cmpp/main.c",
+      "src/xspice/cmpp/ifs_lex.l",
+      "src/xspice/cmpp/ifs_yacc.y",
+      "src/xspice/cmpp/mod_lex.l",
+      "src/xspice/cmpp/mod_yacc.y",
+      "src/xspice/cmpp/pp_ifs.c",
+      "src/xspice/cmpp/pp_mod.c",
+      "src/xspice/cmpp/read_ifs.c",
+      "src/xspice/cmpp/writ_ifs.c"
+    ],
+    "research_prompt": "Conduct a rigorous architectural tear-down of the XSPICE Code Model Preprocessor (CMPP). Write a 'Mathematical Formulation' section detailing how the Lex/Yacc grammars parse Interface Specification (`.ifs`) and Model (`.mod`) files into memory. Write a 'Convergence Analysis' (or Structural Integrity) section explaining how the AST translation guarantees that user-defined macros (like `INPUT()`, `OUTPUT()`) are safely unrolled into physical C-array pointer arithmetic without overflowing. CRITICAL: In the 'C Implementation' section, you MUST use '###' (H3) sub-headers. Extract exact C structs: '### Lex/Yacc Grammars (ifs_yacc.y / mod_yacc.y)', '### IFS to C-Struct Translation (pp_ifs.c / writ_ifs.c)' (trace the `SPICEdev` boilerplate generation), and '### Macro Expansion and Code Generation (pp_mod.c)'."
+  },
+  "Chapter_196_XSPICE_Runtime_Interface.md": {
+    "chapter_title": "XSPICE Runtime: Code Model Execution and Event Bridging",
+    "files": [
+      "src/xspice/xspice.c",
+      "src/xspice/cm/cm.c",
+      "src/xspice/cm/cmevt.c",
+      "src/xspice/cm/cmexport.c",
+      "src/xspice/cm/cmmeters.c",
+      "src/xspice/cm/cmutil.c"
+    ],
+    "research_prompt": "Reverse-engineer the execution environment for compiled XSPICE Code Models. Write a 'Mathematical Formulation' section explaining how the runtime bridges continuous-time analog variables (voltage/current) with discrete-time event variables. Write a 'Convergence Analysis' section detailing how `cmexport.c` manages partial derivatives and Jacobian loading to ensure Newton-Raphson stability when code models inject non-linearities into the main MNA matrix. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### CM Execution Environment (cm.c)', '### Analog/Event Data Bridging (cmexport.c / cmevt.c)', and '### Internal State and Utility Macros (cmutil.c)'."
+  },
+  "Chapter_197_Event_Driven_Simulation_Engine.md": {
+    "chapter_title": "Event-Driven Engine: Time-Wheels and Logic Resolution",
+    "files": [
+      "src/xspice/evt/evtinit.c",
+      "src/xspice/evt/evtsetup.c",
+      "src/xspice/evt/evtqueue.c",
+      "src/xspice/evt/evtdeque.c",
+      "src/xspice/evt/evtiter.c",
+      "src/xspice/evt/evtnext_time.c"
+    ],
+    "research_prompt": "Perform a deep extraction of the discrete-time Event-Driven Simulator (EVT). Write a 'Mathematical Formulation' section detailing the 12-state digital logic algebra (combining 4 states like ZERO/ONE/UNKNOWN with 3 strengths like STRONG/RESISTIVE/HI_IMPEDANCE) and how conflicting node outputs are mathematically resolved. Write a 'Convergence Analysis' section explaining how the engine avoids infinite zero-delay event loops. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Event Queue Architecture (evtqueue.c / evtdeque.c)' (trace the `Evt_Queue_t` linked-list mechanics), '### Discrete-Time Iteration and Node Resolution (evtiter.c)', and '### Time-Wheel and Next-Event Scheduling (evtnext_time.c)'."
+  },
+  "Chapter_198_Analog_Digital_Hybrid_Synchronization.md": {
+    "chapter_title": "Mixed-Mode Synchronization: Transient Acceptance and Backtracking",
+    "files": [
+      "src/xspice/evt/evtload.c",
+      "src/xspice/evt/evtaccept.c",
+      "src/xspice/evt/evtbackup.c",
+      "src/xspice/evt/evtcall_hybrids.c",
+      "src/xspice/evt/evtnode_copy.c"
+    ],
+    "research_prompt": "Extract the highly complex synchronization algorithms between the analog MNA solver and the digital event queue. Write a 'Mathematical Formulation' section documenting the lock-step time integration logic. Write a 'Convergence Analysis' section explaining the rigorous 'Backtracking' mechanics: if the analog solver rejects a time step due to Local Truncation Error (LTE), detail how `evtbackup.c` rewinds the digital state to prevent causality violations. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Hybrid Node Synchronization (evtcall_hybrids.c)' (detail ADC/DAC node bridging), '### Transient Acceptance and Backtracking (evtaccept.c / evtbackup.c)', and '### Analog Matrix Loading from Events (evtload.c)'."
+  },
+  "Chapter_199_XSPICE_Enhancements_and_Diagnostics.md": {
+    "chapter_title": "XSPICE Core Enhancements: Operating Points and Diagnostics",
+    "files": [
+      "src/xspice/enh/enh.c",
+      "src/xspice/enh/enhtrans.c",
+      "src/xspice/evt/evtop.c",
+      "src/xspice/evt/evtplot.c",
+      "src/xspice/evt/evtprint.c",
+      "src/xspice/evt/evttermi.c",
+      "src/xspice/evt/evtdump.c"
+    ],
+    "research_prompt": "Analyze the core enhancements and output diagnostic routines introduced by XSPICE. Write a 'Mathematical Formulation' section explaining the 'rshunt' enhancement topology and how event-driven nodes establish a stable DC operating point prior to transient simulation in `evtop.c`. Write a 'Convergence Analysis' section explaining how the system halts or warns during unresolvable hybrid DC states. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Core Matrix Enhancements (enh.c / enhtrans.c)', '### Event Operating Point Initialization (evtop.c)', and '### Digital State Output and Plotting (evtplot.c / evtprint.c / evtdump.c)'."
+  },
+"Chapter_200_CIDER_Input_Mesh_and_Doping.md": {
+    "chapter_title": "CIDER TCAD: Spatial Mesh Generation and Doping Profiles",
+    "files": [
+      "src/ciderlib/input/cards.c",
+      "src/ciderlib/input/mesh.c",
+      "src/ciderlib/input/meshset.c",
+      "src/ciderlib/input/domain.c",
+      "src/ciderlib/input/domnset.c",
+      "src/ciderlib/input/doping.c",
+      "src/ciderlib/input/dopset.c",
+      "src/ciderlib/input/material.c",
+      "src/ciderlib/input/matlset.c",
+      "src/ciderlib/input/electrod.c",
+      "src/ciderlib/input/elctset.c"
+    ],
+    "research_prompt": "Conduct a rigorous architectural tear-down of the CIDER device input parser and mesher. Write a 'Mathematical Formulation' section extracting the exact algorithms used to generate the 1D/2D non-uniform spatial grid (e.g., geometric progression spacing) and the analytical doping profile functions (Gaussian, Erfc, Exponential). Write a 'Convergence Analysis' (or Structural Integrity) section detailing how overlapping domains, electrode boundary collisions, and negative grid spacing are mathematically resolved or rejected. CRITICAL: In the 'C Implementation' section, you MUST use '###' (H3) sub-headers. Extract exact C structs: '### Lexical Cards and Parsing (cards.c)', '### Spatial Mesh and Domain Setup (mesh.c / domain.c)', and '### Doping Profiles and Material Binding (doping.c / material.c)'."
+  },
+  "Chapter_201_CIDER_Physics_and_Material_Support.md": {
+    "chapter_title": "CIDER TCAD: Solid-State Physics and Material Models",
+    "files": [
+      "src/ciderlib/support/mater.c",
+      "src/ciderlib/support/mobil.c",
+      "src/ciderlib/support/recomb.c",
+      "src/ciderlib/support/database.c",
+      "src/ciderlib/support/geominfo.c",
+      "src/ciderlib/support/integset.c",
+      "src/ciderlib/support/integuse.c",
+      "src/ciderlib/support/suprem.c",
+      "src/ciderlib/support/suprmitf.c"
+    ],
+    "research_prompt": "Reverse-engineer the solid-state physics support libraries for CIDER. Write a 'Mathematical Formulation' section documenting the exact algebraic models used for carrier mobility (concentration-dependent, high-field velocity saturation, surface scattering) and generation-recombination (Shockley-Read-Hall, Auger, avalanche). Extract bandgap narrowing equations. Write a 'Convergence Analysis' section explaining how exponential recombination terms are clamped to prevent numerical overflow in the solver. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### Material Properties and Database (mater.c / database.c)', '### Mobility and Recombination Routines (mobil.c / recomb.c)', and '### SUPREM External Profile Interfaces (suprem.c)'."
+  },
+  "Chapter_202_CIDER_1D_Numerical_Solvers.md": {
+    "chapter_title": "CIDER TCAD: 1D Poisson and Continuity Solvers",
+    "files": [
+      "src/ciderlib/oned/onemesh.c",
+      "src/ciderlib/oned/onesetup.c",
+      "src/ciderlib/oned/onepoiss.c",
+      "src/ciderlib/oned/onecond.c",
+      "src/ciderlib/oned/onecont.c",
+      "src/ciderlib/oned/onesolve.c",
+      "src/ciderlib/oned/oneaval.c",
+      "src/ciderlib/oned/oneadmit.c",
+      "src/ciderlib/oned/onedopng.c",
+      "src/ciderlib/oned/oneproj.c"
+    ],
+    "research_prompt": "Perform a deep extraction of the 1D numerical device solver. Write a 'Mathematical Formulation' section extracting the 1D finite-difference discretization equations for Poisson's equation and the electron/hole continuity equations. Rigorously document the implementation of the Scharfetter-Gummel discretization scheme used for stable current densities. Write a 'Convergence Analysis' section explaining the nonlinear Gummel iteration and Newton-Richardson loops used to solve the coupled semiconductor equations. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### 1D Mesh and Matrix Setup (onemesh.c / onesetup.c)', '### Poisson and Continuity Assembly (onepoiss.c / onecont.c)', and '### 1D Iterative Solver and Admittance (onesolve.c / oneadmit.c)'."
+  },
+  "Chapter_203_CIDER_2D_Numerical_Solvers.md": {
+    "chapter_title": "CIDER TCAD: 2D Box Integration and Coupled Solvers",
+    "files": [
+      "src/ciderlib/twod/twomesh.c",
+      "src/ciderlib/twod/twosetup.c",
+      "src/ciderlib/twod/twosetbc.c",
+      "src/ciderlib/twod/twopoiss.c",
+      "src/ciderlib/twod/twocond.c",
+      "src/ciderlib/twod/twocont.c",
+      "src/ciderlib/twod/twosolve.c",
+      "src/ciderlib/twod/twoaval.c",
+      "src/ciderlib/twod/twoadmit.c",
+      "src/ciderlib/twod/twodopng.c",
+      "src/ciderlib/twod/twoproj.c",
+      "src/ciderlib/twod/twomobil.c"
+    ],
+    "research_prompt": "Extract the highly complex 2D numerical device simulator. Write a 'Mathematical Formulation' section detailing the 2D Box Integration Method (finite-volume) used to discretize Poisson and continuity equations across the rectangular mesh. Extract the 2D avalanche generation integrals and boundary condition math. Write a 'Convergence Analysis' section explaining the rigorous preconditioned iterative solvers (e.g., ICCG/ILUCG) required for massive 2D matrices, and how Bank-Rose damping prevents divergence. CRITICAL: In the 'C Implementation' section, use '###' (H3) sub-headers: '### 2D Grid and Boundary Setup (twomesh.c / twosetbc.c)', '### 2D Poisson and Continuity Discretization (twopoiss.c / twocont.c)', and '### 2D Coupled Solvers and AC Admittance (twosolve.c / twoadmit.c)'."
+  }    
+}

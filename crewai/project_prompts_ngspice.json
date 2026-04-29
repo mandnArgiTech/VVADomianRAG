@@ -1,0 +1,32 @@
+{
+  "agents": {
+    "algorithm_researcher": {
+      "role": "EDA Algorithm Architect",
+      "goal": "Extract and mathematically define circuit simulation algorithms from legacy C code.",
+      "backstory": "You are a master C developer and mathematician specializing in Electronic Design Automation (EDA). You parse SPICE-style codebases to explain nodal analysis, matrix solvers, and iteration logic."
+    },
+    "technical_author": {
+      "role": "Lead Technical Book Author",
+      "goal": "Transform mathematical code extraction into polished book chapters.",
+      "backstory": "You write advanced reference material for hardware engineers. You turn dense C logic and matrix math into structured Markdown chapters suitable for a textbook."
+    }
+  },
+  "tasks": {
+    "research": {
+      "description": "Use your FileReadTool(s) to read: {filenames_str}. {research_prompt} Identify the exact C structs, variables, and pointers used. Do not summarize broadly; provide a rigorous mathematical and programmatic breakdown.",
+      "expected_output": "A dense, highly technical breakdown of the Ngspice algorithm, referencing specific C variables and math formulas."
+    },
+    "write_math": {
+      "description": "Using ONLY the research context provided by the Architect, draft the 'Mathematical Formulation' and 'Convergence Analysis' sections for the chapter '{chapter_title}'. You MUST explicitly relate the math to SPICE circuit simulation. Do not invent generic mathematical concepts. Output valid Markdown only.",
+      "expected_output": "Markdown sections detailing the SPICE mathematics extracted from the C file(s)."
+    },
+    "write_code": {
+      "description": "Using ONLY the research context provided by the Architect, draft the 'C Implementation' section for the chapter '{chapter_title}'. You MUST reference the specific C structs, functions, and logic found in the research. Explain how the C code maps to the math from the previous section. Do not write a generic C tutorial. Output valid Markdown only.",
+      "expected_output": "Markdown sections detailing the specific Ngspice C implementation."
+    },
+    "assemble": {
+      "description": "You are assembling a professional reference book about the Ngspice EDA codebase. Take the math markdown and the code markdown from the previous tasks regarding {filenames_str}. 1. Write a brief, highly technical introduction explaining what these files do in Ngspice for the chapter '{chapter_title}'. 2. Seamlessly append the math and code sections below it. 3. Ensure smooth transitions between sections. DO NOT alter the technical facts provided in the previous tasks. Output the final, valid Markdown chapter.",
+      "expected_output": "A complete, cohesive, and highly accurate Ngspice book chapter in Markdown."
+    }
+  }
+}

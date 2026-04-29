@@ -54,3 +54,10 @@ Thumbs.db
 
 # Optional: keep local Cursor state out of the repo
 # .cursor/
+
+# CrewAI Ngspice Book Factory (generated output & local overrides)
+crewai/output/
+crewai/logs/
+crewai/config.local.yaml
+!crewai/.env.example
+
