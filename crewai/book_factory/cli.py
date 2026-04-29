@@ -14,7 +14,12 @@ from .config import parse_yaml_file, resolve_book_factory_settings
 from .constants import CREWAI_DIR, LOGGER_NAME, USE_FAST_RESEARCH
 from .console import err, line, step, title, warn
 from .exceptions import BookFactoryError, BookFactoryConfigError, BookFactoryIOError
-from .ledger import load_chapter_ledger, report_ledger_source_scan, scan_ledger_source_files
+from .ledger import (
+    load_chapter_ledger,
+    report_ledger_source_scan,
+    require_ledger_sources_exist,
+    scan_ledger_source_files,
+)
 from .llm import build_llms
 from .logging_setup import configure_logging
 from .pipeline import run_chapter
@@ -160,6 +165,7 @@ def main() -> None:
 
         ledger_scan = scan_ledger_source_files(chapter_ledger, cfg.source_root)
         report_ledger_source_scan(ledger_scan, source_root=cfg.source_root)
+        require_ledger_sources_exist(ledger_scan)
 
         project_prompts = load_project_prompts(cfg.prompts_json)
         validate_research_template(project_prompts)

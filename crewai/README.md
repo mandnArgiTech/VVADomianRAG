@@ -71,6 +71,22 @@ python crewai/ngspice_book_factory.py --config crewai/config.yaml
 
 Ensure `source_root` in config (or defaults) points at your Ngspice tree and that `output_dir` exists or can be created.
 
+## Oracle path validation (kinematica and other ledgers)
+
+Relative paths in `oracle_*.json` must resolve under `source_root`. Before long batch runs:
+
+1. Use an ArduPilot checkout that matches what you ingest into RAG (same branch or commit).
+2. Initialise git submodules needed by the oracle (for example `modules/ChibiOS`, `modules/DroneCAN/libcanard`, and `modules/mavlink` when chapters reference those trees).
+3. From `crewai/` with `PYTHONPATH=.` (or from the repo root with `PYTHONPATH=crewai`), run:
+
+   ```bash
+   python scripts/validate_oracle_paths.py oracle_kinematica.json /path/to/ardupilot
+   ```
+
+   Exit code `0` means every `(chapter, path)` exists; non‑zero prints `MISSING (n):` with `[chapter_key] relative/path` lines.
+
+The book factory CLI loads the ledger at startup, scans sources with `scan_ledger_source_files`, prints the usual audit, then **aborts with `BookFactoryConfigError`** if any path is missing—so missing oracle entries fail fast instead of producing empty research context.
+
 ## Operational notes
 
 - Long runs: `deepseek-reasoner` can pause for many minutes; the factory logs heartbeats so you can tell the process is alive.

@@ -78,6 +78,18 @@ def report_ledger_source_scan(result: LedgerSourceScanResult, *, source_root: Pa
         log.warning("Missing source file: chapter=%s rel=%s path=%s", md_key, rel, abs_path)
 
 
+def require_ledger_sources_exist(result: LedgerSourceScanResult) -> None:
+    """Raise BookFactoryConfigError if any ledger path does not resolve to a file."""
+    if not result.missing:
+        return
+    lines = [f"  [{ch}]  {rel}" for ch, rel, _ in result.missing]
+    msg = (
+        f"{len(result.missing)} source file(s) missing under source_root:\n"
+        + "\n".join(lines)
+    )
+    raise BookFactoryConfigError(msg)
+
+
 def load_chapter_ledger(ledger_json: Path) -> dict[str, dict[str, Any]]:
     """Return output filename -> {chapter_title, files, research_prompt}."""
     if not ledger_json.is_file():
