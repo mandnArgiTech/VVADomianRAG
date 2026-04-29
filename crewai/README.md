@@ -87,6 +87,24 @@ Relative paths in `oracle_*.json` must resolve under `source_root`. Before long 
 
 The book factory CLI loads the ledger at startup, scans sources with `scan_ledger_source_files`, prints the usual audit, then **aborts with `BookFactoryConfigError`** if any path is missing—so missing oracle entries fail fast instead of producing empty research context.
 
+## Validating configs before commit
+
+Run from repository root:
+
+```bash
+python crewai/scripts/validate_configs.py
+```
+
+This catches:
+
+- Malformed chapter keys
+- Duplicate or out-of-sequence chapter numbers (for ledgers numbered from chapter 1)
+- Missing required fields (`chapter_title`, `files`, `research_prompt`, …)
+- Empty file lists
+- Project-prompt `.format()` placeholders the pipeline cannot supply
+
+The book factory CLI runs these validators **before** filesystem source scans and before any LLM calls; it exits with code `2` if validation fails.
+
 ## Operational notes
 
 - Long runs: `deepseek-reasoner` can pause for many minutes; the factory logs heartbeats so you can tell the process is alive.

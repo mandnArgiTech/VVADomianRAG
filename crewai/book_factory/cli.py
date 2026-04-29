@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -24,6 +25,7 @@ from .llm import build_llms
 from .logging_setup import configure_logging
 from .pipeline import run_chapter
 from .prompts import load_project_prompts, validate_research_template
+from .schemas import validate_oracle, validate_project_prompts
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -115,6 +117,24 @@ def load_yaml_config(args: argparse.Namespace) -> tuple[Path | None, dict]:
     return None, {}
 
 
+def _validate_inputs(
+    oracle: dict,
+    prompts: dict,
+    *,
+    oracle_name: str,
+    prompts_name: str,
+) -> None:
+    errors: list[str] = []
+    errors += validate_oracle(oracle, name=oracle_name)
+    errors += validate_project_prompts(prompts, name=prompts_name)
+    if errors:
+        log = logging.getLogger(LOGGER_NAME)
+        log.error("Configuration validation failed (%d issues):", len(errors))
+        for e in errors:
+            log.error("  %s", e)
+        raise SystemExit(2)
+
+
 def main() -> None:
     script_dir = CREWAI_DIR
     parser = build_arg_parser()
@@ -162,6 +182,14 @@ def main() -> None:
                 )
 
             chapter_ledger = {name: chapter_ledger[name] for name in args.chapters}
+
+        prompts_raw = json.loads(cfg.prompts_json.read_text(encoding="utf-8"))
+        _validate_inputs(
+            chapter_ledger,
+            prompts_raw,
+            oracle_name=cfg.ledger_json.name,
+            prompts_name=cfg.prompts_json.name,
+        )
 
         ledger_scan = scan_ledger_source_files(chapter_ledger, cfg.source_root)
         report_ledger_source_scan(ledger_scan, source_root=cfg.source_root)
