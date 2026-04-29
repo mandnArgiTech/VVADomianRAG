@@ -1,0 +1,254 @@
+# https://help.github.com/en/articles/workflow-syntax-for-github-actions
+
+name: CI Linux
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+  schedule:
+    - cron: "0 2 * * 0,3"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.ref != 'refs/heads/main' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!.github/workflows/cache_*.yml'
+              - '!docker/dev/**'
+              - '!docs/**'
+              - '!.readthedocs.yml'
+              - '!tutorials/**'
+              - '!**/*.md'
+              - '!**/*.rst'
+              - '!**/*.po'
+              - '!**/*.pot'
+
+  coverage:
+    needs: changes
+    # Skip for workflow_dispatch; bypass changes gate for schedule (no file-change payload)
+    if: github.event_name != 'workflow_dispatch' && (github.event_name == 'schedule' || needs.changes.outputs.code == 'true')
+    name: Coverage (Debug)
+    runs-on: ubuntu-latest
+    env:
+      DART_PARALLEL_JOBS: 8
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pixi (CI)
+        uses: ./.github/actions/setup-pixi-ci
+        with:
+          pixi-bin-path: ${{ runner.temp }}/pixi/bin/pixi
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: libgl1-mesa-dev libglu1-mesa-dev
+          version: 2
+
+      - name: Configure environment for compiler cache
+        uses: ./.github/actions/configure-compiler-cache
+
+      - name: Build and generate coverage report
+        run: |
+          DART_VERBOSE=ON \
+          BUILD_TYPE=Debug \
+          pixi run coverage-report
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  build-release:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true'
+    name: Release Tests
+    runs-on: ubuntu-latest
+    env:
+      DART_PARALLEL_JOBS: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pixi (CI)
+        uses: ./.github/actions/setup-pixi-ci
+        with:
+          pixi-bin-path: ${{ runner.temp }}/pixi/bin/pixi
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: libgl1-mesa-dev libglu1-mesa-dev
+          version: 2
+
+      - name: Configure environment for compiler cache
+        uses: ./.github/actions/configure-compiler-cache
+
+      - name: Test DART and dartpy
+        run: |
+          DART_VERBOSE=ON \
+          BUILD_TYPE=Release \
+          DART_BUILD_SIMULATION_EXPERIMENTAL_OVERRIDE=OFF \
+          pixi run test-all
+
+      - name: Test with AddressSanitizer
+        run: |
+          DART_VERBOSE=ON \
+          pixi run test-asan
+
+      - name: Install
+        run: |
+          DART_VERBOSE=ON \
+          BUILD_TYPE=Release \
+          pixi run install
+
+  build-debug:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true'
+    name: Debug Tests
+    runs-on: ubuntu-latest
+    env:
+      DART_PARALLEL_JOBS: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pixi (CI)
+        uses: ./.github/actions/setup-pixi-ci
+        with:
+          pixi-bin-path: ${{ runner.temp }}/pixi/bin/pixi
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: libgl1-mesa-dev libglu1-mesa-dev
+          version: 2
+
+      - name: Configure environment for compiler cache
+        uses: ./.github/actions/configure-compiler-cache
+
+      - name: Test DART and dartpy
+        run: |
+          DART_VERBOSE=ON \
+          BUILD_TYPE=Debug \
+          DART_BUILD_SIMULATION_EXPERIMENTAL_OVERRIDE=OFF \
+          pixi run test-all
+
+  build-asserts:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true'
+    name: Asserts enabled (no -DNDEBUG)
+    runs-on: ubuntu-latest
+    env:
+      DART_PARALLEL_JOBS: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pixi (CI)
+        uses: ./.github/actions/setup-pixi-ci
+        with:
+          pixi-bin-path: ${{ runner.temp }}/pixi/bin/pixi
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: libgl1-mesa-dev libglu1-mesa-dev
+          version: 2
+
+      - name: Configure environment for compiler cache
+        uses: ./.github/actions/configure-compiler-cache
+
+      - name: Build with assertions (no -DNDEBUG)
+        run: |
+          # NOTE: pixi tasks set BUILD_TYPE internally, so configure this
+          # variant explicitly to ensure NDEBUG is not defined.
+          pixi run -- bash -lc '
+            set -euo pipefail
+            BUILD_TYPE=None
+            DART_VERBOSE=ON
+            cmake \
+              -G Ninja \
+              -S . \
+              -B build/$PIXI_ENVIRONMENT_NAME/cpp/$BUILD_TYPE \
+              -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
+              -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+              -DCMAKE_PREFIX_PATH=$CONDA_PREFIX \
+              -DDART_BUILD_DARTPY=ON \
+              -DDART_BUILD_COLLISION_BULLET=ON \
+              -DDART_BUILD_PROFILE=ON \
+              -DDART_USE_SYSTEM_GOOGLEBENCHMARK=ON \
+              -DDART_USE_SYSTEM_GOOGLETEST=ON \
+              -DDART_USE_SYSTEM_IMGUI=ON \
+              -DDART_USE_SYSTEM_TRACY=ON \
+              -DDART_VERBOSE=$DART_VERBOSE
+            cmake --build build/$PIXI_ENVIRONMENT_NAME/cpp/$BUILD_TYPE -j
+          '
+
+  headless-rendering:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true'
+    name: Headless Rendering Tests
+    runs-on: ubuntu-latest
+    env:
+      DART_PARALLEL_JOBS: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pixi (CI)
+        uses: ./.github/actions/setup-pixi-ci
+        with:
+          pixi-bin-path: ${{ runner.temp }}/pixi/bin/pixi
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: libgl1-mesa-dev libglu1-mesa-dev xvfb mesa-utils
+          version: 3
+
+      - name: Configure environment for compiler cache
+        uses: ./.github/actions/configure-compiler-cache
+
+      - name: Build examples
+        run: |
+          DART_VERBOSE=ON \
+          BUILD_TYPE=Release \
+          pixi run build-examples
+
+      - name: Run headless rendering test (rigid_cubes)
+        run: |
+          mkdir -p /tmp/headless_output
+          xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" \
+            ./build/default/cpp/Release/bin/rigid_cubes \
+            --headless --frames 10 --out /tmp/headless_output
+          echo "Captured frames:"
+          ls -la /tmp/headless_output/
+          test -f /tmp/headless_output/frame_000000.png
+          test -f /tmp/headless_output/frame_000008.png
+          file /tmp/headless_output/frame_000000.png | grep -q "PNG image data"
+          echo "Headless rendering test passed!"

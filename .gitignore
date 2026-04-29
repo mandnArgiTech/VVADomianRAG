@@ -61,3 +61,29 @@ crewai/logs/
 crewai/config.local.yaml
 !crewai/.env.example
 
+# ---------------------------------------------------------------------------
+# Vendored upstream codebases (sources tracked in this repo; nested .git removed).
+# Build / IDE / local tool outputs — keep trees clean when developers build locally.
+# ---------------------------------------------------------------------------
+
+# ROS 2 / Nav2 — colcon defaults (also match if someone builds from repo root)
+Studio-Portable-RAG/Codebase/navigation2/build/
+Studio-Portable-RAG/Codebase/navigation2/install/
+Studio-Portable-RAG/Codebase/navigation2/log/
+Studio-Portable-RAG/Codebase/navigation2/cmake-build-*/
+
+# Xyce — autotools / out-of-tree build
+Studio-Portable-RAG/Codebase/Xyce/build/
+Studio-Portable-RAG/Codebase/Xyce/autom4te.cache/
+Studio-Portable-RAG/Codebase/Xyce/Xyce_Regression/
+
+# DART — CMake / coverage scratch
+Studio-Portable-RAG/Codebase/dart/build/
+Studio-Portable-RAG/Codebase/dart/.build/
+Studio-Portable-RAG/Codebase/dart/htmlcov/
+Studio-Portable-RAG/Codebase/dart/coverage_html/
+
+# MuJoCo — CMake / Python build dirs
+Studio-Portable-RAG/Codebase/mujoco/build/
+Studio-Portable-RAG/Codebase/mujoco/build_cmake/
+

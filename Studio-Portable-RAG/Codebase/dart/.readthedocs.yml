@@ -1,0 +1,27 @@
+# Read the Docs configuration file
+# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
+
+# Required for Sphinx to work properly
+version: 2
+
+# Set the OS, Python version and other tools you might need
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+  apt_packages:
+    - doxygen
+
+# Build configuration
+sphinx:
+  configuration: docs/readthedocs/conf.py
+  # Note: fail_on_warning is disabled because autodoc still emits warnings for
+  # a few templates while dartpy's API surface continues to evolve.
+
+# Required dependencies for building Sphinx documentation
+python:
+  install:
+    - requirements: docs/readthedocs/requirements.txt
+
+# Build output
+formats: all

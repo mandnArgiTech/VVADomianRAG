@@ -1,0 +1,98 @@
+# https://help.github.com/en/articles/workflow-syntax-for-github-actions
+
+name: CI Windows
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+  schedule:
+    - cron: "0 2 * * 0,3"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.ref != 'refs/heads/main' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!.github/workflows/cache_*.yml'
+              - '!docker/dev/**'
+              - '!docs/**'
+              - '!.readthedocs.yml'
+              - '!tutorials/**'
+              - '!**/*.md'
+              - '!**/*.rst'
+              - '!**/*.po'
+              - '!**/*.pot'
+
+  build:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true'
+    name: Tests (${{ matrix.build_type }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: ["Release"] # Windows CI keeps Release-only to keep runtimes acceptable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pixi (CI)
+        uses: ./.github/actions/setup-pixi-ci
+        with:
+          cache: false
+          run-install: false
+          self-hosted-install: false
+          pixi-bin-path: ${{ runner.temp }}/pixi/bin/pixi.exe
+
+      - name: Configure environment for compiler cache
+        shell: powershell
+        run: |
+          if ($env:ACTIONS_CACHE_URL) {
+            echo "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            echo "SCCACHE_GHA_ENABLED=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+          echo "SCCACHE_NO_DAEMON=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "DART_COMPILER_CACHE=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($env:SCCACHE_PATH) {
+            echo "CMAKE_C_COMPILER_LAUNCHER=$env:SCCACHE_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=$env:SCCACHE_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            echo "CMAKE_C_COMPILER_LAUNCHER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+          $ccacheDir = Join-Path $env:RUNNER_TEMP "ccache"
+          New-Item -ItemType Directory -Force -Path $ccacheDir | Out-Null
+          echo "CCACHE_BASEDIR=$env:GITHUB_WORKSPACE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "CCACHE_DIR=$ccacheDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "CCACHE_COMPRESS=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "CCACHE_MAXSIZE=5G" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # Lint checks are now centralized to Ubuntu Release build only
+      # See ci_ubuntu.yml for the single source of lint validation
+
+      - name: Test DART (dartpy disabled)
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:DART_VERBOSE = "ON"
+          $env:BUILD_TYPE = "${{ matrix.build_type }}"
+          pixi run test-no-plane OFF
+
+      # Skip install on Windows to keep job runtimes within limits; Linux covers install path.

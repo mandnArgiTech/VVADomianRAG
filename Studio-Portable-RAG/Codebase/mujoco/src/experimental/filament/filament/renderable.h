@@ -1,0 +1,171 @@
+// Copyright 2025 DeepMind Technologies Limited
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLE_H_
+#define MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLE_H_
+
+#include <cstdint>
+#include <vector>
+
+#include <filament/Engine.h>
+#include <filament/Scene.h>
+#include <utils/Entity.h>
+#include "experimental/filament/filament/draw_mode.h"
+#include "experimental/filament/filament/material.h"
+#include "experimental/filament/filament/mesh.h"
+#include "experimental/filament/filament/object_manager.h"
+
+namespace mujoco {
+
+// A collection of meshes and a material that, together, define an object that
+// can be rendered in a scene.
+//
+// Meshes can be added to the Renderable either by unique_ptr or raw pointer.
+// This determines whether or not the Renderable takes ownership of the mesh.
+//
+// Internally, the Renderable creates a filament::Entity for each mesh and
+// assigns the same material instance to all of them.
+class Renderable {
+ public:
+  // How the material is to be used for rendering.
+  enum class Usage {
+    SceneObject,
+    Decor,
+    DecorLines,
+    Ux,
+  };
+
+  // Default filament values for priority and layer mask.
+  static constexpr std::uint8_t kDefaultPriority = 4;
+  static constexpr std::uint8_t kDefaultLayerMask = 0x01;
+
+  Renderable(Usage usage, ObjectManager* object_mgr);
+  ~Renderable() noexcept;
+
+  Renderable(const Renderable&) = delete;
+  Renderable& operator=(const Renderable&) = delete;
+
+  // Appends a mesh to the renderable. The elem_offset and elem_count parameters
+  // can be used to specify a submesh to append. If elem_count is 0, assumes
+  // the entire mesh should be appended.
+  void AppendMesh(const Mesh* mesh, int elem_offset = 0, int elem_count = 0);
+  void AppendMesh(MeshPtr mesh, int elem_offset = 0, int elem_count = 0);
+
+  // Replaces the mesh at the index with a new mesh. The elem_offset and
+  // elem_count parameters can be used to specify a submesh to append. If
+  // elem_count is 0, assumes the entire mesh should be appended.
+  void UpdateMesh(int index, const Mesh* mesh, int elem_offset = 0,
+              int elem_count = 0);
+  void UpdateMesh(int index, MeshPtr mesh, int elem_offset = 0,
+                  int elem_count = 0);
+
+  // Returns the number of meshes that define the renderable.
+  int GetNumMeshes() const { return meshes_.size(); }
+
+  // Sets the layer mask for the managed filament Entities. Layer masks can be
+  // used to show/hide the renderable in different views. Returns the previous
+  // layer mask.
+  std::uint8_t SetLayerMask(std::uint8_t mask);
+
+  // Sets the priority for the managed filament Entities. The priority
+  // determines the order in which renderables are rendered. Returns the
+  // previous priority.
+  std::uint8_t SetPriority(std::uint8_t priority);
+
+  // Sets the blend order of the managed filament entities. This determines the
+  // order in which renderables are blended together. Returns the previous blend
+  // order.
+  std::uint16_t SetBlendOrder(std::uint16_t blend_order);
+
+  // Disables the renderable from casting shadows.
+  void SetCastShadows(bool cast_shadows);
+
+  // Disables the renderable from receiving shadows.
+  void SetReceiveShadows(bool receive_shadows);
+
+  // If true, forces all meshes to be rendered using Lines primitives.
+  void SetWireframe(bool wireframe);
+
+  // Adds the renderable to the given filament Scene.
+  void AddToScene(filament::Scene* scene);
+
+  // Removes the renderable from the given filament Scene.
+  void RemoveFromScene(filament::Scene* scene);
+
+  // Sets the material instance for all managed entities.
+  void SetDrawMode(DrawMode mode);
+
+  // Updates the parameters for the material.
+  void UpdateMaterial(const MaterialParams& params,
+                      const MaterialTextures& textures);
+
+  // Returns the current material parameters.
+  const MaterialParams& GetMaterialParams() const;
+
+  // Returns the current material textures.
+  const MaterialTextures& GetMaterialTextures() const;
+
+  // Returns the filament Engine managing the renderables.
+  filament::Engine* GetEngine();
+
+  // Returns the underlying filament::entity for the given mesh.
+  utils::Entity operator[](int index) { return entities_[index]; }
+
+ private:
+  struct MeshInfo {
+    MeshPtr owned_mesh;
+    const Mesh* mesh = nullptr;
+    int elem_offset = 0;
+    int elem_count = 0;
+  };
+
+  // Sets the mesh information for the mesh at the given index. If index is -1,
+  // a new mesh will be appended to the renderable.
+  MeshInfo& SetMesh(int index, const Mesh* mesh, MeshPtr owned_mesh,
+                    int elem_offset, int elem_count);
+
+  // Appends a new filament::Entity to the renderable, configured to use the
+  // given mesh.
+  void AppendEntity(const MeshInfo& mesh_info);
+
+  // Updates the filament::Entity at the given index to use the given mesh.
+  void UpdateEntity(int index, const MeshInfo& mesh_info);
+
+  // Removes the last filament::Entity from the renderable.
+  void RemoveLastEntity();
+
+  void AssignMaterial(DrawMode mode, ObjectManager::MaterialType material_type);
+
+  ObjectManager::MaterialType GetColorMaterialType() const;
+
+  Usage usage_;
+  ObjectManager* object_mgr_;
+  filament::MaterialInstance* instances_[kNumDrawModes] = {nullptr};
+  MaterialParams params_;
+  MaterialTextures textures_;
+  DrawMode draw_mode_ = DrawMode::Color;
+  filament::Scene* assigned_scene_ = nullptr;
+  std::vector<utils::Entity> entities_;
+  std::vector<MeshInfo> meshes_;
+  std::uint8_t priority_ = kDefaultPriority;
+  std::uint8_t layer_mask_ = kDefaultLayerMask;
+  std::uint16_t blend_order_ = 0;
+  bool wireframe_ = false;
+  bool cast_shadows_ = true;
+  bool receive_shadows_ = true;
+};
+
+}  // namespace mujoco
+
+#endif  // MUJOCO_SRC_EXPERIMENTAL_FILAMENT_FILAMENT_RENDERABLE_H_

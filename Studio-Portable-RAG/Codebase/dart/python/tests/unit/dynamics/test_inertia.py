@@ -1,0 +1,76 @@
+import math
+import platform
+
+import dartpy as dart
+import numpy as np
+import pytest
+
+
+def test_inertia_init():
+    """
+    Test basic functionality for the `dartpy.dynamics.Inertia` class.
+    """
+    # test default values
+    i1 = dart.Inertia()
+    assert i1 is not None
+
+    # initialize with parameters
+    i2 = dart.Inertia(0.1, [0, 0, 0], 1.3 * np.eye(3))
+    assert i1 is not None
+
+    newMass = 1.5
+    i2.set_mass(newMass)
+    assert i2.get_mass() == newMass
+
+    newCOM = np.array((0.1, 0, 0))
+    i2.set_local_com(newCOM)
+    assert np.allclose(i2.get_local_com(), newCOM)
+
+    newMoment = 0.4 * newMass * 0.1**2 * np.eye(3)
+    i2.set_moment(newMoment)
+    assert np.allclose(i2.get_moment(), newMoment)
+
+    i2.set_spatial_tensor(0.3 * i2.get_spatial_tensor())
+
+    assert i2.verify()
+
+    for i in range(10):  # based on the C++ tests
+        mass = np.random.uniform(0.1, 10.0)
+        com = np.random.uniform(-5, 5, 3)
+        I = np.random.rand(3, 3) - 0.5 + np.diag(np.random.uniform(0.6, 1, 3), 0)
+        I = (I + I.T) / 2
+
+        inertia = dart.Inertia(mass, com, I)
+        assert inertia.verify()
+
+
+def test_inertia_static_methods():
+    """
+    Test the class methods `verifyMoment`and `verifySpatialTensor`.
+    """
+    assert dart.Inertia.verify_moment(np.eye(3), print_warnings=False)
+    for i in range(10):
+        I = np.random.rand(3, 3) - 0.5 + np.diag(np.random.uniform(1, 10, 3), 0)
+        I = (I + I.T) / 2
+        assert dart.Inertia.verify_moment(I)
+
+    assert dart.Inertia.verify_spatial_tensor(np.eye(6), print_warnings=False)
+
+
+def test_failing_moment_and_spatial():
+    """
+    Test some failure cases of the verify methods.
+    """
+
+    for i in range(10):
+        I = np.random.rand(3, 3) - 0.5 - np.diag(np.random.uniform(1, 10, 3), 0)
+        assert not dart.Inertia.verify_moment(I, print_warnings=False)
+
+    # fails e.g. due to off diagonal values in translational part.
+    assert not dart.Inertia.verify_spatial_tensor(
+        np.random.rand(6, 6), print_warnings=False
+    )
+
+
+if __name__ == "__main__":
+    pytest.main()

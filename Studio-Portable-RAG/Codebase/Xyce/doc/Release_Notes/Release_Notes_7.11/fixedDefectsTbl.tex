@@ -1,0 +1,124 @@
+% Sandia National Laboratories is a multimission laboratory managed and
+% operated by National Technology & Engineering Solutions of Sandia, LLC, a
+% wholly owned subsidiary of Honeywell International Inc., for the U.S.
+% Department of Energy's National Nuclear Security Administration under
+% contract DE-NA0003525.
+
+% Copyright 2002-2025 National Technology & Engineering Solutions of Sandia,
+% LLC (NTESS).
+
+%%
+%% Fixed Defects.
+%%
+{
+\small
+
+\begin{longtable}[h] {>{\raggedright\small}m{2in}|>{\raggedright\let\\\tabularnewline\small}m{3.5in}}
+    \caption{Fixed Defects.  The Xyce team has multiple issue
+     trackers, and the table below indicates fixed issues by
+     indentifying both the tracker and the issue number.  Further,
+     some issues are reported by open source users on GitHub and these
+     issues may be tracked using multiple issue numbers.} \\ \hline
+     \rowcolor{XyceDarkBlue} \color{white}\textbf{Defect} & \color{white}\textbf{Description} \\ \hline
+     \endfirsthead
+     \caption[]{Fixed Defects.  Note that we have two multiple issue tracking systems for Sandia Users.
+     SON and SRN refer to our legacy open- and restricted-network Bugzilla system, and Gitlab refers to issues in our gitlab repositories.  } \\ \hline
+     \rowcolor{XyceDarkBlue} \color{white}\textbf{Defect} & \color{white}\textbf{Description} \\ \hline
+     \endhead
+
+  \textbf{Xyce Project Backlog/888}: Xyce raw files (if specified via the command line "-r" argument) can incorrectly include adjoint sentivity text
+  &  There was a logic error in the output manager of \Xyce{}.  This has been fixed.
+  \\\hline
+
+  \textbf{Xyce Project Backlog/849}: Sensitivities don't work with PWL source & Analytical sensitivity functions were not implemented for independent sources.  Also PWL sources had unique parsing issues that prevented any kind of derivative from working.  These issues have been addressed.
+  \\\hline
+
+  \textbf{Xyce Project Backlog/977}: Fix plugin capability to handle multiple verilog plugins & There was an error in the handling of plugins that were specified using a comma-separated list on the command line.  This meant that \Xyce{} didn't operate correctly with more than two plugins.  This has been fixed.
+  \\\hline
+  
+  \textbf{Xyce Project Backlog/979}: Fix incorrect output of FD ASCII rawfile in sweeps & There was a logic error in the output manager of \Xyce{} that overwrites the number of points in a Raw ASCII file for AC analysis.  This has been fixed.
+  \\\hline
+
+  \textbf{Xyce Project Backlog/988}: Fix the capacitance issue in the BSIM SOI 4.6.1 &  There was an error in one of the capacitance models of the BSIM SOI version 4.6.1, resulting in a capacitance that was too large.  This was not fixed in the official version of the 4.6.1 from the BSIM group, but was fixed in the 4.6.1 implementation of commercial simulators.  As such, we chose to fix it in our own implementation. 
+  \\\hline
+
+  \textbf{Xyce Project Backlog/990}:  Usage text misrepresents how the \texttt{-param} command line feature can be used &  
+  The command line argument \texttt{-param} is used to obtain parameter lists and defaults for device models.  
+  If specified with no additional arguments, parameters for all models are printed to standard output.  
+  If specified with additional arguments (such as \texttt{Q 1}), then the parameters associated with the specified model are output, if the model exists.  
+  The option using additional arguments did not work, unconditionally producing empty output. This is fixed now.
+  \\\hline
+
+  \textbf{Xyce Project Backlog/995}: Make MEASFAIL option consistent in Xyce's general output &  Failed measures now output their value to standard output along with failed text for easier parsing.
+  \\\hline
+
+  \textbf{Xyce Project Backlog/1006}: 
+  Fix runaway memory problem for radiation function types other than seven &  There was a bookkeeping error that caused memory usage to grow a small amount at every time step.  This has been fixed.
+  \\\hline
+
+  \textbf{Xyce Project Backlog/1029}: Uninitialized member variable caused error in sanitizer build
+    &  An uninitialized variable in NLParams caused errors in a sanitizer build of Xyce when the uninitialized
+    variable was used in a copy or assignment constructor.  This issue did not cause errors in Xyce's operation 
+    but it was technically incorrect.  It has been fixed. 
+  \\\hline
+ 
+  \textbf{Xyce Project Backlog/1025}:
+    &  Numerous places in Xyce are returning the underlying data pointer to the 0-th entry of an empty (multi)vector.
+       This did not cause errors in Xyce's operation, but is not safe, so it has been fixed.
+  \\\hline
+
+  \textbf{Xyce Project Backlog/1028}:
+    &  An integer array is being generated in the analysis manager using a number that is not
+       constant at compile time.  This has been fixed to remove the warning on non-Clang compilers.
+  \\\hline
+
+\textbf{Xyce Project Backlog/1030}: Fix error in Analysis::Mode enum
+  &  The output manager was extending the Analysis::Mode enum for its own signaling for output
+     generation.  This was flagged as an error by a sanitizer build of Xyce.  The issue has been fixed.
+  \\\hline
+  
+\textbf{Xyce Project Backlog/1031}: Fix potential null pointer binding to reference
+  &  A few devices were assigning a potentially null pointer to a reference.  This caused
+  an error in a sanitizer build of Xyce but was not causing an error in Xyce because the 
+  null pointers were never dereferenced.  It has been fixed.
+  \\\hline
+
+\textbf{Xyce Project Backlog/1032}: Fix binding NULL pointer to reference 
+  &  During the remeasure process a null pointer for a step-error-control object was assigned to
+  a reference.  The step-error-control object is not needed for remeasure so this didn't effect
+  the code, but it is a poor construct.  The null reference has been corrected.
+  \\\hline  
+  
+ \textbf{Xyce Project Backlog/1034}: HB tests fail in sanitizer builds
+  &  HB tests were failing in sanitizer builds of Xyce because a NULL pointer for the
+  jacobian was assigned to a reference.  This did not effect the results but is technicall
+  wrong.  It has been fixed.
+  \\\hline  
+  
+\textbf{Xyce Project Backlog/1035}: Restart test fails in sanitizer build with NULL pointer binding
+  &  A restart test was using a NULL pointer in a memory copy operation.  It did not effect
+  normal restart operation but was incorrect.  This issue has been fixed.
+  \\\hline
+  
+\textbf{Xyce Project Backlog/1038}: Use of schedule function on transient line leaked memory
+  &  Using a time dependent function for the max time step, such as the schedule function,
+  leaked memory in transient simulations.  This has been fixed.
+  \\\hline
+
+\textbf{Xyce Project Backlog/1041}: Uninitialized variable cased test failure in sanitizer build
+  &  An uninitialized variable in the PCE class caused a test failure in a sanitizer build of Xyce.  
+  This issue has been fixed.
+  \\\hline
+  
+\textbf{Xyce Project Backlog/1042}: DiodePDE did not free all boundary condition vectors.
+  &  The diode PDE device dynamically allocates some boundary condition vectors and those
+  were not deleted when the simulation finished.  This has been fixed.
+  \\\hline
+   
+\textbf{Xyce Project Backlog/xxx}: Description
+  &  Details
+  \\\hline
+
+
+\end{longtable}
+}

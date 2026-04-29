@@ -1,0 +1,8 @@
+jinja2>=3.1.2
+myst-parser
+sphinx
+sphinx-copybutton
+sphinx-intl
+sphinx_rtd_theme
+sphinx-tabs
+dartpy==6.16.0

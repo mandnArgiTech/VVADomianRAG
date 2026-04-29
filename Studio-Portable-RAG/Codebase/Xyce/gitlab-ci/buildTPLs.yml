@@ -1,0 +1,203 @@
+include:
+  - gitlab-ci/variables/build-var-sets.yml
+
+.build_tpls:
+  extends: .build_base
+  dependencies: []
+  stage: buildTPLs
+  script:
+    # clone relevant repos
+    - |
+      if [ ! -d SuiteSparse ]; then
+        git clone https://github.com/DrTimothyAldenDavis/SuiteSparse.git
+      fi
+      if [ ! -d Trilinos ]; then
+        git clone git@cee-gitlab.sandia.gov:ramsesmodsim/devops/Trilinos.git
+      fi
+      if [ ! -d ADMS ]; then
+        git clone git@cee-gitlab.sandia.gov:Xyce/auxiliary/ADMS.git
+      fi
+    #########################################################################
+    #########################################################################
+    # build ADMS
+    - cd ${CI_PROJECT_DIR}/ADMS
+    - git checkout ${ADMSVersion} || (echo "Failed to checkout ADMS version ${ADMSVersion}";exit 1)
+    - git pull || true # if ADMSVersion is a tag this will fail, so ignore
+    - mkdir -p ${CI_PROJECT_DIR}/build/adms
+    - cd ${CI_PROJECT_DIR}/build/adms
+    - cmake
+        -GNinja
+        -DCMAKE_BUILD_TYPE=${cmakeBuildType}
+        -DCMAKE_INSTALL_PREFIX="${admsInstallDir}/${optStr}"
+        "${CI_PROJECT_DIR}/ADMS"
+    - ninja ${VerboseNinja} install 2>&1 | tee ${CI_PROJECT_DIR}/logFiles/ninja-log.adms.txt
+    #########################################################################
+    #########################################################################
+    # build SuiteSparse
+    - cd ${CI_PROJECT_DIR}/SuiteSparse
+    - git checkout ${SuiteSparseVersion} || (echo "Failed to checkout SuiteSparse version ${SuiteSparseVersion}";exit 1)
+    # build ss_cfg component of SuiteSparse
+    - mkdir -p ${CI_PROJECT_DIR}/build/ss
+    - cd ${CI_PROJECT_DIR}/build/ss
+    - cmake -GNinja
+        -DCMAKE_BUILD_TYPE=${cmakeBuildType}
+        -DNOPENMP="ON"
+        -DALLOW_64BIT_BLAS="ON"
+        -DCMAKE_INSTALL_RPATH="${ssInstallDir}/${optStr}/${libTypeStr}/lib64"
+        -DCMAKE_INSTALL_PREFIX="${ssInstallDir}/${optStr}/${libTypeStr}"
+        -DCMAKE_POSITION_INDEPENDENT_CODE="ON"
+        -DBUILD_SHARED_LIBS="${buildShared}"
+        -DBUILD_STATIC_LIBS="${buildStatic}"
+        -DSUITESPARSE_ENABLE_PROJECTS="suitesparse_config;amd"
+        "${CI_PROJECT_DIR}/SuiteSparse"
+    - ninja ${VerboseNinja} install 2>&1 | tee ${CI_PROJECT_DIR}/logFiles/ninja-log.ss.txt
+    #########################################################################
+    #########################################################################
+    # build trilinos
+    - cd ${CI_PROJECT_DIR}/Trilinos
+    - git checkout -f ${TrilinosVersion} || (echo "Failed to checkout Trilinos version ${TrilinosVersion}";exit 1)
+    - |
+      mkdir -p ${CI_PROJECT_DIR}/build/trilinos
+      cd ${CI_PROJECT_DIR}/build/trilinos
+      cmakeExtraArgs="-GNinja;"
+      cmakeExtraArgs+="-DAMD_LIBRARY_DIRS=${ssInstallDir}/${optStr}/${libTypeStr}/lib64;"
+      cmakeExtraArgs+="-DAMD_INCLUDE_DIRS=${ssInstallDir}/${optStr}/${libTypeStr}/include/suitesparse;"
+      cmakeExtraArgs+="-DAMD_LIBRARY_NAMES=amd\;suitesparse_config;"
+      cmakeExtraArgs+="-DCMAKE_INSTALL_PREFIX=${trilinosInstallDir}/${optStr}/${libTypeStr};"
+      cmakeExtraArgs+="-DCMAKE_POSITION_INDEPENDENT_CODE=ON;"
+      cmakeExtraArgs+="-DTrilinos_USE_GNUINSTALLDIRS=ON;"
+      cmakeExtraArgs+="-DCMAKE_BUILD_TYPE=${cmakeBuildType}"
+      # generate a concise version of trilinos for reporting
+      export WORKSPACE="${CI_PROJECT_DIR}"
+      shortTriVer=$(echo "${TrilinosVersion}"|sed 's/trilinos-release-//'|sed 's/-/./g')
+      ctest -DVERBOSITY=5 -DGROUP="Deploy" \
+        -DBUILD_SHARED="${buildShared}" \
+        -DBUILD_WITH_MPI="${BuildWithMPI}" \
+        -DBUILD_NAME="Trilinos/${shortTriVer}/${optStr}/${libTypeStr}-${archFullName}" \
+        -DBUILD_DIR="${CI_PROJECT_DIR}/build/trilinos" \
+        -DSITE_APPEND="" \
+        -DCMAKE_ARGS_LIST="${cmakeExtraArgs}" \
+        -S "${CI_PROJECT_DIR}/cmake/ctest/trilinos-ctest.cmake"
+      ninja ${VerboseNinja} install 2>&1 | tee ${CI_PROJECT_DIR}/logFiles/ninja-log.trilinos.${sharedFlag}.txt
+  cache:
+    key: "tpl-repo-cache-${SuiteSparseVersion}-${TrilinosVersion}-${ADMSVersion}"
+    paths:
+      - SuiteSparse/
+      - Trilinos/
+      - ADMS/
+  artifacts:
+    paths:
+      - logFiles
+    expire_in: 1 day
+  rules:
+    - if: $DO_TPL_BUILDS == "ON" && $CI_PIPELINE_SOURCE == "trigger"
+
+GNU_serial.dyn.buildTPLs:
+  extends:
+    - .build_tpls
+    - .gnu_serial_vars
+  variables:
+      buildShared: "ON"
+      buildStatic: "OFF"
+
+GNU_serial.dyn.Debug.buildTPLs:
+  extends:
+    - .build_tpls
+    - .gnu_serial_vars
+  variables:
+      buildShared: "ON"
+      buildStatic: "OFF"
+      cmakeBuildType: "Debug"
+
+GNU_serial.static.buildTPLs:
+  extends:
+    - .build_tpls
+    - .gnu_serial_vars
+  variables:
+    buildShared: "OFF"
+    buildStatic: "ON"
+  needs:
+    - GNU_serial.dyn.buildTPLs
+
+GNU_OpenMPI.dyn.Debug.buildTPLs:
+  variables:
+    buildShared: "ON"
+    buildStatic: "OFF"
+    cmakeBuildType: "Debug"
+  extends:
+    - .build_tpls
+    - .gnu_openmpi_vars
+
+GNU_OpenMPI.dyn.buildTPLs:
+  extends:
+    - .build_tpls
+    - .gnu_openmpi_vars
+  variables:
+    buildShared: "ON"
+    buildStatic: "OFF"
+
+GNU_OpenMPI.static.buildTPLs:
+  extends:
+    - .build_tpls
+    - .gnu_openmpi_vars
+  variables:
+    buildShared: "OFF"
+    buildStatic: "ON"
+  needs:
+    - GNU_OpenMPI.dyn.buildTPLs
+
+Intel_serial.dyn.buildTPLs:
+  extends:
+    - .build_tpls
+    - .intel_serial_vars
+  variables:
+    buildShared: "ON"
+    buildStatic: "OFF"
+
+Intel_serial.static.buildTPLs:
+  extends:
+    - .build_tpls
+    - .intel_serial_vars
+  variables:
+    buildShared: "OFF"
+    buildStatic: "ON"
+  needs:
+    - Intel_serial.dyn.buildTPLs
+
+Intel_OpenMPI.dyn.buildTPLs:
+  extends:
+    - .build_tpls
+    - .intel_openmpi_vars
+  variables:
+    buildShared: "ON"
+    buildStatic: "OFF"
+
+Intel_OpenMPI.static.buildTPLs:
+  extends:
+    - .build_tpls
+    - .intel_openmpi_vars
+  variables:
+    buildShared: "OFF"
+    buildStatic: "ON"
+  needs:
+    - Intel_OpenMPI.dyn.buildTPLs
+
+GNU_OpenMPI.cts.buildTPLs:
+  extends:
+    - .build_tpls
+    - .gnu_openmpi_cts_vars
+
+GNU_serial.cts.buildTPLs:
+  extends:
+    - .build_tpls
+    - .gnu_serial_cts_vars
+
+Intel_OpenMPI.cts.buildTPLs:
+  extends:
+    - .build_tpls
+    - .intel_openmpi_cts_vars
+
+Intel_serial.cts.buildTPLs:
+  extends:
+    - .build_tpls
+    - .intel_serial_cts_vars
