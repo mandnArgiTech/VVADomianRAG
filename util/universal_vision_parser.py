@@ -9,9 +9,11 @@ from __future__ import annotations
 import argparse
 import base64
 import logging
+import os
 import sys
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -250,13 +252,81 @@ def parse_pdf_with_vision(
         "message": f"Found {total_pictures} image(s) / figures to caption via {provider_u}.",
     }
 
+    md_serializer = MarkdownDocSerializer(doc=document)
+
+    # Pass 1 — extract images / serialize text in document order (cheap, local).
+    # Captions come afterwards so cloud providers can run them concurrently.
+    work: List[Dict[str, Any]] = []
+    for item, _level in items:
+        if isinstance(item, PictureItem):
+            img_pil = None
+            try:
+                img_pil = item.get_image(document)
+            except Exception as exc:
+                log.warning("get_image failed: %s", exc)
+            b64_img: Optional[str] = None
+            encode_error: Optional[str] = None
+            if img_pil is not None:
+                try:
+                    b64_img = encode_image_to_base64(img_pil)
+                except Exception as exc:
+                    log.exception("image encode failed")
+                    encode_error = str(exc)
+            work.append(
+                {
+                    "kind": "picture",
+                    "b64": b64_img,
+                    "extracted": img_pil is not None,
+                    "encode_error": encode_error,
+                }
+            )
+        else:
+            try:
+                chunk = md_serializer.serialize(item=item).text
+            except Exception as exc:
+                log.warning("Markdown serialize failed for item: %s", exc)
+                chunk = f"\n<!-- markdown serialize failed: {exc} -->\n"
+            work.append({"kind": "text", "chunk": chunk})
+
+    # Pass 2 — caption. Local Ollama stays sequential (one GPU, no benefit);
+    # cloud providers previously captioned strictly one figure at a time, so an
+    # N-figure PDF paid N serialized round trips. Bounded fan-out fixes that
+    # while events are still emitted in document order.
+    def _caption(b64_img: str) -> str:
+        return _caption_image(
+            b64_img,
+            vision_provider=provider_u,
+            vision_model=vision_model,
+            api_key=api_key,
+            prompt=prompt,
+        )
+
+    try:
+        max_workers = int(os.environ.get("VISION_CAPTION_WORKERS", "4"))
+    except ValueError:
+        max_workers = 4
+    if provider_u == "ollama":
+        max_workers = 1
+    max_workers = max(1, min(max_workers, total_pictures or 1))
+
+    executor: Optional[ThreadPoolExecutor] = None
+    futures: Dict[int, "Future[str]"] = {}
+    if max_workers > 1:
+        executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="vlm-caption")
+        for idx, w in enumerate(work):
+            if w["kind"] == "picture" and w["b64"]:
+                futures[idx] = executor.submit(_caption, w["b64"])
+
     markdown_lines: List[str] = []
     image_done = 0
     picture_index = 0
-    md_serializer = MarkdownDocSerializer(doc=document)
+    try:
+        for idx, w in enumerate(work):
+            if w["kind"] != "picture":
+                markdown_lines.append(w["chunk"])
+                yield {"type": "markdown_chunk", "text": w["chunk"]}
+                continue
 
-    for item, _level in items:
-        if isinstance(item, PictureItem):
             picture_index += 1
             if total_pictures > 0:
                 yield {
@@ -266,45 +336,34 @@ def parse_pdf_with_vision(
                     "message": f"Figure {picture_index}/{total_pictures}…",
                 }
 
-            img_pil = None
-            try:
-                img_pil = item.get_image(document)
-            except Exception as exc:
-                log.warning("get_image failed: %s", exc)
+            if not w["extracted"]:
+                fail_block = "\n> **[DIAGRAM EXTRACTION FAILED]**\n"
+                markdown_lines.append(fail_block)
+                yield {"type": "markdown_chunk", "text": fail_block}
+                continue
 
-            if img_pil:
-                image_done += 1
+            image_done += 1
+            if w["encode_error"]:
+                caption = f"[Error generating caption: {w['encode_error']}]"
+            else:
                 try:
-                    b64_img = encode_image_to_base64(img_pil)
-                    caption = _caption_image(
-                        b64_img,
-                        vision_provider=provider_u,
-                        vision_model=vision_model,
-                        api_key=api_key,
-                        prompt=prompt,
-                    )
+                    fut = futures.get(idx)
+                    caption = fut.result() if fut is not None else _caption(w["b64"])
                 except Exception as exc:
                     log.exception("VLM caption failed")
                     caption = f"[Error generating caption: {exc}]"
 
-                header = f"\n> **[SCHEMATIC / DIAGRAM ANALYSIS ({provider_u.upper()})]**"
-                quoted = _blockquote_lines(caption)
-                block = f"{header}\n{quoted}\n"
-                markdown_lines.append(block)
-                yield {"type": "image_caption", "index": image_done, "caption": caption}
-                yield {"type": "markdown_chunk", "text": block}
-            else:
-                fail_block = "\n> **[DIAGRAM EXTRACTION FAILED]**\n"
-                markdown_lines.append(fail_block)
-                yield {"type": "markdown_chunk", "text": fail_block}
-        else:
-            try:
-                chunk = md_serializer.serialize(item=item).text
-            except Exception as exc:
-                log.warning("Markdown serialize failed for item: %s", exc)
-                chunk = f"\n<!-- markdown serialize failed: {exc} -->\n"
-            markdown_lines.append(chunk)
-            yield {"type": "markdown_chunk", "text": chunk}
+            header = f"\n> **[SCHEMATIC / DIAGRAM ANALYSIS ({provider_u.upper()})]**"
+            quoted = _blockquote_lines(caption)
+            block = f"{header}\n{quoted}\n"
+            markdown_lines.append(block)
+            yield {"type": "image_caption", "index": image_done, "caption": caption}
+            yield {"type": "markdown_chunk", "text": block}
+    finally:
+        if executor is not None:
+            # If the consumer abandons the stream, don't keep paying for
+            # captions nobody will read.
+            executor.shutdown(wait=False, cancel_futures=True)
 
     final_markdown = "\n".join(markdown_lines)
     elapsed = time.time() - t0

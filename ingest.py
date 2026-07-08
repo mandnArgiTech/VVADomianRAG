@@ -748,6 +748,34 @@ def _is_diagram_placeholder(para: str) -> bool:
     return bool(_BLOCK_PLACEHOLDER_RE.match(para.strip()))
 
 
+def _hard_split_long_text(text: str, target_max: int) -> List[str]:
+    """Split one oversized paragraph at line, sentence, or word boundaries
+    (hard character cut as last resort) so no piece exceeds target_max.
+
+    A paragraph beyond the embedding model's input budget would otherwise be
+    emitted whole and silently truncate (or fail) at embedding time."""
+    pieces: List[str] = []
+    remaining = text.strip()
+    floor = max(1, target_max // 2)
+    while len(remaining) > target_max:
+        window = remaining[:target_max]
+        cut = window.rfind("\n")
+        if cut < floor:
+            dot = window.rfind(". ")
+            cut = dot + 1 if dot >= floor else cut
+        if cut < floor:
+            cut = window.rfind(" ")
+        if cut < floor:
+            cut = target_max
+        piece = remaining[:cut].strip()
+        if piece:
+            pieces.append(piece)
+        remaining = remaining[cut:].strip()
+    if remaining:
+        pieces.append(remaining)
+    return pieces
+
+
 def _split_paragraphs(text: str, target_min: int = 2000, target_max: int = 5000) -> List[str]:
     """Token-aware paragraph packer with diagram-context bonding.
 
@@ -779,18 +807,28 @@ def _split_paragraphs(text: str, target_min: int = 2000, target_max: int = 5000)
                     continue
             i += 1
         else:
-            if buf:  # pragma: no cover
-                out.append(buf)  # pragma: no cover
-            buf = p  # pragma: no cover
-            if i + 1 < len(paras) and _is_diagram_placeholder(paras[i + 1]):  # pragma: no cover
-                diagram = paras[i + 1]  # pragma: no cover
-                bonded = (buf + "\n\n" + diagram).strip()  # pragma: no cover
-                hard_limit = int(target_max * 1.25)  # pragma: no cover
-                if len(bonded) <= hard_limit:  # pragma: no cover
-                    buf = bonded  # pragma: no cover
-                    i += 2  # pragma: no cover
-                    continue  # pragma: no cover
-            i += 1  # pragma: no cover
+            if buf:
+                out.append(buf)
+                buf = ""
+            if len(p) > target_max:
+                # Oversized single paragraph: hard-split it instead of emitting
+                # a chunk beyond the embedding model's input budget. The last
+                # piece stays in buf so following paragraphs can pack onto it.
+                pieces = _hard_split_long_text(p, target_max)
+                out.extend(pieces[:-1])
+                buf = pieces[-1] if pieces else ""
+                i += 1
+                continue
+            buf = p
+            if i + 1 < len(paras) and _is_diagram_placeholder(paras[i + 1]):
+                diagram = paras[i + 1]
+                bonded = (buf + "\n\n" + diagram).strip()
+                hard_limit = int(target_max * 1.25)
+                if len(bonded) <= hard_limit:
+                    buf = bonded
+                    i += 2
+                    continue
+            i += 1
     if buf:
         out.append(buf)
     return out

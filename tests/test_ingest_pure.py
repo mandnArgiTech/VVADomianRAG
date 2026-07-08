@@ -123,6 +123,44 @@ def test_split_paragraphs_diagram_bond():
     assert any("<<BLOCK0>>" in p for p in parts)
 
 
+def test_split_paragraphs_flushes_full_buffer():
+    """Second paragraph doesn't fit with the first: buffer flushed, both kept."""
+    a = "A" * 300
+    b = "B" * 300
+    parts = ing._split_paragraphs(a + "\n\n" + b, 100, 400)
+    assert parts == [a, b]
+
+
+def test_split_paragraphs_flush_then_diagram_bond():
+    """Diagram bonding still applies on the flush path."""
+    a = "A" * 350
+    b = "B" * 200
+    parts = ing._split_paragraphs(a + "\n\n" + b + "\n\n<<BLOCK0>>", 100, 400)
+    assert parts[0] == a
+    assert "<<BLOCK0>>" in parts[1] and b in parts[1]
+
+
+def test_split_paragraphs_hard_splits_oversized_paragraph():
+    """A single paragraph beyond target_max is split, never emitted whole."""
+    sentences = " ".join(f"Sentence number {i} about IGMP snooping." for i in range(200))
+    parts = ing._split_paragraphs(sentences, 100, 400)
+    assert len(parts) > 1
+    assert all(len(p) <= 400 for p in parts)
+    assert "".join(parts).replace(" ", "") == sentences.replace(" ", "")
+
+
+def test_hard_split_long_text_boundaries():
+    # splits at newline / sentence / word boundaries, hard cut as last resort
+    text = "x" * 950  # no boundaries at all
+    parts = ing._hard_split_long_text(text, 400)
+    assert all(len(p) <= 400 for p in parts)
+    assert "".join(parts) == text
+    text2 = ("line one\n" * 60).strip()
+    parts2 = ing._hard_split_long_text(text2, 200)
+    assert all(len(p) <= 200 for p in parts2)
+    assert ing._hard_split_long_text("short", 400) == ["short"]
+
+
 def test_md_rfc_char_targets_and_estimate():
     mn, mx = ing._md_char_targets("mxbai-embed-large")
     assert mn < mx
