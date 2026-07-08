@@ -66,8 +66,8 @@ def detect_embedding_model(db_path: str) -> str:
                 model = json.load(fh).get("embedding_model", "")
             if model:
                 return model
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger("mcp_server").warning("could not read %s: %s", config_path, exc)
     try:
         client = chromadb.PersistentClient(path=db_path)
         cols = client.list_collections()
@@ -79,8 +79,13 @@ def detect_embedding_model(db_path: str) -> str:
                 dim = len(embs[0])
                 if dim in DIM_TO_MODEL:
                     return DIM_TO_MODEL[dim]
-    except Exception:
-        pass
+                logging.getLogger("mcp_server").warning(
+                    "unknown embedding dimension %d in %s", dim, db_path
+                )
+    except Exception as exc:
+        logging.getLogger("mcp_server").warning(
+            "embedding-model probe failed for %s: %s", db_path, exc
+        )
     return "nomic-embed-text"
 
 
@@ -240,9 +245,12 @@ def discover_collections(
         client = chroma_client or chromadb.PersistentClient(path=db_path)
         for info in client.list_collections():
             name = info.name
+            # Share the one PersistentClient: passing persist_directory instead
+            # made langchain open a separate SQLite-backed client per collection
+            # (and leak them all again on every reconnect()).
             out[name] = Chroma(
                 collection_name=name,
-                persist_directory=db_path,
+                client=client,
                 embedding_function=embeddings,
             )
     except Exception as exc:
@@ -492,6 +500,48 @@ def _select_collection_names(cmap: Dict[str, Chroma], search_type: str, domain: 
     return names
 
 
+def _embed_query_once(cmap: Dict[str, Chroma], targets: List[str], query: str) -> Optional[List[float]]:
+    """Embed the query text a single time for a multi-collection search.
+
+    similarity_search_with_score(query, ...) re-embeds the text on every call,
+    so fanning out over N collections used to cost N identical Ollama round
+    trips per query. Returns None when no embedder is reachable (callers fall
+    back to per-collection text search)."""
+    emb = _shared_embedder
+    if emb is None:
+        for name in targets:
+            emb = getattr(cmap.get(name), "embeddings", None)
+            if emb is not None:
+                break
+    if emb is None:
+        return None
+    try:
+        return emb.embed_query(query)
+    except Exception as exc:
+        logger.warning("query embedding failed (falling back to per-collection): %s", exc)
+        return None
+
+
+def _dense_pairs(
+    vs: Chroma,
+    query: str,
+    qvec: Optional[List[float]],
+    k: int,
+    flt: Optional[Dict[str, str]],
+) -> List[Tuple[Any, float]]:
+    """Dense candidates using the precomputed query vector when available."""
+    by_vec = getattr(vs, "similarity_search_by_vector_with_relevance_scores", None)
+    if qvec is not None and by_vec is not None:
+        try:
+            return by_vec(qvec, k=k, filter=flt)
+        except TypeError:
+            return by_vec(qvec, k=k)
+    try:
+        return vs.similarity_search_with_score(query, k=k, filter=flt)
+    except TypeError:
+        return vs.similarity_search_with_score(query, k=k)
+
+
 def _sync_multi_search(
     query: str,
     k: int,
@@ -503,7 +553,10 @@ def _sync_multi_search(
     if not cmap:
         raise RuntimeError("ChromaDB has no collections.")
     targets = _select_collection_names(cmap, search_type, domain)
-    per = max(1, k // max(1, len(targets)) if targets else k)
+    # Fetch up to k per collection: dividing k across collections meant a
+    # collection holding several of the true global top-k could surface only
+    # one of them (per-collection top-1 when targets > k).
+    per = max(1, k)
     use_hybrid = HYBRID_SEARCH and HYBRID_AVAILABLE
     if HYBRID_SEARCH and not HYBRID_AVAILABLE:
         logger.warning(
@@ -514,6 +567,7 @@ def _sync_multi_search(
     dense_cap = _hybrid_candidate_cap(k, "HYBRID_DENSE_CANDIDATES")
     bm25_cap = _hybrid_candidate_cap(k, "HYBRID_BM25_CANDIDATES")
     db_abs = os.path.abspath(DB_PATH)
+    qvec = _embed_query_once(cmap, targets, query)
 
     if not use_hybrid:
         merged: List[Tuple[Any, Optional[float], str, str]] = []
@@ -523,10 +577,7 @@ def _sync_multi_search(
             if repo_filter.strip():
                 flt = {"repository": repo_filter.strip()}
             try:
-                try:
-                    pairs = vs.similarity_search_with_score(query, k=per, filter=flt)
-                except TypeError:
-                    pairs = vs.similarity_search_with_score(query, k=per)
+                pairs = _dense_pairs(vs, query, qvec, per, flt)
             except Exception as exc:
                 logger.warning("Skipping collection %s: %s", name, exc)
                 continue
@@ -551,10 +602,7 @@ def _sync_multi_search(
         if repo_filter.strip():
             flt = {"repository": repo_filter.strip()}
         try:
-            try:
-                pairs = vs.similarity_search_with_score(query, k=dense_cap, filter=flt)
-            except TypeError:
-                pairs = vs.similarity_search_with_score(query, k=dense_cap)
+            pairs = _dense_pairs(vs, query, qvec, dense_cap, flt)
         except Exception as exc:
             logger.warning("Skipping collection %s: %s", name, exc)
             continue
@@ -568,10 +616,9 @@ def _sync_multi_search(
 
         bm25_ids: List[str] = []
         col = getattr(vs, "_collection", None)
-        if col is not None:
-            idx = get_bm25_index(db_abs, name)
-            if idx.ensure_loaded(col):
-                bm25_ids = search_bm25_ranked_ids(idx, query, bm25_cap, repo_filter)
+        idx_ref = get_bm25_index(db_abs, name) if col is not None else None
+        if idx_ref is not None and idx_ref.ensure_loaded(col):
+            bm25_ids = search_bm25_ranked_ids(idx_ref, query, bm25_cap, repo_filter)
         rank_lists = [dense_ids, bm25_ids] if bm25_ids else [dense_ids]
         rrf_scores = reciprocal_rank_fusion(rank_lists, k=RRF_K)
         if not rrf_scores:
@@ -587,7 +634,6 @@ def _sync_multi_search(
                 dense_rank.get(sid, 10**9),
             ),
         )
-        idx_ref = get_bm25_index(db_abs, name) if col is not None else None
         for sid in sorted_sids:
             if sid in dense_map:
                 doc, _dscore = dense_map[sid]
@@ -938,10 +984,10 @@ async def feed_domain_doc(
         return f"Error: {exc}"
 
 
-def _sample_source_type_counts(vs: Chroma, cap: int = 1500) -> Dict[str, int]:
+def _sample_source_type_counts(vs: Chroma, count: Optional[int] = None, cap: int = 1500) -> Dict[str, int]:
     counts: Dict[str, int] = {}
     try:
-        n = _safe_count_chroma(vs)
+        n = _safe_count_chroma(vs) if count is None else count
         batch = vs._collection.get(  # type: ignore[attr-defined]
             limit=min(cap, max(1, n)), include=["metadatas"]
         )
@@ -950,15 +996,12 @@ def _sample_source_type_counts(vs: Chroma, cap: int = 1500) -> Dict[str, int]:
                 continue
             st = _infer_source_type(m)
             counts[st] = counts.get(st, 0) + 1
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("source_type sampling failed: %s", exc)
     return counts
 
 
-@mcp.tool()
-async def list_repositories() -> str:
-    """Collection-aware manifest, chunk counts, and sampled RFC/ticket/MIB-style breakdowns."""
-    logger.info("list_repositories")
+def _sync_list_repositories() -> str:
     manifest_path = os.path.join(DB_PATH, "repos_manifest.json")
     lines: List[str] = ["**Indexed knowledge (by collection)**\n"]
     try:
@@ -980,7 +1023,7 @@ async def list_repositories() -> str:
         for name in sorted(cmap.keys()):
             vs = cmap[name]
             cnt = _safe_count_chroma(vs)
-            stc = _sample_source_type_counts(vs)
+            stc = _sample_source_type_counts(vs, count=cnt)
             rfc_n = stc.get("rfc", 0)
             tix = stc.get("rally", 0) + stc.get("customer", 0)
             mib_n = stc.get("mib", 0)
@@ -992,9 +1035,16 @@ async def list_repositories() -> str:
 
 
 @mcp.tool()
-async def get_db_stats() -> str:
-    """Per-collection stats and quick concept/content_type sampling."""
-    logger.info("get_db_stats")
+async def list_repositories() -> str:
+    """Collection-aware manifest, chunk counts, and sampled RFC/ticket/MIB-style breakdowns."""
+    logger.info("list_repositories")
+    # Chroma count()/get() scans are blocking: keep them off the event loop
+    # (a stats call used to freeze every concurrent search until it finished).
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(init_mcp_executor(), _sync_list_repositories)
+
+
+def _sync_get_db_stats() -> str:
     cmap = _collections_snapshot()
     if not cmap:
         return "Error: ChromaDB not connected."
@@ -1016,14 +1066,22 @@ async def get_db_stats() -> str:
                     concept_hits[p] = concept_hits.get(p, 0) + 1
                 ct = str(m.get("content_type", "general"))
                 ctype_hits[ct] = ctype_hits.get(ct, 0) + 1
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("stats sampling failed for %s: %s", name, exc)
     if concept_hits:
         top = sorted(concept_hits.items(), key=lambda x: -x[1])[:20]
         lines.append("\n**Sample concept coverage:** " + ", ".join(f"{k}({v})" for k, v in top))
     if ctype_hits:
         lines.append("**Content types (sample):** " + ", ".join(f"{k}={v}" for k, v in sorted(ctype_hits.items())))
     return "\n".join(lines)
+
+
+@mcp.tool()
+async def get_db_stats() -> str:
+    """Per-collection stats and quick concept/content_type sampling."""
+    logger.info("get_db_stats")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(init_mcp_executor(), _sync_get_db_stats)
 
 
 if __name__ == "__main__":

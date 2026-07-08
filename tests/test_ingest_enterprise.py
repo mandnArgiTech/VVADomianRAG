@@ -5,6 +5,7 @@ import asyncio
 import io
 import json
 import logging
+import queue
 import subprocess as sp
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -608,6 +609,44 @@ def test_run_async_embedding_batches_none_vectors(monkeypatch):
     assert outs == [None]
 
 
+def test_run_async_embedding_batches_streams_to_result_q(monkeypatch):
+    if ing.aiohttp is None:
+        pytest.skip("no aiohttp")
+
+    async def ok_emb(_session, _model, texts, _lock):
+        return [[0.5] for _ in texts]
+
+    monkeypatch.setattr(ing, "embed_with_retry_http_async", ok_emb)
+    rq: queue.Queue = queue.Queue()
+    outs = asyncio.run(
+        ing.run_async_embedding_batches([[("i", "t", {"source": "s"})]], "m", 2, rq)
+    )
+    # With a result queue, results stream out and markers are returned instead.
+    assert outs == [True]
+    ids, texts, metas, vecs = rq.get(timeout=2)
+    assert ids == ["i"] and vecs == [[0.5]]
+
+    # Without a result queue the payloads are returned directly (legacy shape).
+    outs2 = asyncio.run(ing.run_async_embedding_batches([[("i", "t", {})]], "m", 2))
+    assert outs2[0][0] == ["i"] and outs2[0][3] == [[0.5]]
+
+
+def test_embed_with_retry_http_async_single_leaf_failure(monkeypatch):
+    if ing.aiohttp is None:
+        pytest.skip("no aiohttp")
+    monkeypatch.setattr(ing, "MAX_RETRIES", 1)
+    monkeypatch.setattr(ing, "EMBED_BACKOFF_SEC", 0)
+
+    class Sess:
+        def post(self, *_a, **_k):
+            raise RuntimeError("down")
+
+    async def _run():
+        return await ing.embed_with_retry_http_async(Sess(), "m", ["one"], None)
+
+    assert asyncio.run(_run()) is None
+
+
 def test_git_diff_file_sets_fallback_two_arg_diff(tmp_path: Path, monkeypatch):
     def fake_run(cmd, **kw):
         m = MagicMock()
@@ -768,7 +807,7 @@ def test_ingest_async_embed_failed_batch_increments_failed(tmp_path: Path, monke
     monkeypatch.setattr(ing, "git_diff_file_sets", lambda r, b: ({"tiny.py"}, set(), "s"))
     monkeypatch.setattr(ing.chromadb, "PersistentClient", lambda path: _FakeChromaClient())
 
-    async def fail_batches(batches, model, conc):
+    async def fail_batches(batches, model, conc, result_q=None):
         return [None] * len(batches)
 
     monkeypatch.setattr(ing, "run_async_embedding_batches", fail_batches)

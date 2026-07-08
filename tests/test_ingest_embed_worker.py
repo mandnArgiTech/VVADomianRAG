@@ -80,6 +80,8 @@ def test_embedding_worker_success(no_embed_sleep, monkeypatch):
 
 
 def test_embedding_worker_embed_none(no_embed_sleep, monkeypatch):
+    """Permanent embed failure: worker emits None placeholders so the writer
+    can attribute the failed chunks to their sources (checkpoint hygiene)."""
     monkeypatch.setattr(ing, "embed_with_retry_http", lambda *_a, **_k: None)
     cq: queue.Queue = queue.Queue()
     rq: queue.Queue = queue.Queue()
@@ -88,7 +90,18 @@ def test_embedding_worker_embed_none(no_embed_sleep, monkeypatch):
     t = threading.Thread(target=ing.embedding_worker, args=("nomic-embed-text", 0, cq, rq))
     t.start()
     t.join(timeout=5)
-    assert rq.get(timeout=2) is None
+    ids, _texts, metas, vecs = rq.get(timeout=2)
+    assert ids == ["i"]
+    assert metas[0]["source"] == "s"
+    assert vecs == [None]
+
+
+def test_join_embed_halves_partial_failure():
+    """One failed half becomes None placeholders; the surviving half is kept."""
+    assert ing._join_embed_halves(None, None, 1, 2) is None
+    assert ing._join_embed_halves(None, [[0.2]], 1, 2) == [None, [0.2]]
+    assert ing._join_embed_halves([[0.1]], None, 1, 3) == [[0.1], None, None]
+    assert ing._join_embed_halves([[0.1]], [[0.2]], 1, 2) == [[0.1], [0.2]]
 
 
 def test_embedding_worker_exception(no_embed_sleep, monkeypatch):
