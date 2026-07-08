@@ -52,3 +52,13 @@ WEB SITEs:
 This project is hosted on Sourceforge.net.
 The home page is http://ngspice.sourceforge.net
 The summary page is http://sourceforge.net/projects/ngspice
+
+
+RAG index (dual-mission corpus metadata)
+-----------------------------------------
+This tree snapshot can export `rag_index.json` (NodalAI kernel + circuit-design retrieval):
+
+    python3 scripts/build_rag_index.py
+    python3 scripts/validate_rag_index.py
+
+See `page_index.md` for the full field specification.

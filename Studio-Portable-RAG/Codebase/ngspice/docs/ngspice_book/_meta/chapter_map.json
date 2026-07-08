@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "book_root": "docs/ngspice_book",
+  "generated_at": "2026-05-05T03:08:14.603762Z",
+  "chapters": [
+    {"id": "00_foundations", "path": "00_foundations/README.md", "mission_primary": "circuit_design_validation", "section_count": 6},
+    {"id": "01_architecture_overview", "path": "01_architecture_overview/README.md", "mission_primary": "kernel_reimplementation", "section_count": 6},
+    {"id": "02_numerical_kernel_core", "path": "02_numerical_kernel_core/README.md", "mission_primary": "kernel_reimplementation", "section_count": 8},
+    {"id": "03_analysis_drivers", "path": "03_analysis_drivers/README.md", "mission_primary": "kernel_reimplementation", "section_count": 10},
+    {"id": "04_convergence_aids", "path": "04_convergence_aids/README.md", "mission_primary": "kernel_reimplementation", "section_count": 6},
+    {"id": "05_numerical_integration", "path": "05_numerical_integration/README.md", "mission_primary": "kernel_reimplementation", "section_count": 7},
+    {"id": "06_sparse_solver", "path": "06_sparse_solver/README.md", "mission_primary": "kernel_reimplementation", "section_count": 7},
+    {"id": "07_device_model_contract", "path": "07_device_model_contract/README.md", "mission_primary": "kernel_reimplementation", "section_count": 11},
+    {"id": "08_passive_devices", "path": "08_passive_devices/README.md", "mission_primary": "kernel_reimplementation", "section_count": 7},
+    {"id": "09_source_devices", "path": "09_source_devices/README.md", "mission_primary": "kernel_reimplementation", "section_count": 9},
+    {"id": "10_diode_and_bjt_models", "path": "10_diode_and_bjt_models/README.md", "mission_primary": "kernel_reimplementation", "section_count": 4},
+    {"id": "11_mosfet_models", "path": "11_mosfet_models/README.md", "mission_primary": "kernel_reimplementation", "section_count": 9},
+    {"id": "12_jfet_mesfet_models", "path": "12_jfet_mesfet_models/README.md", "mission_primary": "kernel_reimplementation", "section_count": 5},
+    {"id": "13_xspice_mixed_signal", "path": "13_xspice_mixed_signal/README.md", "mission_primary": "kernel_reimplementation", "section_count": 5},
+    {"id": "14_netlist_grammar", "path": "14_netlist_grammar/README.md", "mission_primary": "circuit_design_validation", "section_count": 15},
+    {"id": "15_parser_and_expansion", "path": "15_parser_and_expansion/README.md", "mission_primary": "circuit_design_validation", "section_count": 6},
+    {"id": "16_command_interpreter", "path": "16_command_interpreter/README.md", "mission_primary": "circuit_design_validation", "section_count": 7},
+    {"id": "17_output_and_results", "path": "17_output_and_results/README.md", "mission_primary": "circuit_design_validation", "section_count": 6},
+    {"id": "18_options_and_tolerances", "path": "18_options_and_tolerances/README.md", "mission_primary": "circuit_design_validation", "section_count": 8},
+    {"id": "19_circuit_design_patterns", "path": "19_circuit_design_patterns/README.md", "mission_primary": "circuit_design_validation", "section_count": 8},
+    {"id": "20_debugging_workflows", "path": "20_debugging_workflows/README.md", "mission_primary": "circuit_design_validation", "section_count": 10},
+    {"id": "21_validation_with_regression_suite", "path": "21_validation_with_regression_suite/README.md", "mission_primary": "circuit_design_validation", "section_count": 5},
+    {"id": "22_nodalai_kernel_reimplementation", "path": "22_nodalai_kernel_reimplementation/README.md", "mission_primary": "kernel_reimplementation", "section_count": 8},
+    {"id": "23_canonical_chains_reference", "path": "23_canonical_chains_reference/README.md", "mission_primary": "kernel_reimplementation", "section_count": 13},
+    {"id": "24_glossary", "path": "24_glossary/README.md", "mission_primary": "circuit_design_validation", "section_count": 6}
+  ]
+}

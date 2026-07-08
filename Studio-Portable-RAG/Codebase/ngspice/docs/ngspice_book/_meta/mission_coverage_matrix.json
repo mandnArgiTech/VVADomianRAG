@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "source": "section_manifest.tsv (mission_primary per section; chapter row uses dominant first-row convention in chapter_map.json)",
+  "missions": [
+    "kernel_reimplementation",
+    "circuit_design_validation"
+  ],
+  "chapter_primary_mission": {
+    "00_foundations": "circuit_design_validation",
+    "01_architecture_overview": "kernel_reimplementation",
+    "02_numerical_kernel_core": "kernel_reimplementation",
+    "03_analysis_drivers": "kernel_reimplementation",
+    "04_convergence_aids": "kernel_reimplementation",
+    "05_numerical_integration": "kernel_reimplementation",
+    "06_sparse_solver": "kernel_reimplementation",
+    "07_device_model_contract": "kernel_reimplementation",
+    "08_passive_devices": "kernel_reimplementation",
+    "09_source_devices": "kernel_reimplementation",
+    "10_diode_and_bjt_models": "kernel_reimplementation",
+    "11_mosfet_models": "kernel_reimplementation",
+    "12_jfet_mesfet_models": "kernel_reimplementation",
+    "13_xspice_mixed_signal": "kernel_reimplementation",
+    "14_netlist_grammar": "circuit_design_validation",
+    "15_parser_and_expansion": "circuit_design_validation",
+    "16_command_interpreter": "circuit_design_validation",
+    "17_output_and_results": "circuit_design_validation",
+    "18_options_and_tolerances": "circuit_design_validation",
+    "19_circuit_design_patterns": "circuit_design_validation",
+    "20_debugging_workflows": "circuit_design_validation",
+    "21_validation_with_regression_suite": "circuit_design_validation",
+    "22_nodalai_kernel_reimplementation": "kernel_reimplementation",
+    "23_canonical_chains_reference": "kernel_reimplementation",
+    "24_glossary": "circuit_design_validation"
+  },
+  "mixed_chapters_notes": [
+    "04_convergence_aids includes one circuit_design_validation section (06_convergence_failure_diagnosis).",
+    "11_mosfet_models includes one circuit_design_validation section (10_choosing_a_mosfet_model).",
+    "21_validation includes one kernel_reimplementation section (04_using_tests_for_nodalai_validation).",
+    "23_canonical_chains mixes kernel and circuit_design_validation chains per rag_index.json mission fields."
+  ]
+}

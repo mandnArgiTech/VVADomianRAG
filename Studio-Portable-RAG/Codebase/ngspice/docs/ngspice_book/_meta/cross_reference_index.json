@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-05-05T03:08:14.603762Z",
+  "broken_links": [],
+  "edges": [
+    {"from": "INDEX.md", "to": "00_foundations/README.md", "kind": "index_nav"},
+    {"from": "INDEX.md", "to": "02_numerical_kernel_core/README.md", "kind": "index_nav"},
+    {"from": "INDEX.md", "to": "23_canonical_chains_reference/README.md", "kind": "index_nav"},
+    {"from": "23_canonical_chains_reference/01_dc_operating_point_chain.md", "to": "03_analysis_drivers/01_dc_operating_point_dcop.md", "kind": "related_chapters"},
+    {"from": "23_canonical_chains_reference/01_dc_operating_point_chain.md", "to": "02_numerical_kernel_core/02_newton_raphson_iteration_niiter.md", "kind": "related_chapters"},
+    {"from": "23_canonical_chains_reference/07_netlist_to_simulation_chain.md", "to": "14_netlist_grammar/01_netlist_overall_structure.md", "kind": "related_chapters"},
+    {"from": "23_canonical_chains_reference/07_netlist_to_simulation_chain.md", "to": "15_parser_and_expansion/02_dotcommand_dispatch.md", "kind": "related_chapters"},
+    {"from": "22_nodalai_kernel_reimplementation/01_nodalai_overview_and_scope.md", "to": "23_canonical_chains_reference/01_dc_operating_point_chain.md", "kind": "related_chapters"},
+    {"from": "22_nodalai_kernel_reimplementation/05_validation_against_ngspice_reference.md", "to": "21_validation_with_regression_suite/02_running_regression_tests.md", "kind": "related_chapters"},
+    {"from": "21_validation_with_regression_suite/04_using_tests_for_nodalai_validation.md", "to": "23_canonical_chains_reference/01_dc_operating_point_chain.md", "kind": "related_chapters"},
+    {"from": "14_netlist_grammar/11_dot_options_directive.md", "to": "18_options_and_tolerances/01_options_overview.md", "kind": "related_chapters"},
+    {"from": "14_netlist_grammar/14_dot_measure.md", "to": "17_output_and_results/04_measure_extraction_idioms.md", "kind": "related_chapters"},
+    {"from": "16_command_interpreter/02_simulation_run_commands.md", "to": "03_analysis_drivers/README.md", "kind": "related_chapters"},
+    {"from": "17_output_and_results/02_raw_file_format_spec.md", "to": "23_canonical_chains_reference/10_raw_output_consumption_chain.md", "kind": "related_chapters"},
+    {"from": "20_debugging_workflows/01_dc_op_no_convergence.md", "to": "04_convergence_aids/01_convergence_aid_ladder.md", "kind": "related_chapters"},
+    {"from": "20_debugging_workflows/03_singular_matrix_error.md", "to": "06_sparse_solver/02_sparse_lu_factorization.md", "kind": "related_chapters"},
+    {"from": "24_glossary/01_numerical_kernel_terms.md", "to": "02_numerical_kernel_core/README.md", "kind": "related_chapters"},
+    {"from": "24_glossary/06_mission_bridging_terms.md", "to": "00_foundations/06_dual_mission_reading_guide.md", "kind": "related_chapters"}
+  ]
+}

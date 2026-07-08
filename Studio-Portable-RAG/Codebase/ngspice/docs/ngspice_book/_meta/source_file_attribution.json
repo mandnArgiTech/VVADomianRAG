@@ -1,0 +1,101 @@
+{
+  "schema_version": "1.0",
+  "description": "Curated map of ngspice source paths to book sections that cite them (non-exhaustive; extend as sections grow). Paths are relative to the ngspice repository root.",
+  "attributions": {
+    "src/maths/ni/niiter.c": [
+      "docs/ngspice_book/02_numerical_kernel_core/02_newton_raphson_iteration_niiter.md",
+      "docs/ngspice_book/18_options_and_tolerances/03_iteration_limit_options_itl.md",
+      "docs/ngspice_book/23_canonical_chains_reference/01_dc_operating_point_chain.md"
+    ],
+    "src/maths/ni/niconv.c": [
+      "docs/ngspice_book/02_numerical_kernel_core/03_convergence_test_anatomy.md",
+      "docs/ngspice_book/18_options_and_tolerances/02_tolerance_options_reltol_abstol_vntol_chgtol.md"
+    ],
+    "src/spicelib/analysis/cktload.c": [
+      "docs/ngspice_book/02_numerical_kernel_core/01_circuit_load_dispatch_cktload.md",
+      "docs/ngspice_book/23_canonical_chains_reference/04_device_load_dispatch_chain.md"
+    ],
+    "src/spicelib/analysis/cktop.c": [
+      "docs/ngspice_book/04_convergence_aids/01_convergence_aid_ladder.md",
+      "docs/ngspice_book/18_options_and_tolerances/04_gmin_and_gminsteps.md",
+      "docs/ngspice_book/20_debugging_workflows/01_dc_op_no_convergence.md"
+    ],
+    "src/include/ngspice/devdefs.h": [
+      "docs/ngspice_book/01_architecture_overview/03_spicedev_plugin_contract.md",
+      "docs/ngspice_book/07_device_model_contract/01_spicedev_struct_anatomy.md",
+      "docs/ngspice_book/24_glossary/02_device_modeling_terms.md"
+    ],
+    "src/include/ngspice/cktdefs.h": [
+      "docs/ngspice_book/01_architecture_overview/02_data_structures_cktcircuit.md",
+      "docs/ngspice_book/18_options_and_tolerances/01_options_overview.md",
+      "docs/ngspice_book/24_glossary/04_options_and_tolerances_terms.md"
+    ],
+    "src/spicelib/parser/inp2dot.c": [
+      "docs/ngspice_book/14_netlist_grammar/03_dotcommand_overview.md",
+      "docs/ngspice_book/15_parser_and_expansion/02_dotcommand_dispatch.md",
+      "docs/ngspice_book/19_circuit_design_patterns/02_typical_transient_workflow.md"
+    ],
+    "src/spicelib/parser/inpdoopt.c": [
+      "docs/ngspice_book/14_netlist_grammar/11_dot_options_directive.md",
+      "docs/ngspice_book/18_options_and_tolerances/01_options_overview.md",
+      "docs/ngspice_book/15_parser_and_expansion/06_parser_error_handling.md"
+    ],
+    "src/frontend/inp.c": [
+      "docs/ngspice_book/14_netlist_grammar/01_netlist_overall_structure.md",
+      "docs/ngspice_book/14_netlist_grammar/15_dot_control_block.md",
+      "docs/ngspice_book/23_canonical_chains_reference/07_netlist_to_simulation_chain.md"
+    ],
+    "src/frontend/inpcom.c": [
+      "docs/ngspice_book/15_parser_and_expansion/01_netlist_tokenization.md",
+      "docs/ngspice_book/24_glossary/03_frontend_circuit_design_terms.md"
+    ],
+    "src/frontend/runcoms.c": [
+      "docs/ngspice_book/16_command_interpreter/01_nutmeg_spice3_command_overview.md",
+      "docs/ngspice_book/16_command_interpreter/02_simulation_run_commands.md",
+      "docs/ngspice_book/14_netlist_grammar/14_dot_measure.md",
+      "docs/ngspice_book/23_canonical_chains_reference/08_convergence_failure_diagnosis_chain.md"
+    ],
+    "src/frontend/dotcards.c": [
+      "docs/ngspice_book/14_netlist_grammar/08_dot_tf_dot_sens_dot_pz.md",
+      "docs/ngspice_book/14_netlist_grammar/13_dot_save_dot_print_dot_plot.md",
+      "docs/ngspice_book/16_command_interpreter/07_save_load_state.md"
+    ],
+    "src/frontend/rawfile.c": [
+      "docs/ngspice_book/17_output_and_results/02_raw_file_format_spec.md",
+      "docs/ngspice_book/23_canonical_chains_reference/10_raw_output_consumption_chain.md"
+    ],
+    "src/frontend/measure.c": [
+      "docs/ngspice_book/14_netlist_grammar/14_dot_measure.md",
+      "docs/ngspice_book/17_output_and_results/04_measure_extraction_idioms.md",
+      "docs/ngspice_book/23_canonical_chains_reference/09_measure_extraction_chain.md"
+    ],
+    "src/frontend/subckt.c": [
+      "docs/ngspice_book/14_netlist_grammar/09_dot_subckt_dot_ends.md",
+      "docs/ngspice_book/15_parser_and_expansion/03_subcircuit_expansion_mechanics.md",
+      "docs/ngspice_book/23_canonical_chains_reference/12_subcircuit_expansion_chain.md"
+    ],
+    "src/maths/sparse/spfactor.c": [
+      "docs/ngspice_book/06_sparse_solver/02_sparse_lu_factorization.md",
+      "docs/ngspice_book/20_debugging_workflows/03_singular_matrix_error.md",
+      "docs/ngspice_book/23_canonical_chains_reference/06_sparse_solve_chain.md"
+    ],
+    "src/spicelib/analysis/dctran.c": [
+      "docs/ngspice_book/20_debugging_workflows/02_timestep_too_small.md",
+      "docs/ngspice_book/23_canonical_chains_reference/02_transient_step_chain.md"
+    ],
+    "src/maths/ni/niinteg.c": [
+      "docs/ngspice_book/18_options_and_tolerances/05_method_options_trap_gear.md",
+      "docs/ngspice_book/20_debugging_workflows/04_charge_non_conservation_artifacts.md",
+      "docs/ngspice_book/20_debugging_workflows/06_oscillation_in_simulation_not_circuit.md"
+    ],
+    "src/sharedspice.c": [
+      "docs/ngspice_book/01_architecture_overview/05_shared_library_mode.md",
+      "docs/ngspice_book/23_canonical_chains_reference/13_shared_lib_api_chain.md",
+      "docs/ngspice_book/19_circuit_design_patterns/06_optimization_outer_loop_patterns.md"
+    ],
+    "tests/bin/check.sh": [
+      "docs/ngspice_book/21_validation_with_regression_suite/02_running_regression_tests.md",
+      "docs/ngspice_book/22_nodalai_kernel_reimplementation/05_validation_against_ngspice_reference.md"
+    ]
+  }
+}
