@@ -28,6 +28,7 @@ import urllib.error
 import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -469,10 +470,17 @@ def extract_concepts(text: str, domain: str, registry: Dict[str, Dict[str, str]]
         return ""
     tl = text.lower()
     found = set()
-    for keyword in sorted(table.keys(), key=len, reverse=True):
+    for keyword in _keys_longest_first(tuple(table.keys())):
         if keyword.lower() in tl:
             found.add(table[keyword])
     return format_concepts_field(found) if found else ""
+
+
+@lru_cache(maxsize=64)
+def _keys_longest_first(keys: Tuple[str, ...]) -> Tuple[str, ...]:
+    """Length-sorted registry keywords, memoized: extract_concepts runs per chunk
+    against a static registry, so avoid re-sorting on every call."""
+    return tuple(sorted(keys, key=len, reverse=True))
 
 
 def iter_concept_ids(concepts_field: str) -> List[str]:
@@ -491,14 +499,17 @@ def format_concepts_field(ids: Iterable[str]) -> str:
     return "|" + "|".join(unique) + "|" if unique else ""
 
 
-def read_file_bytes(path: Path) -> Tuple[Optional[str], str]:
-    raw = path.read_bytes()
+def decode_bytes(raw: bytes) -> Tuple[Optional[str], str]:
     for enc in ("utf-8", "latin-1", "cp1252", "iso-8859-1"):
         try:
             return raw.decode(enc), enc
         except UnicodeDecodeError:
             continue
     return None, "binary"  # pragma: no cover
+
+
+def read_file_bytes(path: Path) -> Tuple[Optional[str], str]:
+    return decode_bytes(path.read_bytes())
 
 
 def file_md5(path: Path) -> str:
@@ -1562,6 +1573,13 @@ def _format_dependencies_field(modules: Iterable[str]) -> str:
     return ", ".join(unique)
 
 
+@lru_cache(maxsize=4)
+def _ast_parse_cached(content: str) -> ast.Module:
+    """Parse Python source once per file: ast_chunk_python and extract_dependencies
+    both need the tree for the same content, so avoid a double ast.parse."""
+    return ast.parse(content)
+
+
 def extract_dependencies(content: str, ext: str) -> str:
     """Extract import-like symbols for metadata (comma-separated)."""
     ext_l = ext.lower()
@@ -1569,7 +1587,7 @@ def extract_dependencies(content: str, ext: str) -> str:
 
     if ext_l == ".py":
         try:
-            tree = ast.parse(content)
+            tree = _ast_parse_cached(content)
         except SyntaxError:
             for m in re.finditer(
                 r"(?m)^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.,\s]+))\s*",
@@ -1639,7 +1657,7 @@ def extract_dependencies(content: str, ext: str) -> str:
 
 def ast_chunk_python(path: Path, content: str) -> List[Tuple[str, Dict[str, str]]]:
     try:
-        tree = ast.parse(content)
+        tree = _ast_parse_cached(content)
     except SyntaxError:
         return generic_split(content, path, 1500)
     chunks: List[Tuple[str, Dict[str, str]]] = []
@@ -2237,11 +2255,24 @@ def embed_with_retry(embedder: OllamaEmbeddings, batch: List[str]) -> Optional[L
         mid = max(1, len(b) // 2)
         a = _try(b[:mid])
         b2 = _try(b[mid:])
-        if a is None or b2 is None:
-            return None
-        return a + b2
+        return _join_embed_halves(a, b2, mid, len(b))
 
     return _try(batch)
+
+
+def _join_embed_halves(
+    a: Optional[List[Any]], b2: Optional[List[Any]], mid: int, total: int
+) -> Optional[List[Any]]:
+    """Join split-batch embedding results without letting one bad chunk poison
+    the whole batch: a failed half becomes None placeholders (dropped by the
+    writer) while the surviving half's vectors are kept. None = total failure."""
+    if a is None and b2 is None:
+        return None
+    if a is None:
+        a = [None] * mid
+    if b2 is None:
+        b2 = [None] * (total - mid)
+    return a + b2
 
 
 def embed_with_retry_http(model: str, batch: List[str]) -> Optional[List[List[float]]]:
@@ -2262,9 +2293,7 @@ def embed_with_retry_http(model: str, batch: List[str]) -> Optional[List[List[fl
         mid = max(1, len(b) // 2)
         a = _try(b[:mid])
         b2 = _try(b[mid:])
-        if a is None or b2 is None:
-            return None
-        return a + b2
+        return _join_embed_halves(a, b2, mid, len(b))
 
     return _try(batch)
 
@@ -2309,9 +2338,7 @@ async def embed_with_retry_http_async(
         mid = max(1, len(b) // 2)
         a = await _try(b[:mid])
         b2 = await _try(b[mid:])
-        if a is None or b2 is None:
-            return None
-        return a + b2
+        return _join_embed_halves(a, b2, mid, len(b))
 
     return await _try(batch)
 
@@ -2320,19 +2347,29 @@ async def run_async_embedding_batches(
     batches: List[List[Tuple[str, str, Dict[str, str]]]],
     embed_model: str,
     concurrency: int,
-) -> List[Optional[Tuple[List[str], List[str], List[Dict[str, str]], List[List[float]]]]]:
-    """Concurrent aiohttp embedding; returns one result per input batch (order preserved)."""
+    result_q: Optional["queue.Queue"] = None,
+) -> List[Optional[Any]]:
+    """Concurrent aiohttp embedding; returns one result per input batch (order preserved).
+
+    When ``result_q`` is given, each completed batch is streamed to the writer queue
+    as soon as it is embedded (bounding peak memory to ~concurrency batches of
+    vectors instead of the whole corpus) and the returned list holds lightweight
+    ``True``/``None`` markers instead of the embedding payloads.
+    """
     if aiohttp is None:
         return [None] * len(batches)
     sem = asyncio.Semaphore(concurrency)
     alock = asyncio.Lock() if _embed_serialize_on() else None
+    loop = asyncio.get_running_loop()
 
     async with aiohttp.ClientSession() as session:
 
         async def one(
             batch: List[Tuple[str, str, Dict[str, str]]],
-        ) -> Optional[Tuple[List[str], List[str], List[Dict[str, str]], List[List[float]]]]:
+        ) -> Optional[Any]:
             async with sem:
+                if shutdown_event.is_set():  # pragma: no cover
+                    return None  # pragma: no cover
                 ids, texts, metas = [], [], []
                 for cid, text, meta in batch:
                     ids.append(cid)
@@ -2341,7 +2378,12 @@ async def run_async_embedding_batches(
                 vecs = await embed_with_retry_http_async(session, embed_model, texts, alock)
                 if vecs is None:
                     return None
-                return (ids, texts, metas, vecs)
+                out = (ids, texts, metas, vecs)
+                if result_q is not None:
+                    # queue.Queue.put can block (bounded queue); keep it off the loop
+                    await loop.run_in_executor(None, result_q.put, out)
+                    return True
+                return out
 
         return list(await asyncio.gather(*[one(b) for b in batches]))
 
@@ -2377,7 +2419,9 @@ def embedding_worker(
                     len(texts),
                     srcs,
                 )
-                result_q.put(None)
+                # None placeholders let the writer attribute the failure to
+                # sources (so the checkpoint can re-ingest them next run).
+                result_q.put((ids, texts, metas, [None] * len(ids)))
             else:
                 result_q.put((ids, texts, metas, vecs))
         except Exception as exc:  # pragma: no cover
@@ -2423,10 +2467,17 @@ def load_checkpoint(db_path: Path) -> Dict[str, str]:
         return {}
 
 
-def save_checkpoint(db_path: Path, data: Dict[str, str]) -> None:
-    p = db_path / "ingest_checkpoint.json"
-    with open(p, "w", encoding="utf-8") as fh:
+def _atomic_write_json(path: Path, data: Any) -> None:
+    """Write JSON via tmp-file + os.replace so a crash mid-write can't truncate
+    the previous file (a truncated checkpoint silently resets incremental state)."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
+    os.replace(tmp, path)
+
+
+def save_checkpoint(db_path: Path, data: Dict[str, str]) -> None:
+    _atomic_write_json(db_path / "ingest_checkpoint.json", data)
 
 
 def append_manifest(db_path: Path, record: Dict[str, Any]) -> None:
@@ -2437,8 +2488,7 @@ def append_manifest(db_path: Path, record: Dict[str, Any]) -> None:
 
 def write_ingestion_config(db_path: Path, model: str) -> None:
     cfg = {"embedding_model": model, "ingestion_version": INGESTION_VERSION}
-    with open(db_path / "ingestion_config.json", "w", encoding="utf-8") as fh:
-        json.dump(cfg, fh, indent=2)
+    _atomic_write_json(db_path / "ingestion_config.json", cfg)
 
 
 
@@ -2522,8 +2572,7 @@ def update_repos_manifest(db_path: Path, collection_name: str, repo_counts: Dict
     if collection_name.endswith("_code"):
         for k, v in repo_counts.items():
             data[k] = v
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
+    _atomic_write_json(path, data)
 
 
 def print_status_dashboard(db_path: Path) -> None:
@@ -3037,6 +3086,7 @@ def ingest_run(args: argparse.Namespace) -> int:
         return "root", parts[0] if parts else str(path)
 
     work_items: List[Tuple[str, str, Dict[str, str]]] = []
+    reingested_sources: List[str] = []
     concepts_found: Counter[str] = Counter()
     ctype_dist: Counter[str] = Counter()
     results_holder: Dict[str, Any] = {
@@ -3045,6 +3095,8 @@ def ingest_run(args: argparse.Namespace) -> int:
         "errors": [],
         "chunks_created": 0,
         "chunks_updated": 0,
+        "failed_sources": set(),
+        "unattributed_failure": False,
     }
     files_processed = 0
 
@@ -3119,10 +3171,14 @@ def ingest_run(args: argparse.Namespace) -> int:
                     limit_mb,
                 )
                 continue  # pragma: no cover
-            h = file_md5(path)
+            # Read once: hash and decode from the same buffer (files are already
+            # size-capped above), instead of a separate md5 pass plus a second read.
+            raw_bytes = path.read_bytes()
+            h = hashlib.md5(raw_bytes).hexdigest()
             if not args.force and file_hashes.get(abs_src) == h:
                 continue
-            content, _enc = read_file_bytes(path)
+            content, _enc = decode_bytes(raw_bytes)
+            del raw_bytes
             if content is None:
                 continue  # pragma: no cover
             if args.mode == "customer":
@@ -3185,11 +3241,12 @@ def ingest_run(args: argparse.Namespace) -> int:
         if not pieces:
             continue  # pragma: no cover
 
+        # NOTE: stale chunks for re-ingested sources are cleaned up AFTER a
+        # successful upsert (see below), not here. Deleting before embedding
+        # meant an embed failure or interrupt destroyed the old chunks with
+        # nothing written to replace them.
         if not extra.get("virtual") and abs_src and not args.dry_run:
-            try:
-                coll.delete(where={"source": abs_src})
-            except Exception:  # pragma: no cover
-                pass  # pragma: no cover
+            reingested_sources.append(abs_src)
 
         base = empty_metadata()
         base.update(
@@ -3255,8 +3312,29 @@ def ingest_run(args: argparse.Namespace) -> int:
                 break
             if item is None:
                 results_holder["failed"] += 1  # pragma: no cover
+                results_holder["unattributed_failure"] = True  # pragma: no cover
                 continue  # pragma: no cover
             ids, texts, metas, embeddings = item
+            if any(v is None for v in embeddings):
+                # Chunks whose embedding failed permanently: drop just those,
+                # record their sources so the checkpoint re-ingests them.
+                keep = [i for i, v in enumerate(embeddings) if v is not None]
+                dropped = len(ids) - len(keep)
+                results_holder["failed"] += dropped
+                for i, v in enumerate(embeddings):
+                    if v is None:
+                        src = str(metas[i].get("source") or "")
+                        if src:
+                            results_holder["failed_sources"].add(src)
+                logger.error(
+                    "dropping %d/%d chunks with failed embeddings", dropped, len(ids)
+                )
+                ids = [ids[i] for i in keep]
+                texts = [texts[i] for i in keep]
+                metas = [metas[i] for i in keep]
+                embeddings = [embeddings[i] for i in keep]
+                if not ids:
+                    continue
             try:
                 existing_ids: set = set()
                 try:
@@ -3275,6 +3353,10 @@ def ingest_run(args: argparse.Namespace) -> int:
                 logger.exception("upsert failed: %s", exc)  # pragma: no cover
                 results_holder["failed"] += len(ids)  # pragma: no cover
                 results_holder["errors"].append(str(exc))  # pragma: no cover
+                for m in metas:  # pragma: no cover
+                    src = str(m.get("source") or "")  # pragma: no cover
+                    if src:  # pragma: no cover
+                        results_holder["failed_sources"].add(src)  # pragma: no cover
 
     wthread = threading.Thread(target=writer_loop, daemon=True)
     wthread.start()
@@ -3286,10 +3368,13 @@ def ingest_run(args: argparse.Namespace) -> int:
         and aiohttp is not None
     )
 
+    run_incomplete = False
     if use_async_embed:
         try:
+            # Results stream to result_q as batches finish (writer drains
+            # concurrently); outs holds True/None per-batch markers only.
             outs = asyncio.run(
-                run_async_embedding_batches(batches, embed_model, embed_concurrency)
+                run_async_embedding_batches(batches, embed_model, embed_concurrency, result_q)
             )
         except Exception as exc:  # pragma: no cover
             logger.exception("async embedding failed: %s", exc)
@@ -3297,9 +3382,12 @@ def ingest_run(args: argparse.Namespace) -> int:
             outs = [None] * len(batches)
         for bi, item in enumerate(outs):
             if item is None:
-                results_holder["failed"] += len(batches[bi]) if bi < len(batches) else 0
-            else:
-                result_q.put(item)
+                nb = batches[bi] if bi < len(batches) else []
+                results_holder["failed"] += len(nb)
+                for _cid, _txt, m in nb:
+                    src = str(m.get("source") or "")
+                    if src:
+                        results_holder["failed_sources"].add(src)
     else:
         threads: List[threading.Thread] = []
         for wid in range(workers_n):
@@ -3321,14 +3409,56 @@ def ingest_run(args: argparse.Namespace) -> int:
                 chunk_q.put(None)
         for t in threads:
             t.join(timeout=600)
+        if any(t.is_alive() for t in threads):  # pragma: no cover
+            logger.error("embedding worker(s) still alive after join timeout")  # pragma: no cover
+            run_incomplete = True  # pragma: no cover
 
     result_q.put(WRITER_STOP)
     wthread.join(timeout=600)
 
-    checkpoint[cp_key] = json.dumps(file_hashes)
-    if new_git_head_commit:
-        checkpoint[git_head_key] = new_git_head_commit
-    save_checkpoint(db_path, checkpoint)
+    failed_sources: Set[str] = results_holder["failed_sources"]
+    run_incomplete = (
+        run_incomplete
+        or shutdown_event.is_set()
+        or bool(results_holder["unattributed_failure"])
+        or wthread.is_alive()
+    )
+
+    # Remove stale chunks of successfully re-ingested sources only now, after
+    # the new chunks are safely upserted (deterministic ids make the upsert an
+    # in-place replace; this deletes leftovers whose ids changed).
+    if not run_incomplete:
+        for src in reingested_sources:
+            if src in failed_sources:
+                continue
+            try:
+                coll.delete(
+                    where={
+                        "$and": [
+                            {"source": {"$eq": src}},
+                            {"ingestion_date": {"$ne": ingestion_ts}},
+                        ]
+                    }
+                )
+            except Exception:  # pragma: no cover
+                pass  # pragma: no cover
+
+    # Checkpoint hygiene: never mark work as done that wasn't verified done.
+    if run_incomplete:
+        logger.warning(
+            "run incomplete (interrupt/timeout/unattributed failure); "
+            "checkpoint for %s left unchanged so affected files re-ingest next run",
+            collection_name,
+        )
+    else:
+        for src in failed_sources:
+            file_hashes.pop(src, None)
+        checkpoint[cp_key] = json.dumps(file_hashes)
+        if new_git_head_commit and not failed_sources and not results_holder["failed"]:
+            # Only advance the git-diff baseline on a fully clean run; otherwise
+            # failed files would fall outside the next diff and never re-ingest.
+            checkpoint[git_head_key] = new_git_head_commit
+        save_checkpoint(db_path, checkpoint)
     if repo_file_counts:
         update_repos_manifest(db_path, collection_name, dict(repo_file_counts))
 

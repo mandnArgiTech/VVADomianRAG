@@ -15,6 +15,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 DEFAULT_RFCS = (1112, 2236, 3376, 4604, 5790, 7761, 8216, 9110, 9279, 9293, 9776)
@@ -84,7 +85,12 @@ def fetch_rfc(
     """
     url = f"https://www.rfc-editor.org/rfc/rfc{num}.txt"
     if dest.exists() and not force:
-        if _looks_like_rfc_text(dest.read_bytes()):
+        try:
+            with dest.open("rb") as fh:  # only the head is inspected — skip full read
+                head = fh.read(800)
+        except OSError:
+            head = b""
+        if _looks_like_rfc_text(head):
             return "skipped", None
         # corrupt or HTML save — retry
     if dry_run:
@@ -135,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Output directory (default: multicast_streaming_rfcs)",
     )
     p.add_argument("--force", action="store_true", help="Re-download even if file exists")
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=6,
+        help="Concurrent downloads (default: 6; use 1 for sequential)",
+    )
     p.add_argument("--retries", type=int, default=3, help="Attempts per RFC (default: 3)")
     p.add_argument("--timeout", type=float, default=60.0, help="Per-request timeout seconds")
     p.add_argument("--user-agent", default=DEFAULT_UA, help="HTTP User-Agent header")
@@ -166,13 +178,10 @@ def main(argv: list[str] | None = None) -> int:
     ok = skipped = failed = 0
     errors: list[tuple[int, str]] = []
 
-    for num in numbers:
-        dest = out_dir / f"rfc{num}.txt"
-        if not args.quiet:
-            print(f"RFC {num} ... ", end="", flush=True)
+    def _fetch_one(num: int) -> tuple[int, str, str | None]:
         status, err = fetch_rfc(
             num,
-            dest,
+            out_dir / f"rfc{num}.txt",
             force=args.force,
             retries=max(1, args.retries),
             timeout=args.timeout,
@@ -180,19 +189,35 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             quiet=args.quiet,
         )
+        return num, status, err
+
+    def _report(num: int, status: str, err: str | None) -> None:
+        nonlocal ok, skipped, failed
         if status == "ok":
             ok += 1
             if not args.quiet:
-                print("ok" if not args.dry_run else "planned")
+                print(f"RFC {num} ... " + ("ok" if not args.dry_run else "planned"))
         elif status == "skipped":
             skipped += 1
             if not args.quiet:
-                print("skipped (already present)")
+                print(f"RFC {num} ... skipped (already present)")
         else:
             failed += 1
             errors.append((num, err or "unknown"))
             if not args.quiet:
-                print(f"FAILED ({err})")
+                print(f"RFC {num} ... FAILED ({err})")
+
+    workers = max(1, min(int(args.workers), len(numbers)))
+    if workers == 1 or args.dry_run:
+        for num in numbers:
+            _report(*_fetch_one(num))
+    else:
+        # Download concurrently: sequential fetches made wall-clock time the SUM
+        # of every request (plus retry back-offs) instead of the slowest few.
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_fetch_one, num) for num in numbers]
+            for fut in as_completed(futures):
+                _report(*fut.result())
 
     if not args.quiet:
         print(

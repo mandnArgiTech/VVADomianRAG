@@ -10,12 +10,35 @@ import argparse
 import base64
 import logging
 import sys
+import threading
 import time
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
+
+# Cloud VLM clients are cached per (provider, api_key): building a new SDK
+# client per figure paid a fresh TLS handshake for every image in the PDF.
+_client_cache: Dict[Tuple[str, str], Any] = {}
+_client_cache_lock = threading.Lock()
+
+
+def _cached_client(provider: str, api_key: str) -> Any:
+    key = (provider, api_key)
+    with _client_cache_lock:
+        client = _client_cache.get(key)
+        if client is None:
+            if provider == "anthropic":
+                import anthropic
+
+                client = anthropic.Anthropic(api_key=api_key)
+            else:
+                from openai import OpenAI
+
+                client = OpenAI(api_key=api_key)
+            _client_cache[key] = client
+        return client
 
 DEFAULT_PROMPT = (
     "You are an expert Principal Electrical Engineer. Analyze this circuit diagram or graph. "
@@ -93,9 +116,8 @@ def _caption_image(
     if provider == "anthropic":
         if not api_key.strip():
             raise ValueError("Anthropic API key is required")
-        import anthropic
 
-        client = anthropic.Anthropic(api_key=api_key.strip())
+        client = _cached_client("anthropic", api_key.strip())
         response = client.messages.create(
             model=model,
             max_tokens=2048,
@@ -126,9 +148,8 @@ def _caption_image(
     if provider == "openai":
         if not api_key.strip():
             raise ValueError("OpenAI API key is required")
-        from openai import OpenAI
 
-        client = OpenAI(api_key=api_key.strip())
+        client = _cached_client("openai", api_key.strip())
         response = client.chat.completions.create(
             model=model,
             temperature=0.1,

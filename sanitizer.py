@@ -4,7 +4,7 @@ import re
 
 DEFAULT_PATTERNS = [
     (r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(/\d{1,2})?\b", "x.x.x.x"),
-    (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[email]"),
+    (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", "[email]"),
     (r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "[phone]"),
     (r"\b([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b", "[mac]"),
     # Hostnames: require subdomain.domain.tld (3+ labels) to avoid ieee802.1d, layer2.forwarding, etc.

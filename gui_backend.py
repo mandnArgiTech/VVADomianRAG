@@ -433,6 +433,48 @@ _vision_busy = False
 
 MAX_VISION_PDF_BYTES = 80 * 1024 * 1024
 
+# -----------------------------------------------------------------------------
+# Cloud LLM client cache — creating a new SDK client per call discards the
+# underlying httpx connection pool, paying a TLS handshake on every request.
+# -----------------------------------------------------------------------------
+_llm_client_cache: Dict[Tuple[str, str, str], Any] = {}
+_llm_client_cache_lock = threading.Lock()
+
+
+def get_anthropic_client(api_key: str) -> Any:
+    key = ("anthropic", api_key, "")
+    with _llm_client_cache_lock:
+        client = _llm_client_cache.get(key)
+        if client is None:
+            client = anthropic.Anthropic(api_key=api_key)
+            _llm_client_cache[key] = client
+        return client
+
+
+def get_openai_client(api_key: str, base_url: str = "https://api.deepseek.com") -> Any:
+    key = ("openai", api_key, base_url)
+    with _llm_client_cache_lock:
+        client = _llm_client_cache.get(key)
+        if client is None:
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            _llm_client_cache[key] = client
+        return client
+
+
+def _terminate_proc(proc: Optional[subprocess.Popen], timeout: float = 5.0) -> None:
+    """Terminate and REAP a child process (terminate without wait leaves a zombie)."""
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=timeout)
+    except Exception as exc:
+        log.warning("could not terminate ingest subprocess: %s", exc)
+
 
 def _reject_query_while_ingesting() -> None:
     with _ingest_lock:
@@ -702,7 +744,7 @@ def _iter_anthropic_text(
     if not ANTHROPIC_AVAILABLE or anthropic is None:
         yield "Error: install anthropic (pip install anthropic)."
         return
-    client = anthropic.Anthropic(api_key=api_key)
+    client = get_anthropic_client(api_key)
     amsg = [{"role": m["role"], "content": m["content"]} for m in messages]
     with client.messages.stream(
         model=model,
@@ -723,7 +765,7 @@ def _iter_deepseek_text(
     if not OPENAI_SDK_AVAILABLE or OpenAI is None:
         yield "Error: install openai (pip install openai)."
         return
-    client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    client = get_openai_client(api_key)
     oa: List[Dict[str, str]] = [{"role": "system", "content": system}]
     oa.extend({"role": m["role"], "content": m["content"]} for m in messages)
     stream = client.chat.completions.create(
@@ -888,17 +930,26 @@ async def api_browse(path: str = "") -> Dict[str, Any]:
             "path": path,
             "entries": [{"name": target.name, "type": "file", "path": path}],
         }
-    entries = []
-    try:
-        for child in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+    def _scan() -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        # Stat each child once (is_dir was previously called twice per entry).
+        children = [(child, child.is_dir()) for child in target.iterdir()]
+        children.sort(key=lambda t: (not t[1], t[0].name.lower()))
+        for child, is_dir in children:
             rel = str(Path(path) / child.name) if path else child.name
-            entries.append(
+            out.append(
                 {
                     "name": child.name,
-                    "type": "directory" if child.is_dir() else "file",
+                    "type": "directory" if is_dir else "file",
                     "path": rel.replace("\\", "/"),
                 }
             )
+        return out
+
+    try:
+        # Directory scans are blocking I/O; keep them off the event loop so a
+        # big/slow folder doesn't freeze every active SSE stream.
+        entries = await asyncio.to_thread(_scan)
     except OSError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"root": str(root), "path": path, "entries": entries}
@@ -990,6 +1041,10 @@ async def api_vision_parse(
             status_code=409,
             detail="Another vision parse is already running. Wait for it to finish.",
         )
+    # Mark busy at acquisition time: setting it only once the SSE generator ran
+    # left a window where /api/ingest saw vision_busy=False and started
+    # concurrently with a vision parse.
+    _vision_busy = True
 
     tmp_path: Optional[str] = None
     try:
@@ -997,6 +1052,7 @@ async def api_vision_parse(
         os.close(fd)
         Path(tmp_path).write_bytes(raw)
     except Exception as exc:
+        _vision_busy = False
         _vision_lock.release()
         raise HTTPException(status_code=500, detail=f"Could not save upload: {exc}") from exc
 
@@ -1009,22 +1065,41 @@ async def api_vision_parse(
 
     async def event_stream() -> AsyncIterator[str]:
         global _vision_busy
-        _vision_busy = True
-        q: "queue.Queue[Optional[Dict[str, Any]]]" = queue.Queue()
+        q: "queue.Queue[Optional[Dict[str, Any]]]" = queue.Queue(maxsize=256)
+        stop = threading.Event()
 
         def worker() -> None:
             try:
                 from util.universal_vision_parser import parse_pdf_with_vision
 
                 for ev in parse_pdf_with_vision(tmp_path or "", **kw):
-                    q.put(ev)
+                    if stop.is_set():
+                        return
+                    while True:
+                        try:
+                            q.put(ev, timeout=1.0)
+                            break
+                        except queue.Full:
+                            if stop.is_set():
+                                return
             except Exception as exc:
                 log.exception("Vision parse worker failed")
-                q.put({"type": "error", "message": str(exc)})
+                if not stop.is_set():
+                    try:
+                        q.put({"type": "error", "message": str(exc)}, timeout=1.0)
+                    except queue.Full:
+                        pass
             finally:
-                q.put(None)
+                # Deliver the end-of-stream sentinel unless the consumer left.
+                while not stop.is_set():
+                    try:
+                        q.put(None, timeout=1.0)
+                        break
+                    except queue.Full:
+                        continue
 
-        threading.Thread(target=worker, daemon=True).start()
+        wt = threading.Thread(target=worker, daemon=True)
+        wt.start()
         try:
             while True:
                 ev = await asyncio.to_thread(q.get)
@@ -1038,6 +1113,11 @@ async def api_vision_parse(
                     )
                 yield f"data: {payload}\n\n"
         finally:
+            # Signal the worker to stop (client may have disconnected mid-parse)
+            # and wait briefly so it isn't reading the temp PDF while we delete
+            # it — or still burning CPU/VRAM after the busy flag clears.
+            stop.set()
+            await asyncio.to_thread(wt.join, 10.0)
             _vision_busy = False
             _vision_lock.release()
             try:
@@ -1123,11 +1203,13 @@ async def api_ingest(body: IngestBody) -> StreamingResponse:
             code = await asyncio.to_thread(proc.wait)
             yield f"data: {json.dumps({'done': True, 'exit_code': int(code or 0)})}\n\n"
         except asyncio.CancelledError:
-            if proc and proc.poll() is None:
-                proc.terminate()
+            _terminate_proc(proc)
             raise
         except Exception as exc:
             log.exception("ingest stream error")
+            # Don't leave the ingest child running (writing to Chroma) after
+            # the stream died — terminate and reap it before reporting.
+            _terminate_proc(proc)
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
             yield f"data: {json.dumps({'done': True, 'exit_code': 1})}\n\n"
         finally:
@@ -1205,7 +1287,7 @@ def _rewrite_anthropic_sync(
     if not ANTHROPIC_AVAILABLE or anthropic is None:
         return ""
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = get_anthropic_client(api_key)
         msgs: List[Dict[str, Any]] = []
         for m in history_tail:
             msgs.append({"role": m["role"], "content": m["content"]})
@@ -1229,7 +1311,7 @@ def _rewrite_deepseek_sync(
     if not OPENAI_SDK_AVAILABLE or OpenAI is None:
         return ""
     try:
-        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        client = get_openai_client(api_key)
         r = client.chat.completions.create(
             model=eff_model or "deepseek-chat",
             messages=messages,
@@ -1578,12 +1660,12 @@ class StreamingBuffer:
     def __init__(self) -> None:
         self._buf = ""
         self._in_fence = False
-        self._full = ""  # complete accumulated response
+        self._full_parts: List[str] = []  # complete accumulated response (join on read)
         self._fence_carry = ""  # incomplete line for incremental ``` fence detection
 
     def feed(self, token: str) -> List[str]:
         """Feed a token; return list of text chunks safe to send to the UI."""
-        self._full += token
+        self._full_parts.append(token)  # avoid O(n^2) str += over long streams
         self._buf += token
         self._advance_fence_state(token)
         if self._in_fence:
@@ -1614,7 +1696,7 @@ class StreamingBuffer:
 
     @property
     def full_response(self) -> str:
-        return self._full
+        return "".join(self._full_parts)
 
     def end_stream(self) -> None:
         """Apply fence toggles for a trailing partial line (no final newline)."""
@@ -1798,7 +1880,7 @@ def _iter_agent_anthropic(messages: List[Dict[str, Any]], model: str, api_key: s
     api_messages = _anthropic_api_messages(non_system)
     text_parts: List[str] = []
     try:
-        with anthropic.Anthropic(api_key=api_key).messages.stream(
+        with get_anthropic_client(api_key).messages.stream(
             model=model or "claude-3-5-haiku-20241022",
             max_tokens=8192,
             system=system_content,
@@ -1834,7 +1916,7 @@ def _iter_agent_deepseek(messages: List[Dict[str, Any]], model: str, api_key: st
         yield "Error: install openai (pip install openai)."
         return
     merged = _merge_consecutive_roles_for_agent(messages)
-    client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    client = get_openai_client(api_key)
     api_messages = _deepseek_api_messages(merged)
     text_parts: List[str] = []
     tc_accum: Dict[int, Dict[str, str]] = {}
@@ -2226,7 +2308,8 @@ async def agent_sse_stream(body: AgentBody) -> AsyncIterator[str]:
     chroma_embedder = None
     try:
         chroma_client, chroma_embedder, cmap, _ = await ensure_chroma(db_path)
-    except Exception:
+    except Exception as exc:
+        log.warning("agent: Chroma unavailable, search_codebase disabled: %s", exc)
         cmap = {}
 
     session = AgentSession(

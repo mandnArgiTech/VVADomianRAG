@@ -83,6 +83,118 @@ def test_ingest_domain_full_ingest(tmp_path, monkeypatch, patch_ollama_embedding
     assert any("utest" in n for n in cols)
 
 
+def test_ingest_partial_embed_failure_keeps_file_for_retry(
+    tmp_path, monkeypatch, patch_ollama_embeddings, concept_registry_path
+):
+    """A file whose chunks fail embedding must NOT be checkpointed as done,
+    while sibling files that embedded fine are recorded and written."""
+    monkeypatch.setenv("EMBEDDING_MODEL", "nomic-embed-text")
+    monkeypatch.setenv("EMBED_WORKERS", "1")
+    monkeypatch.setenv("EMBED_ASYNC", "0")
+    monkeypatch.setenv("EMBED_HTTP", "0")
+    patch_ollama_embeddings(dim=768)
+
+    def fake_retry(_embedder, batch):
+        return [None if "FAILME" in t else [0.01] * 768 for t in batch]
+
+    monkeypatch.setattr(ing, "embed_with_retry", fake_retry)
+
+    src = tmp_path / "docs"
+    src.mkdir()
+    (src / "ok.md").write_text("# T\n\n## S\n\nGood body snmp\n", encoding="utf-8")
+    (src / "bad.md").write_text("# T\n\n## S\n\nFAILME body\n", encoding="utf-8")
+    db = tmp_path / "vdb"
+    p = ing.build_arg_parser()
+    args = _args(
+        p,
+        "--mode",
+        "domain",
+        "--domain",
+        "utest",
+        "--source",
+        str(src),
+        "--db-path",
+        str(db),
+        "--concept-registry",
+        str(concept_registry_path),
+        "--force",
+    )
+    assert ing.ingest_run(args) == 0
+
+    ck = ing.load_checkpoint(db)
+    hashes = {}
+    for key, val in ck.items():
+        if key.endswith("::checkpoint"):
+            hashes.update(json.loads(val))
+    recorded = "\n".join(hashes.keys())
+    assert "ok.md" in recorded
+    assert "bad.md" not in recorded  # failed file re-ingests next run
+
+    client = chromadb.PersistentClient(path=str(db))
+    col = next(c for c in client.list_collections() if "utest" in c.name)
+    got = client.get_collection(col.name).get(include=["metadatas"])
+    sources = {m.get("source", "") for m in got["metadatas"]}
+    assert any(s.endswith("ok.md") for s in sources)
+    assert not any(s.endswith("bad.md") for s in sources)
+
+
+def test_ingest_all_chunks_fail_embedding_batch_skipped(
+    tmp_path, monkeypatch, patch_ollama_embeddings, concept_registry_path
+):
+    """Whole batch failing embedding: nothing upserted, file not checkpointed."""
+    monkeypatch.setenv("EMBEDDING_MODEL", "nomic-embed-text")
+    monkeypatch.setenv("EMBED_WORKERS", "1")
+    monkeypatch.setenv("EMBED_ASYNC", "0")
+    monkeypatch.setenv("EMBED_HTTP", "0")
+    patch_ollama_embeddings(dim=768)
+    monkeypatch.setattr(ing, "embed_with_retry", lambda _e, batch: [None] * len(batch))
+
+    src = tmp_path / "docs"
+    src.mkdir()
+    (src / "bad.md").write_text("# T\n\n## S\n\nDoomed body\n", encoding="utf-8")
+    db = tmp_path / "vdb"
+    p = ing.build_arg_parser()
+    args = _args(
+        p, "--mode", "domain", "--domain", "utest", "--source", str(src),
+        "--db-path", str(db), "--concept-registry", str(concept_registry_path), "--force",
+    )
+    assert ing.ingest_run(args) == 0
+    ck = ing.load_checkpoint(db)
+    joined = "".join(v for k, v in ck.items() if k.endswith("::checkpoint"))
+    assert "bad.md" not in joined
+
+
+def test_ingest_interrupted_run_keeps_previous_checkpoint(
+    tmp_path, monkeypatch, patch_ollama_embeddings, concept_registry_path
+):
+    """shutdown_event set => checkpoint untouched (files re-ingest next run)."""
+    monkeypatch.setenv("EMBEDDING_MODEL", "nomic-embed-text")
+    monkeypatch.setenv("EMBED_WORKERS", "1")
+    monkeypatch.setenv("EMBED_ASYNC", "0")
+    monkeypatch.setenv("EMBED_HTTP", "0")
+    patch_ollama_embeddings(dim=768)
+
+    src = tmp_path / "docs"
+    src.mkdir()
+    (src / "note.md").write_text("# T\n\n## S\n\nBody snmp\n", encoding="utf-8")
+    db = tmp_path / "vdb"
+    db.mkdir()
+    ing.save_checkpoint(db, {"sentinel::checkpoint": "{}"})
+    ing.shutdown_event.set()
+    try:
+        p = ing.build_arg_parser()
+        args = _args(
+            p, "--mode", "domain", "--domain", "utest", "--source", str(src),
+            "--db-path", str(db), "--concept-registry", str(concept_registry_path), "--force",
+        )
+        assert ing.ingest_run(args) == 0
+    finally:
+        ing.shutdown_event.clear()
+    ck = ing.load_checkpoint(db)
+    assert "sentinel::checkpoint" in ck  # previous state preserved
+    assert not any("utest" in k for k in ck)  # nothing new recorded
+
+
 def test_ingest_rfc_dry_run(tmp_path, monkeypatch, patch_ollama_embeddings, concept_registry_path):
     monkeypatch.setenv("EMBEDDING_MODEL", "nomic-embed-text")
     patch_ollama_embeddings(dim=768)

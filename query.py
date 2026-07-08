@@ -178,6 +178,7 @@ def embedding_model_from_db_path(db_path: str) -> str:
     Use for ingestion paths that must match an existing VectorDB; ``detect_embedding_model`` still
     honors the env override first for query-time behavior.
     """
+    _log = logging.getLogger("query")
     config_path = os.path.join(db_path, "ingestion_config.json")
     if os.path.exists(config_path):
         try:
@@ -185,8 +186,8 @@ def embedding_model_from_db_path(db_path: str) -> str:
                 model = json.load(fh).get("embedding_model", "")
             if model:
                 return str(model).strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("could not read %s: %s", config_path, exc)
     try:
         client = chromadb.PersistentClient(path=db_path)
         cols = client.list_collections()
@@ -198,8 +199,10 @@ def embedding_model_from_db_path(db_path: str) -> str:
                 dim = len(embs[0])
                 if dim in DIM_TO_MODEL:
                     return DIM_TO_MODEL[dim]
-    except Exception:
-        pass
+                _log.warning("unknown embedding dimension %d in %s", dim, db_path)
+    except Exception as exc:
+        _log.warning("embedding-model probe failed for %s: %s", db_path, exc)
+    _log.warning("defaulting embedding model to nomic-embed-text for %s", db_path)
     return "nomic-embed-text"
 
 
@@ -212,8 +215,8 @@ def detect_embedding_model(db_path: str) -> str:
 
 def check_ollama(timeout: float = 3.0) -> bool:
     try:
-        urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=timeout)
-        return True
+        with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=timeout):
+            return True
     except Exception:
         return False
 
@@ -228,9 +231,11 @@ def discover_collections(
         client = chroma_client or chromadb.PersistentClient(path=db_path)
         for info in client.list_collections():
             name = info.name
+            # Share the one PersistentClient: passing persist_directory instead
+            # made langchain open a separate client per collection.
             out[name] = Chroma(
                 collection_name=name,
-                persist_directory=db_path,
+                client=client,
                 embedding_function=embeddings,
             )
     except Exception as exc:
@@ -391,6 +396,45 @@ class SearchHit:
     collection: Optional[str] = None
 
 
+def _embed_query_once(cmap: Dict[str, Chroma], targets: List[str], query: str) -> Optional[List[float]]:
+    """Embed the query text a single time for a multi-collection search.
+
+    similarity_search_with_score(query, ...) re-embeds the text on every call,
+    so fanning out over N collections used to cost N identical Ollama round
+    trips per query. Returns None when no embedder is reachable (callers fall
+    back to per-collection text search)."""
+    for name in targets:
+        emb = getattr(cmap.get(name), "embeddings", None)
+        if emb is None:
+            continue
+        try:
+            return emb.embed_query(query)
+        except Exception as exc:
+            log.warning("query embedding failed (falling back to per-collection): %s", exc)
+            return None
+    return None
+
+
+def _dense_pairs(
+    vs: Chroma,
+    query: str,
+    qvec: Optional[List[float]],
+    k: int,
+    flt: Optional[Dict[str, str]],
+) -> List[Tuple[Any, float]]:
+    """Dense candidates using the precomputed query vector when available."""
+    by_vec = getattr(vs, "similarity_search_by_vector_with_relevance_scores", None)
+    if qvec is not None and by_vec is not None:
+        try:
+            return by_vec(qvec, k=k, filter=flt)
+        except TypeError:
+            return by_vec(qvec, k=k)
+    try:
+        return vs.similarity_search_with_score(query, k=k, filter=flt)
+    except TypeError:
+        return vs.similarity_search_with_score(query, k=k)
+
+
 def _sync_multi_search(
     query: str,
     k: int,
@@ -403,12 +447,16 @@ def _sync_multi_search(
     if not cmap:
         raise RuntimeError("ChromaDB has no collections.")
     targets = _select_collection_names(cmap, search_type, domain)
-    per = max(1, k // max(1, len(targets)) if targets else k)
+    # Fetch up to k per collection: dividing k across collections meant a
+    # collection holding several of the true global top-k could surface only
+    # one of them (per-collection top-1 when targets > k).
+    per = max(1, k)
     use_hybrid = HYBRID_SEARCH and HYBRID_AVAILABLE and bool(_resolve_db_abs(db_path, cmap))
     if HYBRID_SEARCH and not HYBRID_AVAILABLE:
         log.warning(
             "HYBRID_SEARCH is on but rank-bm25 is not installed; using dense-only. pip install rank-bm25"
         )
+    qvec = _embed_query_once(cmap, targets, query)
 
     def _hit(doc: Any, score: Optional[float], st: str, cname: str) -> SearchHit:
         return SearchHit(
@@ -427,10 +475,7 @@ def _sync_multi_search(
             if repo_filter.strip():
                 flt = {"repository": repo_filter.strip()}
             try:
-                try:
-                    pairs = vs.similarity_search_with_score(query, k=per, filter=flt)
-                except TypeError:
-                    pairs = vs.similarity_search_with_score(query, k=per)
+                pairs = _dense_pairs(vs, query, qvec, per, flt)
             except Exception as exc:
                 log.warning("Skipping collection %s: %s", name, exc)
                 continue
@@ -456,10 +501,7 @@ def _sync_multi_search(
         if repo_filter.strip():
             flt = {"repository": repo_filter.strip()}
         try:
-            try:
-                pairs = vs.similarity_search_with_score(query, k=dense_cap, filter=flt)
-            except TypeError:
-                pairs = vs.similarity_search_with_score(query, k=dense_cap)
+            pairs = _dense_pairs(vs, query, qvec, dense_cap, flt)
         except Exception as exc:
             log.warning("Skipping collection %s: %s", name, exc)
             continue
@@ -473,10 +515,9 @@ def _sync_multi_search(
 
         bm25_ids: List[str] = []
         col = getattr(vs, "_collection", None)
-        if col is not None and db_abs:
-            idx = get_bm25_index(db_abs, name)
-            if idx.ensure_loaded(col):
-                bm25_ids = search_bm25_ranked_ids(idx, query, bm25_cap, repo_filter)
+        idx_ref = get_bm25_index(db_abs, name) if (col is not None and db_abs) else None
+        if idx_ref is not None and idx_ref.ensure_loaded(col):
+            bm25_ids = search_bm25_ranked_ids(idx_ref, query, bm25_cap, repo_filter)
         rank_lists = [dense_ids, bm25_ids] if bm25_ids else [dense_ids]
         rrf_scores = reciprocal_rank_fusion(rank_lists, k=RRF_K)
         if not rrf_scores:
@@ -492,7 +533,6 @@ def _sync_multi_search(
                 dense_rank.get(sid, 10**9),
             ),
         )
-        idx_ref = get_bm25_index(db_abs, name) if col is not None else None
         for sid in sorted_sids:
             if sid in dense_map:
                 doc, _dscore = dense_map[sid]

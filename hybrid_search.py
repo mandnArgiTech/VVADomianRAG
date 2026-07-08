@@ -7,6 +7,7 @@ Requires: pip install rank-bm25
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import logging
 import os
@@ -155,10 +156,13 @@ class CachedBM25Index:
             for text, meta in zip(documents, metadatas):
                 m = dict(meta or {})
                 sid = stable_doc_id(self.collection_name, m, text or "")
+                if sid in id_to_doc:
+                    # Colliding stable ids would occupy two corpus slots but map
+                    # to one doc, double-counting it in RRF; keep first only.
+                    continue
                 tokenized_corpus.append(tokenize(text or ""))
                 ordered_ids.append(sid)
-                if sid not in id_to_doc:
-                    id_to_doc[sid] = (text or "", m)
+                id_to_doc[sid] = (text or "", m)
 
             if not tokenized_corpus:
                 logger.warning(
@@ -175,7 +179,11 @@ class CachedBM25Index:
             self.bm25 = BM25Okapi(tokenized_corpus)
             self.ordered_ids = ordered_ids
             self.id_to_doc = id_to_doc
-            self._loaded_count = len(documents)
+            # Track the live collection count (the staleness key used by both
+            # the in-memory check and the disk meta); using len(documents) here
+            # caused a full O(corpus) rebuild on EVERY query whenever the
+            # paginated get() total diverged from count().
+            self._loaded_count = count
 
             try:
                 payload = {
@@ -187,7 +195,7 @@ class CachedBM25Index:
                     pickle.dump(payload, fh, protocol=pickle.HIGHEST_PROTOCOL)
                 with open(meta_path, "w", encoding="utf-8") as fh:
                     json.dump(
-                        {"count": self._loaded_count, "name": self.collection_name},
+                        {"count": count, "name": self.collection_name},
                         fh,
                     )
             except Exception as exc:
@@ -222,15 +230,12 @@ def search_bm25_ranked_ids(
             _text, meta = index.id_to_doc.get(sid, ("", {}))
             if str(meta.get("repository") or "") == rf:
                 candidates.append(i)
-        order = sorted(candidates, key=lambda i: scores[i], reverse=True)
     else:
-        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
-    out: List[str] = []
-    for i in order:
-        out.append(index.ordered_ids[i])
-        if len(out) >= top_n:
-            break
-    return out
+        candidates = list(range(len(index.ordered_ids)))
+    # Partial selection: only top_n ids are needed, so avoid a full
+    # O(N log N) Python-key sort over the whole corpus on every query.
+    order = heapq.nlargest(top_n, candidates, key=scores.__getitem__)
+    return [index.ordered_ids[i] for i in order]
 
 
 _index_singletons: Dict[str, CachedBM25Index] = {}

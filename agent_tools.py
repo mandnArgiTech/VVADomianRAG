@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,6 +56,10 @@ class AgentSession:
         self.backed_up: Dict[str, Path] = {}  # rel_path -> backup_path
         self.created_files: Set[str] = set()   # rel_paths created by the agent
         self._backup_dir = self.workspace_root / ".rag_agent_backups" / session_id
+        # Guards backed_up/created_files: tools run via asyncio.to_thread, so
+        # concurrent tool calls would otherwise race the check-then-set below
+        # and could drop a backup (breaking rollback).
+        self._mutation_lock = threading.Lock()
 
     # -- path security -------------------------------------------------------
 
@@ -77,12 +82,17 @@ class AgentSession:
     def backup_file(self, abs_path: Path) -> None:
         """Copy *abs_path* into the session backup dir (first touch only)."""
         rel = str(abs_path.resolve().relative_to(self.workspace_root))
-        if rel in self.backed_up:
-            return
-        dest = self._backup_dir / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(abs_path), str(dest))
-        self.backed_up[rel] = dest
+        with self._mutation_lock:
+            if rel in self.backed_up:
+                return
+            dest = self._backup_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(abs_path), str(dest))
+            self.backed_up[rel] = dest
+
+    def record_created_file(self, rel: str) -> None:
+        with self._mutation_lock:
+            self.created_files.add(rel)
 
     def rollback(self) -> List[str]:
         """Restore backed-up files and delete agent-created files."""
@@ -179,7 +189,15 @@ def edit_file(
     if not target.is_file():
         return ToolResult(success=False, output="", error=f"File not found: {filepath}. Use create_file for new files.")
     try:
-        content = target.read_text(encoding="utf-8", errors="replace")
+        # Strict decode: errors="replace" would turn every non-UTF-8 byte in the
+        # file into U+FFFD, and writing the edited buffer back would persist
+        # that corruption across the whole file, not just the edited region.
+        content = target.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return ToolResult(
+            success=False, output="",
+            error=f"{filepath} is not valid UTF-8; refusing to edit (would corrupt non-UTF-8 bytes).",
+        )
     except Exception as exc:
         return ToolResult(success=False, output="", error=f"Read error: {exc}")
 
@@ -257,7 +275,7 @@ def create_file(
     except Exception as exc:
         return ToolResult(success=False, output="", error=f"Create error: {exc}")
     rel = str(target.resolve().relative_to(session.workspace_root))
-    session.created_files.add(rel)
+    session.record_created_file(rel)
     n = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
     return ToolResult(success=True, output=f"Created {filepath} ({n} lines)")
 
