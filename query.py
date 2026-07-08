@@ -562,6 +562,47 @@ def _concept_parts(concepts_field: str) -> List[str]:
     return [x.strip() for x in s.split(",") if x.strip()]
 
 
+CONCEPT_SCAN_CAP = max(1000, int(os.environ.get("RAG_CONCEPT_SCAN_CAP", "20000")))
+
+
+def _concept_rows_via_scan(
+    col: Any, safe_concept: str, limit: int, scan_cap: int = CONCEPT_SCAN_CAP
+) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+    """Client-side concepts filter.
+
+    Modern chromadb (1.x) supports ``$contains`` only in where_document; in a
+    metadata ``where`` it silently matches nothing, which left concept search
+    returning zero results. Scan metadata pages and match the parsed concept
+    ids exactly instead (capped by RAG_CONCEPT_SCAN_CAP rows per collection).
+    """
+    want = safe_concept.lower()
+    ids: List[str] = []
+    docs: List[str] = []
+    metas: List[Dict[str, Any]] = []
+    offset = 0
+    batch = 512
+    while offset < scan_cap and len(ids) < limit:
+        page = col.get(include=["documents", "metadatas"], limit=batch, offset=offset)
+        page_ids = page.get("ids") or []
+        if not page_ids:
+            break
+        page_docs = page.get("documents") or []
+        page_metas = page.get("metadatas") or []
+        for i, did in enumerate(page_ids):
+            m = page_metas[i] if i < len(page_metas) else {}
+            parts = _concept_parts(str((m or {}).get("concepts") or ""))
+            if any(p.lower() == want for p in parts):
+                ids.append(did)
+                docs.append(page_docs[i] if i < len(page_docs) else "")
+                metas.append(dict(m or {}))
+                if len(ids) >= limit:
+                    break
+        offset += len(page_ids)
+        if len(page_ids) < batch:
+            break
+    return ids, docs, metas
+
+
 def concept_search_hits(concept: str, domain: str, cmap: Dict[str, Chroma]) -> List[SearchHit]:
     concept = concept.strip()
     if not concept:
@@ -576,20 +617,20 @@ def concept_search_hits(concept: str, domain: str, cmap: Dict[str, Chroma]) -> L
             continue
         try:
             col = vs._collection  # type: ignore[attr-defined]
-            res = col.get(
-                where={"concepts": {"$contains": needle}},
-                limit=80,
-                include=["documents", "metadatas", "ids"],
-            )
-            if not (res.get("ids") or []):
+            try:
+                # Fast path for chroma versions where metadata $contains works.
                 res = col.get(
-                    where={"concepts": {"$contains": safe_concept}},
+                    where={"concepts": {"$contains": needle}},
                     limit=80,
-                    include=["documents", "metadatas", "ids"],
+                    include=["documents", "metadatas"],
                 )
+            except Exception:
+                res = {}
             ids_list = res.get("ids") or []
             docs = res.get("documents") or []
             metas = res.get("metadatas") or []
+            if not ids_list:
+                ids_list, docs, metas = _concept_rows_via_scan(col, safe_concept, 80)
             for i, _did in enumerate(ids_list):
                 text = docs[i] if i < len(docs) else ""
                 meta = metas[i] if i < len(metas) else {}

@@ -688,6 +688,25 @@ def _dependencies_where_comma_token(stem: str) -> Dict[str, Any]:
     }
 
 
+def _dependencies_where_for_stems(stems: List[str]) -> Optional[Dict[str, Any]]:
+    """One combined $or filter matching ANY of *stems* in ``dependencies``.
+
+    Batching all stems into a single where lets each collection be queried
+    once instead of once per stem (which was O(stems x collections) round
+    trips per include_dependents search)."""
+    clauses: List[Dict[str, Any]] = []
+    for stem in stems:
+        s = (stem or "").strip()
+        if not s:
+            continue
+        clauses.extend(_dependencies_where_comma_token(s)["$or"])
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$or": clauses}
+
+
 def _sync_fetch_dependents(
     primary: List[Tuple[Any, Optional[float], str]],
     search_type: str,
@@ -701,43 +720,46 @@ def _sync_fetch_dependents(
     lookups = _depend_stems_from_results(primary)
     if not lookups or not targets:
         return []
+    where_dep = _dependencies_where_for_stems(lookups)
+    if where_dep is None:
+        return []
+    fetch_limit = min(200, 40 * max(1, len(lookups)))
     seen: set = set()
     out: List[Tuple[Any, Optional[float], str]] = []
     rf = repo_filter.strip()
-    for stem in lookups:
-        if not stem:
+    for name in targets:
+        vs = cmap[name]
+        col = getattr(vs, "_collection", None)
+        if col is None:
             continue
-        where_dep = _dependencies_where_comma_token(stem)
-        for name in targets:
-            vs = cmap[name]
-            col = getattr(vs, "_collection", None)
-            if col is None:
+        try:
+            # NOTE: "ids" must not appear in include (always returned; modern
+            # chromadb raises ValueError, which used to silently empty this
+            # feature via the warning path below).
+            res = col.get(
+                where=where_dep,
+                limit=fetch_limit,
+                include=["documents", "metadatas"],
+            )
+        except Exception as exc:
+            logger.warning("dependents get failed on %s: %s", name, exc)
+            continue
+        ids_list = res.get("ids") or []
+        docs = res.get("documents") or []
+        metas = res.get("metadatas") or []
+        for i, did in enumerate(ids_list):
+            if did in seen:
                 continue
-            try:
-                res = col.get(
-                    where=where_dep,
-                    limit=40,
-                    include=["documents", "metadatas", "ids"],
-                )
-            except Exception as exc:
-                logger.warning("dependents get failed on %s: %s", name, exc)
+            meta = metas[i] if i < len(metas) else {}
+            if rf and str((meta or {}).get("repository", "")).strip() != rf:
                 continue
-            ids_list = res.get("ids") or []
-            docs = res.get("documents") or []
-            metas = res.get("metadatas") or []
-            for i, did in enumerate(ids_list):
-                if did in seen:
-                    continue
-                meta = metas[i] if i < len(metas) else {}
-                if rf and str((meta or {}).get("repository", "")).strip() != rf:
-                    continue
-                seen.add(did)
-                text = docs[i] if i < len(docs) else ""
-                doc = Document(page_content=text or "", metadata=dict(meta or {}))
-                st = _infer_source_type(meta or {})
-                out.append((doc, None, st))
-                if len(out) >= max_hits:
-                    return out
+            seen.add(did)
+            text = docs[i] if i < len(docs) else ""
+            doc = Document(page_content=text or "", metadata=dict(meta or {}))
+            st = _infer_source_type(meta or {})
+            out.append((doc, None, st))
+            if len(out) >= max_hits:
+                return out
     return out
 
 
@@ -858,6 +880,47 @@ async def search_codebase(query: str, k: int = TOP_K_DEFAULT, repo: str = "") ->
     )
 
 
+CONCEPT_SCAN_CAP = max(1000, int(os.environ.get("RAG_CONCEPT_SCAN_CAP", "20000")))
+
+
+def _concept_rows_via_scan(
+    col: Any, safe_concept: str, limit: int, scan_cap: int = CONCEPT_SCAN_CAP
+) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+    """Client-side concepts filter.
+
+    Modern chromadb (1.x) supports ``$contains`` only in where_document; in a
+    metadata ``where`` it silently matches nothing, which left concept search
+    returning zero results. Scan metadata pages and match the parsed concept
+    ids exactly instead (capped by RAG_CONCEPT_SCAN_CAP rows per collection).
+    """
+    want = safe_concept.lower()
+    ids: List[str] = []
+    docs: List[str] = []
+    metas: List[Dict[str, Any]] = []
+    offset = 0
+    batch = 512
+    while offset < scan_cap and len(ids) < limit:
+        page = col.get(include=["documents", "metadatas"], limit=batch, offset=offset)
+        page_ids = page.get("ids") or []
+        if not page_ids:
+            break
+        page_docs = page.get("documents") or []
+        page_metas = page.get("metadatas") or []
+        for i, did in enumerate(page_ids):
+            m = page_metas[i] if i < len(page_metas) else {}
+            parts = iter_concept_ids(str((m or {}).get("concepts") or ""))
+            if any(p.lower() == want for p in parts):
+                ids.append(did)
+                docs.append(page_docs[i] if i < len(page_docs) else "")
+                metas.append(dict(m or {}))
+                if len(ids) >= limit:
+                    break
+        offset += len(page_ids)
+        if len(page_ids) < batch:
+            break
+    return ids, docs, metas
+
+
 @mcp.tool()
 async def search_concepts(concept: str, domain: str = "") -> str:
     """Find chunks tagged with a concept (metadata 'concepts' contains id)."""
@@ -880,20 +943,20 @@ async def search_concepts(concept: str, domain: str = "") -> str:
                 continue
             try:
                 col = vs._collection  # type: ignore[attr-defined]
-                res = col.get(
-                    where={"concepts": {"$contains": needle}},
-                    limit=80,
-                    include=["documents", "metadatas", "ids"],
-                )
-                if not (res.get("ids") or []):
+                try:
+                    # Fast path for chroma versions where metadata $contains works.
                     res = col.get(
-                        where={"concepts": {"$contains": safe_concept}},
+                        where={"concepts": {"$contains": needle}},
                         limit=80,
-                        include=["documents", "metadatas", "ids"],
+                        include=["documents", "metadatas"],
                     )
+                except Exception:
+                    res = {}
                 ids_list = res.get("ids") or []
                 docs = res.get("documents") or []
                 metas = res.get("metadatas") or []
+                if not ids_list:
+                    ids_list, docs, metas = _concept_rows_via_scan(col, safe_concept, 80)
                 pairs: List[Tuple[str, Dict[str, Any]]] = []
                 for i, did in enumerate(ids_list):
                     text = docs[i] if i < len(docs) else ""
