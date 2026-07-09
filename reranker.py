@@ -21,31 +21,36 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import List, Optional, Tuple
 
 logger = logging.getLogger("reranker")
 
 _instance: Optional["Reranker"] = None
+_instance_lock = threading.Lock()
 
 
 def get_reranker() -> Optional["Reranker"]:
     """Return the module-level ``Reranker`` singleton, or ``None`` if disabled.
 
     Checks ``RAG_RERANKER`` on every call so the flag can be toggled at runtime.
+    Thread-safe: concurrent first callers (MCP thread pool) get one instance.
     """
     global _instance
     enabled = os.environ.get("RAG_RERANKER", "0").strip().lower()
     if enabled not in ("1", "true", "yes"):
         return None
     if _instance is None:
-        _instance = Reranker(
-            model_name=os.environ.get(
-                "RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"
-            ),
-            device=os.environ.get("RAG_RERANKER_DEVICE", "cuda:0"),
-            use_fp16=os.environ.get("RAG_RERANKER_FP16", "1").strip().lower()
-            in ("1", "true", "yes"),
-        )
+        with _instance_lock:
+            if _instance is None:
+                _instance = Reranker(
+                    model_name=os.environ.get(
+                        "RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"
+                    ),
+                    device=os.environ.get("RAG_RERANKER_DEVICE", "cuda:0"),
+                    use_fp16=os.environ.get("RAG_RERANKER_FP16", "1").strip().lower()
+                    in ("1", "true", "yes"),
+                )
     return _instance
 
 
@@ -72,6 +77,11 @@ class Reranker:
     that ``import reranker`` incurs zero startup cost when reranking is off.
     """
 
+    # Serializes lazy load AND predict(): CrossEncoder inference on one model
+    # instance is not safe from multiple threads (the MCP pool runs 4 workers).
+    # Class-level so it exists even for instances created without __init__.
+    _model_lock = threading.Lock()
+
     def __init__(
         self,
         model_name: str = "BAAI/bge-reranker-v2-m3",
@@ -84,6 +94,7 @@ class Reranker:
         self._model = None  # loaded lazily on first rerank()
 
     def _ensure_loaded(self) -> None:
+        # Callers should hold self._model_lock (rerank() does).
         if self._model is not None:
             return
         try:
@@ -136,14 +147,14 @@ class Reranker:
         List of ``(original_index, score)`` sorted by score descending.
         When the model is unavailable, returns passthrough order with 0.0 scores.
         """
-        self._ensure_loaded()
         n = len(documents)
         limit = top_k if top_k is not None else n
-        if self._model is None or not documents:
-            return [(i, 0.0) for i in range(min(limit, n))]
-
-        pairs = [(query, doc) for doc in documents]
-        scores = self._model.predict(pairs, show_progress_bar=False)
+        with self._model_lock:
+            self._ensure_loaded()
+            if self._model is None or not documents:
+                return [(i, 0.0) for i in range(min(limit, n))]
+            pairs = [(query, doc) for doc in documents]
+            scores = self._model.predict(pairs, show_progress_bar=False)
 
         indexed = [(i, float(s)) for i, s in enumerate(scores)]
         indexed.sort(key=lambda x: -x[1])

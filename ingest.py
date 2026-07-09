@@ -1338,14 +1338,24 @@ def http_embed_documents_batch(model: str, texts: List[str], timeout: float = 30
     raise RuntimeError(f"Unexpected Ollama embed response: {list(data.keys())}")
 
 
+def _embed_batch_timeout_sec() -> float:
+    """Wall-clock cap per embed batch on the LangChain path (0 disables)."""
+    try:
+        return float(os.environ.get("EMBED_BATCH_TIMEOUT", "300"))
+    except ValueError:  # pragma: no cover
+        return 300.0  # pragma: no cover
+
+
 def embed_with_retry(embedder: OllamaEmbeddings, batch: List[str]) -> Optional[List[List[float]]]:
+    timeout_sec = _embed_batch_timeout_sec()
+
     def _try(b: List[str]) -> Optional[List[List[float]]]:
         for _ in range(MAX_RETRIES):
             try:
                 if _embed_serialize_on():
                     with _embed_lock:
-                        return embedder.embed_documents(b)
-                return embedder.embed_documents(b)
+                        return _embed_documents_with_optional_timeout(embedder, b, timeout_sec)
+                return _embed_documents_with_optional_timeout(embedder, b, timeout_sec)
             except Exception as exc:
                 logger.warning("embed retry: %s", exc)
                 time.sleep(EMBED_BACKOFF_SEC)
@@ -1466,10 +1476,18 @@ def load_checkpoint(db_path: Path) -> Dict[str, str]:
         return {}
 
 
+def _atomic_write_json(path: Path, data: Any, indent: int = 2) -> None:
+    """Write JSON via temp file + os.replace so a crash never leaves a truncated file."""
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=indent)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
 def save_checkpoint(db_path: Path, data: Dict[str, str]) -> None:
-    p = db_path / "ingest_checkpoint.json"
-    with open(p, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
+    _atomic_write_json(db_path / "ingest_checkpoint.json", data)
 
 
 def append_manifest(db_path: Path, record: Dict[str, Any]) -> None:
@@ -1480,8 +1498,7 @@ def append_manifest(db_path: Path, record: Dict[str, Any]) -> None:
 
 def write_ingestion_config(db_path: Path, model: str) -> None:
     cfg = {"embedding_model": model, "ingestion_version": INGESTION_VERSION}
-    with open(db_path / "ingestion_config.json", "w", encoding="utf-8") as fh:
-        json.dump(cfg, fh, indent=2)
+    _atomic_write_json(db_path / "ingestion_config.json", cfg)
 
 
 
@@ -1565,8 +1582,7 @@ def update_repos_manifest(db_path: Path, collection_name: str, repo_counts: Dict
     if collection_name.endswith("_code"):
         for k, v in repo_counts.items():
             data[k] = v
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
+    _atomic_write_json(path, data)
 
 
 def print_status_dashboard(db_path: Path) -> None:
@@ -2402,7 +2418,7 @@ def _ingest_run_impl(args: argparse.Namespace) -> int:
         merged = sorted(
             {str(x).strip() for x in existing if str(x).strip()} | vocab_tokens
         )
-        vocab_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        _atomic_write_json(vocab_path, merged)
         logger.info("symbols_vocabulary written: %d tokens -> %s", len(merged), vocab_path)
     except Exception as exc:
         logger.warning("symbols_vocabulary write failed: %s", exc)
@@ -2415,6 +2431,14 @@ def _ingest_run_impl(args: argparse.Namespace) -> int:
     result_q: "queue.Queue[Optional[Tuple[List[str], List[str], List[Dict[str, str]], List[List[float]]]]]" = (
         queue.Queue(maxsize=512)
     )
+    # Sources whose chunks failed to embed or upsert. Their checkpoint hashes are
+    # dropped before save so the next run re-processes them (old vectors were
+    # already deleted during scan — saving the hash would silently lose them).
+    failed_sources: set = set()
+    # True when a failure can't be attributed to specific sources; then the whole
+    # checkpoint save is skipped rather than risk marking a broken file as done.
+    unattributed_failure = threading.Event()
+
     def writer_loop():
         while True:
             item = result_q.get()
@@ -2422,6 +2446,7 @@ def _ingest_run_impl(args: argparse.Namespace) -> int:
                 break
             if item is None:
                 results_holder["failed"] += 1  # pragma: no cover
+                unattributed_failure.set()  # pragma: no cover
                 continue  # pragma: no cover
             ids, texts, metas, embeddings = item
             try:
@@ -2442,6 +2467,8 @@ def _ingest_run_impl(args: argparse.Namespace) -> int:
                 logger.exception("upsert failed: %s", exc)  # pragma: no cover
                 results_holder["failed"] += len(ids)  # pragma: no cover
                 results_holder["errors"].append(str(exc))  # pragma: no cover
+                for m in metas:  # pragma: no cover
+                    failed_sources.add(str(m.get("source") or ""))  # pragma: no cover
 
     wthread = threading.Thread(target=writer_loop, daemon=True)
     wthread.start()
@@ -2472,7 +2499,10 @@ def _ingest_run_impl(args: argparse.Namespace) -> int:
             outs = [None] * len(batches)
         for bi, item in enumerate(outs):
             if item is None:
-                results_holder["failed"] += len(batches[bi]) if bi < len(batches) else 0
+                if bi < len(batches):
+                    results_holder["failed"] += len(batches[bi])
+                    for _cid, _text, m in batches[bi]:
+                        failed_sources.add(str(m.get("source") or ""))
             else:
                 result_q.put(item)
     else:
@@ -2489,6 +2519,7 @@ def _ingest_run_impl(args: argparse.Namespace) -> int:
         try:
             for batch in _tqdm_ingest(batches, desc="Embedding", unit="batch", total=len(batches)):
                 if shutdown_event.is_set():
+                    unattributed_failure.set()  # pragma: no cover
                     break  # pragma: no cover
                 chunk_q.put(batch)
         finally:
@@ -2496,6 +2527,9 @@ def _ingest_run_impl(args: argparse.Namespace) -> int:
                 chunk_q.put(None)
         for t in threads:
             t.join(timeout=600)
+            if t.is_alive():  # pragma: no cover
+                logger.error("embedding worker %s did not finish; run marked failed", t.name)
+                unattributed_failure.set()
 
     result_q.put(WRITER_STOP)
     print(
@@ -2503,11 +2537,31 @@ def _ingest_run_impl(args: argparse.Namespace) -> int:
         flush=True,
     )
     wthread.join(timeout=600)
+    if wthread.is_alive():  # pragma: no cover
+        msg = "Chroma writer did not finish within 600s; checkpoint not saved"
+        logger.error(msg)
+        results_holder["errors"].append(msg)
+        unattributed_failure.set()
 
-    checkpoint[cp_key] = json.dumps(file_hashes)
-    if new_git_head_commit:
-        checkpoint[git_head_key] = new_git_head_commit
-    save_checkpoint(db_path, checkpoint)
+    if results_holder["failed"] > 0 and not results_holder["errors"]:
+        results_holder["errors"].append(
+            f"{results_holder['failed']} embedding batch(es)/chunk(s) failed permanently"
+        )
+
+    if unattributed_failure.is_set():
+        # Can't tell which sources completed — keep the previous checkpoint so the
+        # next run re-scans everything from this run instead of silently skipping.
+        logger.error(
+            "Ingest finished with unattributed failures; checkpoint NOT updated "
+            "(next run will re-process this batch)."
+        )
+    else:
+        for bad_src in failed_sources:
+            file_hashes.pop(bad_src, None)
+        checkpoint[cp_key] = json.dumps(file_hashes)
+        if new_git_head_commit and not failed_sources:
+            checkpoint[git_head_key] = new_git_head_commit
+        save_checkpoint(db_path, checkpoint)
     if repo_file_counts:
         update_repos_manifest(db_path, collection_name, dict(repo_file_counts))
 

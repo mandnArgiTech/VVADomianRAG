@@ -788,8 +788,13 @@ def test_ingest_async_embed_failed_batch_increments_failed(tmp_path: Path, monke
             "--git-diff",
         ]
     )
-    # Failed embeddings do not populate results_holder["errors"]; exit is still success.
-    assert ing.ingest_run(args) == 0
+    # Failed embeddings now surface as errors -> non-zero exit, and the failed
+    # file's hash must NOT be checkpointed (so the next run re-processes it).
+    assert ing.ingest_run(args) == 1
+    ck = ing.load_checkpoint(db)
+    hashes = json.loads(ck.get("unit_code::checkpoint", "{}"))
+    tiny_abs = str((root / "tiny.py").resolve())
+    assert tiny_abs not in hashes
 
 
 def test_load_checkpoint_bad_json_resets_hashes(tmp_path: Path, monkeypatch):

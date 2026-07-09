@@ -90,11 +90,41 @@ class CachedBM25Index:
         base = os.path.join(self.cache_dir, safe)
         return base + ".pkl", base + ".meta.json"
 
+    def _lock(self) -> threading.Lock:
+        return self._lock_for(self.collection_name + "@" + self.db_path)
+
+    def snapshot(self) -> Tuple[Any, List[str], Dict[str, Tuple[str, Dict[str, Any]]]]:
+        """Consistent (bm25, ordered_ids, id_to_doc) triple for lock-free scoring.
+
+        ensure_loaded() replaces all three fields under the collection lock, so
+        reading them under the same lock guarantees they belong to one build.
+        """
+        with self._lock():
+            return self.bm25, self.ordered_ids, self.id_to_doc
+
+    def invalidate(self) -> None:
+        """Drop in-memory index and on-disk cache (call after re-ingestion).
+
+        Needed because the cache key is collection *count*: replacing a document
+        (delete + upsert of the same source) keeps count unchanged, which would
+        otherwise leave BM25 serving stale text forever.
+        """
+        with self._lock():
+            self.bm25 = None
+            self.ordered_ids = []
+            self.id_to_doc = {}
+            self._loaded_count = -1
+            for p in self._paths():
+                try:
+                    if os.path.isfile(p):
+                        os.remove(p)
+                except OSError as exc:  # pragma: no cover
+                    logger.warning("BM25 cache remove failed %s: %s", p, exc)
+
     def ensure_loaded(self, chroma_collection: Any) -> bool:
         if not HYBRID_AVAILABLE:
             return False
-        lock = self._lock_for(self.collection_name + "@" + self.db_path)
-        with lock:
+        with self._lock():
             try:
                 count: int = int(chroma_collection.count())
             except Exception as exc:
@@ -193,9 +223,14 @@ class CachedBM25Index:
                     "ordered_ids": ordered_ids,
                     "id_to_doc": id_to_doc,
                 }
-                with open(pkl_path, "wb") as fh:
+                # Atomic writes: a crash mid-dump must not leave a truncated
+                # pickle that the next load would fail (or worse, half-parse).
+                tmp_pkl = f"{pkl_path}.tmp.{os.getpid()}"
+                with open(tmp_pkl, "wb") as fh:
                     pickle.dump(payload, fh, protocol=pickle.HIGHEST_PROTOCOL)
-                with open(meta_path, "w", encoding="utf-8") as fh:
+                os.replace(tmp_pkl, pkl_path)
+                tmp_meta = f"{meta_path}.tmp.{os.getpid()}"
+                with open(tmp_meta, "w", encoding="utf-8") as fh:
                     json.dump(
                         {
                             "count": self._loaded_count,
@@ -204,6 +239,7 @@ class CachedBM25Index:
                         },
                         fh,
                     )
+                os.replace(tmp_meta, meta_path)
             except Exception as exc:
                 logger.warning("BM25 cache save failed %s: %s", self.collection_name, exc)
 
@@ -223,20 +259,26 @@ def search_bm25_ranked_ids(
     top_n: int,
     repo_filter: str,
 ) -> List[str]:
-    if not query.strip() or index.bm25 is None:
+    if not query.strip():
         return []
     q_tokens = tokenize(query)
     if not q_tokens:
         return []
-    scores = index.bm25.get_scores(q_tokens)
+    # Snapshot under the collection lock: a concurrent ensure_loaded() rebuild
+    # replaces bm25/ordered_ids/id_to_doc, and scoring live attributes could mix
+    # arrays from different builds (index-out-of-range or wrong ids).
+    bm25, ordered_ids, id_to_doc = index.snapshot()
+    if bm25 is None:
+        return []
+    scores = bm25.get_scores(q_tokens)
     rf = repo_filter.strip()
-    n = len(scores)
+    n = min(len(scores), len(ordered_ids))
     if n == 0:
         return []
     if rf:
         candidates: List[int] = []
-        for i, sid in enumerate(index.ordered_ids):
-            _text, meta = index.id_to_doc.get(sid, ("", {}))
+        for i in range(n):
+            _text, meta = id_to_doc.get(ordered_ids[i], ("", {}))
             if str(meta.get("repository") or "") == rf:
                 candidates.append(i)
         if not candidates:
@@ -247,7 +289,7 @@ def search_bm25_ranked_ids(
         order = heapq.nlargest(min(top_n, n), range(n), key=lambda i: scores[i])
     out: List[str] = []
     for i in order:
-        out.append(index.ordered_ids[i])
+        out.append(ordered_ids[i])
         if len(out) >= top_n:
             break
     return out
@@ -263,3 +305,12 @@ def get_bm25_index(db_path: str, collection_name: str) -> CachedBM25Index:
         if key not in _index_singletons:
             _index_singletons[key] = CachedBM25Index(collection_name, db_path)
         return _index_singletons[key]
+
+
+def invalidate_bm25_index(db_path: str, collection_name: str) -> None:
+    """Invalidate BM25 for one collection after its contents changed.
+
+    Must be called after any delete+upsert cycle: the freshness check is based
+    on collection count, which does not change when a document is replaced.
+    """
+    get_bm25_index(db_path, collection_name).invalidate()

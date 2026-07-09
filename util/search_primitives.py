@@ -73,7 +73,9 @@ def shared_query_embedding(
         return None
     try:
         vec = emb_fn.embed_query(query)
-        return list(vec) if vec is not None else None
+        out = list(vec) if vec is not None else None
+        # An empty vector is never a usable embedding — fall back to per-query.
+        return out or None
     except Exception as exc:
         _log.debug("shared embed_query failed, using per-query embedding: %s", exc)
         return None

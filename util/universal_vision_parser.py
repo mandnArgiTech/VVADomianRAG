@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 import logging
+import os
 import sys
 import time
 from io import BytesIO
@@ -81,7 +82,14 @@ def _caption_image(
     if provider == "ollama":
         import ollama
 
-        response = ollama.chat(
+        # Explicit timeout: module-level ollama.chat has none, and one stuck
+        # caption call would hang the whole multi-page parse forever.
+        try:
+            timeout = float(os.environ.get("RAG_VISION_TIMEOUT", "300"))
+        except ValueError:  # pragma: no cover
+            timeout = 300.0  # pragma: no cover
+        client = ollama.Client(timeout=timeout if timeout > 0 else 300.0)
+        response = client.chat(
             model=model,
             messages=[
                 {"role": "user", "content": prompt, "images": [image_b64]},

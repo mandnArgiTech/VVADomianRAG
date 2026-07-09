@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from query_kit.ollama_client import OLLAMA_LIB_AVAILABLE, _ollama_mod
+from query_kit.ollama_client import OLLAMA_LIB_AVAILABLE, _ollama_mod, ollama_chat
 
 
 class ConversationMemory:
@@ -74,7 +74,7 @@ def reformulate_query(raw_query: str, memory: ConversationMemory, llm_model: str
         f"Prior turns:\n{ctx}\n\nFollow-up: {raw_query}\n\nStandalone query:"
     )
     try:
-        resp = _ollama_mod.chat(
+        resp = ollama_chat(
             model=llm_model,
             messages=[{"role": "user", "content": prompt}],
             stream=False,

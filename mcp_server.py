@@ -31,6 +31,7 @@ from domain_feeder import feed_domain_document
 from hybrid_search import (
     HYBRID_AVAILABLE,
     get_bm25_index,
+    invalidate_bm25_index,
     reciprocal_rank_fusion,
     search_bm25_ranked_ids,
     stable_doc_id,
@@ -69,6 +70,8 @@ from util.search_primitives import (
     domain_filter as _domain_filter,
     hybrid_candidate_cap as _hybrid_candidate_cap,
     select_collection_names as _select_collection_names,
+    shared_query_embedding as _shared_query_embedding,
+    similarity_search_with_score as _similarity_search_with_score,
 )
 
 # Configuration
@@ -131,34 +134,49 @@ def _collections_assign(new_map: Dict[str, Chroma]) -> None:
         collections_map = new_map
 
 
+_mcp_executor_lock = threading.Lock()
+
+
 def init_mcp_executor() -> ThreadPoolExecutor:
     global _mcp_executor
     if _mcp_executor is None:
-        _mcp_executor = ThreadPoolExecutor(
-            max_workers=MCP_POOL_WORKERS,
-            thread_name_prefix="mcp",
-        )
+        with _mcp_executor_lock:
+            if _mcp_executor is None:
+                _mcp_executor = ThreadPoolExecutor(
+                    max_workers=MCP_POOL_WORKERS,
+                    thread_name_prefix="mcp",
+                )
     return _mcp_executor
+
+
+def _probe_ollama_tags() -> bool:
+    try:
+        urllib.request.urlopen(
+            "http://127.0.0.1:11434/api/tags",
+            timeout=MCP_OLLAMA_HEARTBEAT_TIMEOUT,
+        )
+        return True
+    except Exception:
+        return False
 
 
 def _heartbeat_worker() -> None:
     while not _shutdown_event.is_set():
         if _shutdown_event.wait(OLLAMA_HEARTBEAT_SEC):
             break
-        try:
-            urllib.request.urlopen(
-                "http://127.0.0.1:11434/api/tags",
-                timeout=MCP_OLLAMA_HEARTBEAT_TIMEOUT,
-            )
+        if _probe_ollama_tags():
             _set_ollama_healthy(True)
-        except Exception:
-            _set_ollama_healthy(False)
-            logger.warning("Ollama heartbeat failed; attempting recovery")
-            try:
-                start_ollama()
-                _set_ollama_healthy(True)
-            except Exception as exc:
-                logger.error("Ollama recovery after heartbeat failed: %s", exc)
+            continue
+        _set_ollama_healthy(False)
+        logger.warning("Ollama heartbeat failed; attempting recovery")
+        try:
+            start_ollama()
+            # start_ollama may return early because the root URL responds while
+            # /api/tags is still broken — re-probe the real endpoint before
+            # declaring recovery, otherwise feeds proceed and fail at embed time.
+            _set_ollama_healthy(_probe_ollama_tags())
+        except Exception as exc:
+            logger.error("Ollama recovery after heartbeat failed: %s", exc)
 
 
 def _start_heartbeat_thread() -> None:
@@ -192,32 +210,42 @@ def _ollama_is_ready() -> bool:
         return False
 
 
+_ollama_start_lock = threading.Lock()
+
+
 def start_ollama() -> None:
+    """Start (or reuse) the local Ollama server.
+
+    Serialized: startup and heartbeat recovery can call this concurrently, and
+    without the lock both could pass the readiness check and spawn duplicate
+    `ollama serve` processes (orphaning all but the last one).
+    """
     global ollama_proc
-    if _ollama_is_ready():
-        logger.info("Reusing existing Ollama instance on :11434")
-        _set_ollama_healthy(True)
-        return
-    if not os.path.exists(OLLAMA_EXE):
-        raise RuntimeError(f"Ollama executable not found at '{OLLAMA_EXE}'.")
-    logger.info("Starting Ollama: %s", OLLAMA_EXE)
-    ollama_proc = subprocess.Popen(
-        [OLLAMA_EXE, "serve"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    for _ in range(30):
+    with _ollama_start_lock:
         if _ollama_is_ready():
-            logger.info("Ollama is ready")
+            logger.info("Reusing existing Ollama instance on :11434")
             _set_ollama_healthy(True)
             return
-        time.sleep(1)
-    try:
-        ollama_proc.terminate()
-    except Exception:
-        pass
-    ollama_proc = None
-    raise RuntimeError("Ollama did not become ready within 30 seconds.")
+        if not os.path.exists(OLLAMA_EXE):
+            raise RuntimeError(f"Ollama executable not found at '{OLLAMA_EXE}'.")
+        logger.info("Starting Ollama: %s", OLLAMA_EXE)
+        ollama_proc = subprocess.Popen(
+            [OLLAMA_EXE, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        for _ in range(30):
+            if _ollama_is_ready():
+                logger.info("Ollama is ready")
+                _set_ollama_healthy(True)
+                return
+            time.sleep(1)
+        try:
+            ollama_proc.terminate()
+        except Exception:
+            pass
+        ollama_proc = None
+        raise RuntimeError("Ollama did not become ready within 30 seconds.")
 
 
 def stop_ollama() -> None:
@@ -391,6 +419,10 @@ def _sync_multi_search(
     dense_cap = _hybrid_candidate_cap(k, "HYBRID_DENSE_CANDIDATES")
     bm25_cap = _hybrid_candidate_cap(k, "HYBRID_BM25_CANDIDATES")
     db_abs = os.path.abspath(DB_PATH)
+    # Embed the query once and reuse the vector for every collection: all
+    # collections share one embedding model, so per-collection embed_query
+    # calls just multiply Ollama round-trips by len(targets).
+    q_emb = _shared_query_embedding(cmap, targets, query)
 
     if not use_hybrid:
         merged: List[Tuple[Any, Optional[float], str, str]] = []
@@ -400,10 +432,7 @@ def _sync_multi_search(
             if repo_filter.strip():
                 flt = {"repository": repo_filter.strip()}
             try:
-                try:
-                    pairs = vs.similarity_search_with_score(query, k=per, filter=flt)
-                except TypeError:
-                    pairs = vs.similarity_search_with_score(query, k=per)
+                pairs = _similarity_search_with_score(vs, query, per, flt, q_emb)
             except Exception as exc:
                 logger.warning("Skipping collection %s: %s", name, exc)
                 continue
@@ -442,10 +471,7 @@ def _sync_multi_search(
         if repo_filter.strip():
             flt = {"repository": repo_filter.strip()}
         try:
-            try:
-                pairs = vs.similarity_search_with_score(query, k=dense_cap, filter=flt)
-            except TypeError:
-                pairs = vs.similarity_search_with_score(query, k=dense_cap)
+            pairs = _similarity_search_with_score(vs, query, dense_cap, flt, q_emb)
         except Exception as exc:
             logger.warning("Skipping collection %s: %s", name, exc)
             continue
@@ -458,11 +484,15 @@ def _sync_multi_search(
             dense_map[sid] = (doc, score)
 
         bm25_ids: List[str] = []
+        bm25_docs: Dict[str, Tuple[str, Dict[str, Any]]] = {}
         col = getattr(vs, "_collection", None)
         if col is not None:
             idx = get_bm25_index(db_abs, name)
             if idx.ensure_loaded(col):
                 bm25_ids = search_bm25_ranked_ids(idx, query, bm25_cap, repo_filter)
+                # Snapshot doc payloads consistent with the ids just ranked; a
+                # concurrent rebuild must not swap id_to_doc under us mid-merge.
+                _bm25, _oids, bm25_docs = idx.snapshot()
         rank_lists = [dense_ids, bm25_ids] if bm25_ids else [dense_ids]
         rrf_scores = reciprocal_rank_fusion(rank_lists, k=RRF_K)
         if not rrf_scores:
@@ -478,12 +508,11 @@ def _sync_multi_search(
                 dense_rank.get(sid, 10**9),
             ),
         )
-        idx_ref = get_bm25_index(db_abs, name) if col is not None else None
         for sid in sorted_sids:
             if sid in dense_map:
                 doc, _dscore = dense_map[sid]
-            elif idx_ref is not None and sid in idx_ref.id_to_doc:
-                text, meta = idx_ref.id_to_doc[sid]
+            elif sid in bm25_docs:
+                text, meta = bm25_docs[sid]
                 doc = Document(page_content=text, metadata=meta)
             else:
                 continue
@@ -660,10 +689,13 @@ def _sync_multi_search_with_dependency_hop(
         cmap,
         max_hits=min(k * 2, max(1, QUERY_DEP_MAX_HITS * 2)),
     )
-    seen = {stable_doc_id(h.collection or "", h.metadata, h.content) for h in primary_hits}
+    # Dedup key deliberately ignores the collection name: primary hits are built
+    # with collection="" while dep/caller hits carry a real name, so including
+    # it would give the same chunk two different ids and let duplicates through.
+    seen = {stable_doc_id("", h.metadata, h.content) for h in primary_hits}
     extra: List[SearchHit] = []
     for doc, _sc, st, cname in dep_tuples:
-        sid = stable_doc_id(cname, doc.metadata or {}, doc.page_content or "")
+        sid = stable_doc_id("", doc.metadata or {}, doc.page_content or "")
         if sid in seen:
             continue
         seen.add(sid)
@@ -690,7 +722,7 @@ def _sync_multi_search_with_dependency_hop(
             max_hits=QUERY_CALLER_MAX_HITS,
         )
         for doc, _sc, st, cname in caller_tuples:
-            sid = stable_doc_id(cname, doc.metadata or {}, doc.page_content or "")
+            sid = stable_doc_id("", doc.metadata or {}, doc.page_content or "")
             if sid in seen:
                 continue
             seen.add(sid)
@@ -1038,6 +1070,15 @@ async def feed_domain_doc(
                 loop.run_in_executor(ex, _run),
                 timeout=float(QUERY_TIMEOUT),
             )
+        # Re-ingesting a doc replaces its chunks without changing the collection
+        # count, so the count-keyed BM25 cache must be dropped explicitly or
+        # hybrid search keeps serving the old text.
+        fed_coll = str(stats.get("collection") or "")
+        if fed_coll:
+            try:
+                invalidate_bm25_index(os.path.abspath(DB_PATH), fed_coll)
+            except Exception:  # pragma: no cover
+                logger.warning("BM25 invalidation failed for %s", fed_coll)
         return json.dumps(stats, indent=2)
     except asyncio.TimeoutError:
         return f"Error: feed_domain_doc timed out after {QUERY_TIMEOUT}s"

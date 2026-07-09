@@ -728,6 +728,10 @@ async def ensure_chroma(db_path: str) -> Tuple[Any, Any, Dict[str, Any], str]:
 _ingest_lock = threading.Lock()
 _ingest_proc: Optional[subprocess.Popen] = None
 _ingest_busy = False
+# Monotonic ownership token: each ingest run gets a new generation. Teardown
+# paths (SSE finally / cancel) only clear the shared state if the generation
+# still matches, so a stale stream that dies late cannot clobber a newer run.
+_ingest_generation = 0
 
 _vision_lock = threading.Lock()
 _vision_busy = False
@@ -1675,13 +1679,18 @@ async def api_vision_parse(
             status_code=409,
             detail="Another vision parse is already running. Wait for it to finish.",
         )
+    # Set the busy flag as soon as we own the lock — other endpoints (ingest,
+    # agent) consult _vision_busy, and setting it only when the SSE stream
+    # starts leaves a window where vision + ingest run concurrently.
+    _vision_busy = True
 
     tmp_path: Optional[str] = None
     try:
         fd, tmp_path = tempfile.mkstemp(suffix=".pdf", prefix="vision_")
         os.close(fd)
-        Path(tmp_path).write_bytes(raw)
+        await asyncio.to_thread(Path(tmp_path).write_bytes, raw)
     except Exception as exc:
+        _vision_busy = False
         _vision_lock.release()
         raise HTTPException(status_code=500, detail=f"Could not save upload: {exc}") from exc
 
@@ -1739,16 +1748,25 @@ async def api_ingest_cancel() -> Dict[str, str]:
     global _ingest_proc, _ingest_busy
     with _ingest_lock:
         proc = _ingest_proc
+        gen = _ingest_generation
     if proc is None or proc.poll() is not None:
         return {"detail": "no active ingest"}
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
+
+    def _terminate() -> None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    # Off the event loop: wait(timeout=5) would otherwise block all requests.
+    await asyncio.to_thread(_terminate)
     with _ingest_lock:
-        _ingest_busy = False
-        _ingest_proc = None
+        # Only clear if no newer ingest replaced the one we just killed.
+        if _ingest_generation == gen:
+            _ingest_busy = False
+            _ingest_proc = None
     return {"detail": "terminated"}
 
 
@@ -1775,10 +1793,13 @@ async def api_ingest(body: IngestBody) -> StreamingResponse:
     if body.embed_workers is not None:
         child_env["EMBED_WORKERS"] = str(int(body.embed_workers))
 
+    global _ingest_generation
     with _ingest_lock:
         if _ingest_busy:
             raise HTTPException(status_code=409, detail="An ingest job is already running")
         _ingest_busy = True
+        _ingest_generation += 1
+        my_generation = _ingest_generation
 
     async def event_stream() -> AsyncIterator[str]:
         global _ingest_proc, _ingest_busy
@@ -1802,8 +1823,14 @@ async def api_ingest(body: IngestBody) -> StreamingResponse:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with _ureq.urlopen(_req, timeout=10):
-                pass
+
+            def _warmup() -> None:
+                with _ureq.urlopen(_req, timeout=10):
+                    pass
+
+            # Off the event loop: a synchronous urlopen here would block every
+            # other request on this server for up to 10 seconds.
+            await asyncio.to_thread(_warmup)
         except Exception as _probe_exc:
             yield f"data: {json.dumps({'line': f'[GUI] WARNING: Ollama warmup for {emb} failed — run: ollama pull {emb}  ({_probe_exc})'})}\n\n"
 
@@ -1822,7 +1849,10 @@ async def api_ingest(body: IngestBody) -> StreamingResponse:
 
             assert proc.stdout is not None
 
-            ingest_q: "queue.Queue[Optional[Tuple[str, Any]]]" = queue.Queue()
+            # Bounded: a chatty child + slow SSE client must not grow memory
+            # without limit. Old log lines are dropped when full; control
+            # events ("exit"/"error"/None) are never dropped.
+            ingest_q: "queue.Queue[Optional[Tuple[str, Any]]]" = queue.Queue(maxsize=10000)
             # Short poll + rate-limited idle hints: ingest can go quiet during per-chunk LLM enrich
             # or huge single-file work; avoid spamming the same SSE line every few seconds.
             poll_sec = float(os.environ.get("RAG_GUI_INGEST_POLL_SEC", "12"))
@@ -1835,18 +1865,30 @@ async def api_ingest(body: IngestBody) -> StreamingResponse:
                 except queue.Empty:
                     return ("idle", None)
 
+            def _put_line(text: str) -> None:
+                item = ("line", strip_ansi(text))
+                try:
+                    ingest_q.put_nowait(item)
+                except queue.Full:
+                    try:
+                        ingest_q.get_nowait()  # drop oldest line to make room
+                    except queue.Empty:
+                        pass
+                    try:
+                        ingest_q.put_nowait(item)
+                    except queue.Full:
+                        pass
+
             def _stdout_reader() -> None:
                 assert proc.stdout is not None
                 try:
                     for line in iter(proc.stdout.readline, ""):
                         if line:
-                            ingest_q.put(
-                                ("line", strip_ansi(line.rstrip("\n\r"))),
-                            )
+                            _put_line(line.rstrip("\n\r"))
                     rest = proc.stdout.read()
                     if rest:
                         for raw in rest.splitlines():
-                            ingest_q.put(("line", strip_ansi(raw)))
+                            _put_line(raw)
                     code = proc.wait()
                     ingest_q.put(("exit", int(code or 0)))
                 except Exception as exc:
@@ -1891,18 +1933,38 @@ async def api_ingest(body: IngestBody) -> StreamingResponse:
                 yield f"data: {json.dumps({'error': 'Ingest log stream closed without subprocess exit code'})}\n\n"
                 yield f"data: {json.dumps({'done': True, 'exit_code': 1})}\n\n"
         except asyncio.CancelledError:
+            # Client disconnected. Reap in a helper thread (terminate alone can
+            # leave a SIGTERM-ignoring child running and writing to Chroma while
+            # the busy flag is already cleared).
             if proc and proc.poll() is None:
-                proc.terminate()
+                def _reap(p: subprocess.Popen) -> None:
+                    try:
+                        p.terminate()
+                        try:
+                            p.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            p.kill()
+                            p.wait(timeout=5)
+                    except Exception:
+                        log.exception("ingest reap after disconnect")
+
+                threading.Thread(target=_reap, args=(proc,), daemon=True).start()
             raise
         except Exception as exc:
             log.exception("ingest stream error")
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
             yield f"data: {json.dumps({'done': True, 'exit_code': 1})}\n\n"
         finally:
+            # Only clear shared state if this stream still owns it; a stale
+            # stream dying late must not clobber a newer ingest's registration.
+            still_owner = False
             with _ingest_lock:
-                _ingest_busy = False
-                _ingest_proc = None
-            await invalidate_chroma_cache()
+                if _ingest_generation == my_generation:
+                    still_owner = True
+                    _ingest_busy = False
+                    _ingest_proc = None
+            if still_owner:
+                await invalidate_chroma_cache()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -3282,6 +3344,16 @@ async def agent_sse_stream(body: AgentBody) -> AsyncIterator[str]:
         rolled = session.rollback()
         yield f"data: {json.dumps({'type': 'agent_state', 'status': 'failed', 'reason': f'Max iterations ({max_iter}) reached. All file changes rolled back.', 'rolled_back': rolled})}\n\n"
 
+    except (GeneratorExit, asyncio.CancelledError):
+        # Client disconnected mid-run. Explicit cancel rolls back partial file
+        # edits; disconnect must do the same or half-applied edits persist.
+        # Also raise the cancel flag so any still-running tool thread stops.
+        _agent_cancel.set()
+        try:
+            session.rollback()
+        except Exception:
+            log.exception("Agent rollback after client disconnect failed")
+        raise
     except Exception as exc:
         log.exception("Agent loop unhandled error")
         try:

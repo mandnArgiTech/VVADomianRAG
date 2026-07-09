@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -480,19 +481,40 @@ def web_search(
             error="Install web search: pip install ddgs   (or: pip install duckduckgo-search)",
         )
     k = min(max_results, 5)
-    try:
+
+    def _fetch() -> List[Dict[str, Any]]:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             if _DDGS_IMPL == "ddgs":
                 from ddgs import DDGS
-
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=k))
             else:
                 from duckduckgo_search import DDGS
 
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=k))
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, max_results=k))
+
+    try:
+        # Hard wall-clock cap on a daemon thread: DDGS has no reliable request
+        # timeout and a hung HTTP call would otherwise stall the agent loop
+        # indefinitely (a pool shutdown would join the stuck thread and hang too).
+        holder: Dict[str, Any] = {}
+
+        def _run() -> None:
+            try:
+                holder["results"] = _fetch()
+            except Exception as e:
+                holder["error"] = e
+
+        t = threading.Thread(target=_run, daemon=True, name="agent-websearch")
+        t.start()
+        t.join(timeout=30)
+        if t.is_alive():
+            return ToolResult(
+                success=False, output="", error="Web search timed out after 30s."
+            )
+        if "error" in holder:
+            raise holder["error"]
+        results = holder.get("results") or []
         if not results:
             return ToolResult(success=True, output="No web results found for that query.")
         parts: List[str] = []
@@ -560,6 +582,12 @@ def remember_concept(
             embed_model = _query_mod.embedding_model_from_db_path(session.db_path)
         except Exception:
             embed_model = "nomic-embed-text"
+        # Bounded embed time: without it a stuck Ollama call blocks the agent
+        # thread indefinitely (feed_domain_document defaults to no timeout).
+        try:
+            _embed_timeout = float(os.environ.get("EMBED_BATCH_TIMEOUT", "120"))
+        except ValueError:
+            _embed_timeout = 120.0
         stats = feed_domain_document(
             filepath=str(filepath),
             domain=domain or "general",
@@ -568,6 +596,7 @@ def remember_concept(
             source_type="domain_doc",
             chroma_client=session.chroma_client,
             embedder=session.chroma_embedder,
+            embed_batch_timeout=_embed_timeout,
         )
         chunk_count = stats.get("chunk_count", stats.get("chunks_upserted", "?"))
         try:

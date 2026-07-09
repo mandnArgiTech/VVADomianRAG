@@ -199,11 +199,15 @@ def sync_multi_search(
             dense_map[sid] = (doc, score)
 
         bm25_ids: List[str] = []
+        bm25_docs: Dict[str, Tuple[str, Dict[str, Any]]] = {}
         col = getattr(vs, "_collection", None)
         if col is not None and db_abs:
             idx = get_bm25_index(db_abs, name)
             if idx.ensure_loaded(col):
                 bm25_ids = search_bm25_ranked_ids(idx, query, bm25_cap, repo_filter)
+                # Snapshot under the index lock: a concurrent rebuild swaps
+                # id_to_doc and reading it live could mix builds mid-merge.
+                _bm25, _oids, bm25_docs = idx.snapshot()
         rank_lists = [dense_ids, bm25_ids] if bm25_ids else [dense_ids]
         rrf_scores = reciprocal_rank_fusion(rank_lists, k=RRF_K)
         if not rrf_scores:
@@ -219,12 +223,11 @@ def sync_multi_search(
                 dense_rank.get(sid, 10**9),
             ),
         )
-        idx_ref = get_bm25_index(db_abs, name) if col is not None else None
         for sid in sorted_sids:
             if sid in dense_map:
                 doc, _dscore = dense_map[sid]
-            elif idx_ref is not None and sid in idx_ref.id_to_doc:
-                text, meta = idx_ref.id_to_doc[sid]
+            elif sid in bm25_docs:
+                text, meta = bm25_docs[sid]
                 doc = Document(page_content=text, metadata=meta)
             else:
                 continue
@@ -303,23 +306,24 @@ def fused_docs_for_query_text(
         dense_map[sid] = (doc, score)
 
     bm25_ids: List[str] = []
+    bm25_docs: Dict[str, Tuple[str, Dict[str, Any]]] = {}
     col = getattr(vs, "_collection", None)
     if col is not None and db_abs:
         idx = get_bm25_index(db_abs, name)
         if idx.ensure_loaded(col):
             bm25_ids = search_bm25_ranked_ids(idx, query_text, bm25_cap, repo_filter)
+            _bm25, _oids, bm25_docs = idx.snapshot()
     rank_lists = [dense_ids, bm25_ids] if bm25_ids else [dense_ids]
     rrf_scores = reciprocal_rank_fusion(rank_lists, k=RRF_K)
     if not rrf_scores:
         return []
     sorted_sids = sorted(rrf_scores.keys(), key=lambda sid: -rrf_scores[sid])
-    idx_ref = get_bm25_index(db_abs, name) if col is not None else None
     out2: List[Tuple[Any, Optional[float]]] = []
     for sid in sorted_sids:
         if sid in dense_map:
             doc, sc = dense_map[sid]
-        elif idx_ref is not None and sid in idx_ref.id_to_doc:
-            text, meta = idx_ref.id_to_doc[sid]
+        elif sid in bm25_docs:
+            text, meta = bm25_docs[sid]
             doc = Document(page_content=text, metadata=meta)
             sc = None
         else:

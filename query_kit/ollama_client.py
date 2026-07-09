@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import urllib.request
 from typing import Any, Dict, List
 
@@ -20,6 +21,41 @@ except ImportError:  # pragma: no cover
 
 
 _LOG = logging.getLogger("query")
+
+_chat_client: Any = None
+_chat_client_lock = threading.Lock()
+
+
+def chat_timeout_sec() -> float:
+    """Per-request HTTP timeout for Ollama chat (RAG_CHAT_TIMEOUT, default 180s)."""
+    try:
+        v = float(os.environ.get("RAG_CHAT_TIMEOUT", "180"))
+    except ValueError:  # pragma: no cover
+        v = 180.0  # pragma: no cover
+    return v if v > 0 else 180.0
+
+
+def ollama_chat(**kwargs: Any) -> Any:
+    """``ollama.chat`` with a bounded HTTP timeout.
+
+    The module-level ``ollama.chat`` uses a default client with no timeout, so
+    a stalled Ollama server hangs the CLI/REPL forever. Route through a cached
+    ``ollama.Client`` configured with ``RAG_CHAT_TIMEOUT`` instead (falls back
+    to the module if Client construction fails).
+    """
+    global _chat_client
+    if not OLLAMA_LIB_AVAILABLE or _ollama_mod is None:  # pragma: no cover
+        raise RuntimeError("ollama package not installed")
+    if _chat_client is None:
+        with _chat_client_lock:
+            if _chat_client is None:
+                try:
+                    _chat_client = _ollama_mod.Client(
+                        host=ollama_base_url(), timeout=chat_timeout_sec()
+                    )
+                except Exception:  # pragma: no cover
+                    _chat_client = _ollama_mod
+    return _chat_client.chat(**kwargs)
 
 
 def estimate_tokens(text: str, provider: str = "ollama") -> int:

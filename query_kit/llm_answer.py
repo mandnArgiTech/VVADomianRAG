@@ -18,7 +18,13 @@ except ImportError:  # pragma: no cover
 from util.search_primitives import SearchHit
 
 from query_kit.context import build_context_blocks
-from query_kit.ollama_client import OLLAMA_LIB_AVAILABLE, _ollama_mod, ollama_options_for_model, stream_chunk_text
+from query_kit.ollama_client import (
+    OLLAMA_LIB_AVAILABLE,
+    _ollama_mod,
+    ollama_chat,
+    ollama_options_for_model,
+    stream_chunk_text,
+)
 
 
 def collect_llm_answer(
@@ -42,7 +48,7 @@ def collect_llm_answer(
         }
     )
     try:
-        resp = _ollama_mod.chat(
+        resp = ollama_chat(
             model=llm_model,
             messages=messages,
             stream=False,
@@ -86,7 +92,7 @@ def stream_llm_answer(
         }
     )
     try:
-        stream = _ollama_mod.chat(
+        stream = ollama_chat(
             model=llm_model,
             messages=messages,
             stream=True,

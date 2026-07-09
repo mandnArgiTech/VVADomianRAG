@@ -6,10 +6,27 @@ import difflib
 import json
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Dict, List
 
 _vocab_cache: Dict[str, frozenset] = {}
+_vocab_lock = threading.Lock()
+# Lowercase->canonical maps, keyed by the vocab frozenset itself (frozensets
+# cache their hash, so lookups are cheap). Rebuilding this dict per query is
+# O(vocab) and shows up on every search with a large symbols_vocabulary.json.
+_lower_map_cache: Dict[frozenset, Dict[str, str]] = {}
+
+
+def _canon_lower_map(vocab: frozenset) -> Dict[str, str]:
+    m = _lower_map_cache.get(vocab)
+    if m is None:
+        with _vocab_lock:
+            m = _lower_map_cache.get(vocab)
+            if m is None:
+                m = {v.lower(): v for v in vocab}
+                _lower_map_cache[vocab] = m
+    return m
 
 _GOD_MODE_STEM_DENYLIST: frozenset = frozenset(
     {
@@ -49,24 +66,29 @@ def load_symbols_vocab(db_path: str) -> frozenset:
     if not root:
         return frozenset()
     key = os.path.abspath(root)
-    if key in _vocab_cache:
-        return _vocab_cache[key]
-    p = Path(key) / "symbols_vocabulary.json"
-    if not p.is_file():
-        _vocab_cache[key] = frozenset()
-        return _vocab_cache[key]
-    try:
-        raw = json.loads(p.read_text(encoding="utf-8", errors="replace"))
-        if isinstance(raw, list):
-            vocab = frozenset(str(x) for x in raw if str(x).strip())
-        elif isinstance(raw, dict) and "symbols" in raw:
-            vocab = frozenset(str(x) for x in raw["symbols"] if str(x).strip())
-        else:
+    cached = _vocab_cache.get(key)
+    if cached is not None:
+        return cached
+    with _vocab_lock:
+        cached = _vocab_cache.get(key)
+        if cached is not None:
+            return cached
+        p = Path(key) / "symbols_vocabulary.json"
+        if not p.is_file():
+            _vocab_cache[key] = frozenset()
+            return _vocab_cache[key]
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(raw, list):
+                vocab = frozenset(str(x) for x in raw if str(x).strip())
+            elif isinstance(raw, dict) and "symbols" in raw:
+                vocab = frozenset(str(x) for x in raw["symbols"] if str(x).strip())
+            else:
+                vocab = frozenset()
+        except Exception:
             vocab = frozenset()
-    except Exception:
-        vocab = frozenset()
-    _vocab_cache[key] = vocab
-    return vocab
+        _vocab_cache[key] = vocab
+        return vocab
 
 
 def god_mode_chunk_name_matches(query_raw: str, vocab: frozenset) -> List[str]:
@@ -75,7 +97,7 @@ def god_mode_chunk_name_matches(query_raw: str, vocab: frozenset) -> List[str]:
     if not q or not vocab:
         return []
     tokens = set(re.findall(r"[\w\.]+", q))
-    canon_lower: Dict[str, str] = {v.lower(): v for v in vocab}
+    canon_lower: Dict[str, str] = _canon_lower_map(vocab)
     out: List[str] = []
     seen: set = set()
 
@@ -112,7 +134,7 @@ def expand_query_typos(query: str, vocab: frozenset) -> str:
     if not vocab or not (query or "").strip():
         return query
     tokens = re.findall(r"[\w\.]+", query)
-    vocab_lower_map = {v.lower(): v for v in vocab}
+    vocab_lower_map = _canon_lower_map(vocab)
     expansions: List[str] = []
     for tok in tokens:
         if tok.lower() in vocab_lower_map:

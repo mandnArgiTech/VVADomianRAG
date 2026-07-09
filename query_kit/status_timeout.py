@@ -1,11 +1,10 @@
-"""Vector DB status summary and SIGALRM timeouts for sync search."""
+"""Vector DB status summary and cross-platform timeouts for sync search."""
 
 from __future__ import annotations
 
-import logging
-import signal
+import threading
 from collections import Counter
-from typing import Any, Callable, List
+from typing import Any, Callable, Dict, List
 
 from util.chroma_client import persistent_chroma_client as _persistent_chroma_client
 from util.chroma_client import safe_collection_count as _safe_count_util
@@ -58,18 +57,30 @@ def run_status(db_path: str) -> str:
 
 
 def run_with_timeout(seconds: int, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Run ``fn`` with a wall-clock timeout; raise ``TimeoutError`` on expiry.
+
+    Uses a worker thread instead of ``signal.SIGALRM``: SIGALRM was a no-op on
+    Windows, raised ``ValueError`` when called from a non-main thread (e.g. the
+    GUI backend's thread pool), and could not interrupt blocking C-level I/O
+    inside Chroma/SQLite/Ollama anyway. The worker thread is a daemon, so a
+    truly stuck call no longer blocks the caller (it is abandoned on timeout).
+    """
     if seconds <= 0:
         return fn(*args, **kwargs)
-    if not hasattr(signal, "SIGALRM"):
-        return fn(*args, **kwargs)
 
-    def handler(_signum: Any, _frame: Any) -> None:
+    holder: Dict[str, Any] = {}
+
+    def _run() -> None:
+        try:
+            holder["result"] = fn(*args, **kwargs)
+        except BaseException as exc:  # propagate KeyboardInterrupt etc. to caller
+            holder["error"] = exc
+
+    t = threading.Thread(target=_run, daemon=True, name="rag-query-timeout")
+    t.start()
+    t.join(timeout=max(1, int(seconds)))
+    if t.is_alive():
         raise TimeoutError(f"Query timed out after {seconds}s")
-
-    old = signal.signal(signal.SIGALRM, handler)
-    try:
-        signal.alarm(max(1, int(seconds)))
-        return fn(*args, **kwargs)
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old)
+    if "error" in holder:
+        raise holder["error"]
+    return holder.get("result")
